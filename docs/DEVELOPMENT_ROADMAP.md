@@ -24,7 +24,7 @@ Reference repositories, licenses, Foundry v13 constraints, existing modules, arc
 **Exit criteria**: unit tests and headless PixiJS 7 render tests pass for the test sprites; the in-Foundry
 self-test passes on the GM's Foundry v13 world (we cannot run Foundry in CI).
 
-## Phase 3 — Automatic rigging
+## Phase 3 — Automatic rigging ✅ (see DEVELOPMENT_STATUS for what was measured)
 - Silhouette analysis: row/column width profiles, distance transform, skeletonization (medial
   axis) to find head, neck, shoulders, hips, extremities; weapon detection (long thin component).
 - Template fitting to those landmarks; confidence per bone; proposals shown for approval.

@@ -174,7 +174,38 @@ await page.click('.fusa-head button[title^="Import"]');
 await tick(500);
 check((await page.evaluate(() => window.studio.rig.bones.find((b) => b.id === 'weapon')?.name)) === 'Blade', 'importing the bundle restores the rig');
 
-// 13. teardown
+// 13. Phase 3: a sprite on a white background, the automatic rig proposal, the Hidden tool
+await page.evaluate(() => window.setNextImage('../sprites/swordsman_white.png'));
+await page.click('.fusa-head button[title="New rig from a sprite"]');
+await page.waitForFunction(() => window.studio.rig?.name === 'swordsman_white', null, { timeout: 10000 });
+await tick(300);
+check(await page.evaluate(() => window.studio.rig.image.src.startsWith('data:image/png') && window.log.some((l) => l.includes('Solid background') === false)), 'a solid white background is replaced by a transparent copy');
+const banner = await page.evaluate(() => document.querySelector('.fusa-banner.show')?.textContent ?? '');
+check(/Automatic rig/.test(banner) && /Faces left/.test(banner), 'the automatic rig is offered with what it found', banner.slice(0, 90));
+const weaponAuto = await page.evaluate(() => JSON.stringify(window.studio.rig.bones.find((b) => b.id === 'weapon')));
+await page.click('.fusa-banner button:has-text("Use proportions instead")');
+await tick(200);
+check(/Rig from proportions/.test(await page.evaluate(() => document.querySelector('.fusa-banner.show')?.textContent ?? '')), '"Use proportions instead" swaps in the template rig');
+await page.click('.fusa-banner button:has-text("Discard")');
+await tick(200);
+check((await page.evaluate(() => JSON.stringify(window.studio.rig.bones.find((b) => b.id === 'weapon')))) === weaponAuto && !(await page.$('.fusa-banner.show')), 'Discard goes back to the previous rig');
+await page.click('.fusa-toolrow .tool-auto');
+await tick(200);
+await page.click('.fusa-banner button:has-text("Keep")');
+check(!(await page.$('.fusa-banner.show')), 'Keep accepts a re-run auto-rig');
+await page.focus('.fusa-studio');
+await page.keyboard.press('2');
+await page.click('.fusa-node:has-text("Torso")');
+await page.click('.fusa-viewbar button:has-text("Hidden")');
+const ta = await bonePoint('torso');
+await page.mouse.move(ta.x, ta.y);
+await page.mouse.down();
+await page.mouse.move(ta.x + 40, ta.y + 10, { steps: 8 });
+await page.mouse.up();
+await tick(200);
+check(await page.evaluate(() => typeof window.studio.rig.fillHints === 'string' && window.studio.rig.fillHints.length > 0), 'the Hidden tool records where a part extends under others');
+
+// 14. teardown
 await page.evaluate(() => window.studio.destroy());
 check(errors.length === 0, 'no page errors', errors.join(' | '));
 await browser.close();

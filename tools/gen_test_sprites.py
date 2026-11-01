@@ -39,10 +39,10 @@ class Sprite:
         for kind, data in shapes:
             if kind == 'poly':
                 d.polygon([(x * s, y * s) for x, y in data], fill=255)
-            elif kind == 'ellipse':
-                d.ellipse([v * s for v in data], fill=255)
-            elif kind == 'rect':
-                d.rectangle([v * s for v in data], fill=255)
+            elif kind in ('ellipse', 'rect'):
+                x0, y0, x1, y1 = [v * s for v in data]
+                box = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+                (d.ellipse if kind == 'ellipse' else d.rectangle)(box, fill=255)
             elif kind == 'line':
                 pts, width = data
                 d.line([(x * s, y * s) for x, y in pts], fill=255, width=max(1, int(width * s)))
@@ -116,9 +116,13 @@ class Sprite:
         return small, parts
 
 
-def save(name, sprite, smooth=False):
+def save(name, sprite, smooth=False, background=None):
     os.makedirs(OUT, exist_ok=True)
     img, parts = sprite.render_smooth() if smooth else sprite.render_pixel()
+    if background is not None:
+        flat = Image.new('RGBA', img.size, background)
+        flat.alpha_composite(img)
+        img = flat
     img.save(os.path.join(OUT, f'{name}.png'))
     parts.save(os.path.join(OUT, f'{name}.parts.png'))
     with open(os.path.join(OUT, f'{name}.parts.json'), 'w') as f:
@@ -186,6 +190,98 @@ def humanoid(sp, ox, oy, k, c_body, c_legs, c_arm, hair=HAIR, weapon=None, skirt
     sp.part('hand.front', SKIN, [('ellipse', (*P(35, 32), *P(40, 37)))])
 
 
+def humanoid_front(sp, ox, oy, k, coat, pants, sleeve, skin=SKIN, hair=HAIR, weapon=None, facing='left', robe=False, scarf=None):
+    """A taller, more detailed front/three-quarter battle sprite (about 100*k px). The weapon hand is
+    on the facing side; roles call that side 'front'."""
+    f = -1 if facing == 'left' else 1
+    X = lambda x: ox + (20 + f * x) * k  # x measured from the centre, toward the facing side
+    P = lambda x, y: (X(x), oy + y * k)
+    if scarf:
+        sp.part('cape', scarf, [('poly', [P(-3, 22), P(-8, 20), P(-26, 24), P(-30, 30), P(-22, 29), P(-10, 27)])])
+        sp.part('cape', scarf, [('poly', [P(-33, 30), P(-38, 31), P(-36, 34)])])  # a detached flutter
+    if not robe:
+        for side, nm in ((-1, 'back'), (1, 'front')):
+            sp.part(f'leg.upper.{nm}', pants, [('poly', [P(side * 1, 52), P(side * 8, 52), P(side * 8, 70), P(side * 2, 70)])])
+            sp.part(f'leg.lower.{nm}', pants, [('poly', [P(side * 2, 69), P(side * 8, 69), P(side * 8, 86), P(side * 3, 86)])])
+            sp.part(f'foot.{nm}', BROWN, [('poly', [P(side * 2, 85), P(side * 9, 85), P(side * 10 + f * 2, 93), P(side * 1, 93)])])
+    else:
+        for side, nm in ((-1, 'back'), (1, 'front')):
+            sp.part(f'foot.{nm}', GREY, [('poly', [P(side * 2, 88), P(side * 9, 88), P(side * 9, 94), P(side * 2, 94)])])
+    sp.part('pelvis', coat, [('poly', [P(-10, 46), P(10, 46), P(15 if not robe else 17, 80 if not robe else 89), P(9, 82 if not robe else 90), P(0, 60 if not robe else 90), P(-9, 82 if not robe else 90), P(-15 if not robe else -17, 80 if not robe else 89)])])
+    sp.part('torso', coat, [('poly', [P(-10, 24), P(10, 24), P(12, 34), P(10, 50), P(-10, 50), P(-12, 34)])])
+    for side, nm in ((-1, 'back'), (1, 'front')):
+        sp.part(f'arm.upper.{nm}', sleeve, [('poly', [P(side * 9, 24), P(side * 15, 25), P(side * 16, 38), P(side * 11, 38)])])
+        sp.part(f'arm.lower.{nm}', sleeve, [('poly', [P(side * 11, 37), P(side * 16, 37), P(side * 17, 50), P(side * 12, 50)])])
+        sp.part(f'hand.{nm}', skin, [('ellipse', (*P(side * 11.5 - 0.1, 49), *P(side * 17.5 + 0.1, 56)))] if side > 0 else [('ellipse', (*P(side * 17.5, 49), *P(side * 11.5, 56)))])
+    sp.part('head', skin, [('ellipse', (*P(-7, 6), *P(7, 23)))] if f > 0 else [('ellipse', (*P(7, 6), *P(-7, 23)))])
+    sp.part('eye', (40, 30, 50, 255), [('rect', (*P(2, 13), *P(4, 15)))] if f > 0 else [('rect', (*P(4, 13), *P(2, 15)))])
+    sp.part('hair', hair, [('poly', [P(-9, 14), P(-8, 3), P(0, -1), P(8, 2), P(10, 12), P(6, 7), P(-2, 8), P(-5, 12)])] + ([('poly', [P(-9, 10), P(-12, 40), P(-6, 36), P(-6, 14)])] if robe else []))
+    if weapon == 'blade':
+        sp.part('weapon', STEEL, [('poly', [P(13, 53), P(17, 51), P(44, 82), P(41, 86), P(36, 84)]), ('rect', (*P(10, 50), *P(19, 53)))] if f > 0 else [('poly', [P(13, 53), P(17, 51), P(44, 82), P(41, 86), P(36, 84)]), ('rect', (*P(19, 50), *P(10, 53)))])
+    elif weapon == 'staff':
+        sp.part('weapon', WOOD, [('line', ([P(15, 92), P(18, 4)], 2 * k)), ('ellipse', (*P(14, -2), *P(22, 7)) if f > 0 else (*P(22, -2), *P(14, 7)))])
+
+
+def main_extra():
+    # 9. Front-view swordsman with a long coat and a heavy blade held low, on a WHITE background
+    sp = Sprite(112, 112)
+    humanoid_front(sp, 26, 8, 1, (150, 30, 40, 255), (40, 40, 52, 255), (150, 30, 40, 255), weapon='blade', facing='left', scarf=(30, 30, 36, 255))
+    save('swordsman_white', sp, background=(255, 255, 255, 255))
+    # 10. Robed mage with a staff and floating glyphs (islands)
+    sp = Sprite(104, 112)
+    humanoid_front(sp, 32, 10, 1, (50, 70, 160, 255), DBLUE, (230, 230, 245, 255), hair=(200, 205, 225, 255), weapon='staff', facing='right', robe=True)
+    for gx, gy in ((10, 40), (8, 62), (16, 84), (86, 50), (90, 74), (84, 92)):
+        sp.part('effect', (110, 170, 250, 255), [('ellipse', (gx, gy, gx + 5, gy + 6))])
+    save('mage_front', sp)
+    # 11. Golem: blocky body, one huge arm
+    sp = Sprite(112, 104)
+    STONE = (130, 124, 112, 255)
+    sp.part('leg.upper.back', shade(STONE, 0.9), [('rect', (40, 62, 52, 80))])
+    sp.part('leg.lower.back', shade(STONE, 0.9), [('rect', (38, 78, 54, 98))])
+    sp.part('leg.upper.front', STONE, [('rect', (60, 62, 72, 80))])
+    sp.part('leg.lower.front', STONE, [('rect', (58, 78, 74, 98))])
+    sp.part('torso', STONE, [('poly', [(34, 24), (78, 24), (82, 44), (74, 66), (38, 66), (30, 44)])])
+    sp.part('head', STONE, [('rect', (46, 8, 66, 26))])
+    sp.part('hair', (90, 220, 210, 255), [('poly', [(48, 9), (51, 0), (55, 8), (58, 1), (61, 9)])])
+    sp.part('arm.upper.back', STONE, [('rect', (18, 24, 34, 46))])
+    sp.part('arm.lower.back', STONE, [('rect', (8, 44, 32, 72))])
+    sp.part('hand.back', shade(STONE, 1.1), [('ellipse', (4, 68, 30, 92))])
+    sp.part('arm.upper.front', STONE, [('rect', (78, 24, 90, 44))])
+    sp.part('arm.lower.front', STONE, [('rect', (80, 42, 92, 62))])
+    sp.part('hand.front', shade(STONE, 1.1), [('ellipse', (78, 60, 96, 76))])
+    sp.part('effect', (90, 220, 210, 255), [('poly', [(52, 36), (56, 30), (60, 36), (56, 44)])])
+    save('golem', sp)
+    # 12. Ghost: hooded cloak, tendrils, no legs, floating crystals and a crescent
+    sp = Sprite(104, 104)
+    CL = (60, 72, 96, 255)
+    sp.part('tail.1', shade(CL, 0.8), [('line', ([(40, 70), (30, 86), (36, 98)], 5)), ('line', ([(60, 72), (66, 90), (58, 100)], 5))])
+    sp.part('torso', CL, [('poly', [(36, 26), (66, 26), (74, 60), (64, 80), (40, 80), (30, 60)])])
+    sp.part('arm.upper.back', CL, [('poly', [(36, 30), (22, 44), (16, 54), (24, 56), (38, 40)])])
+    sp.part('arm.upper.front', CL, [('poly', [(64, 30), (80, 42), (88, 52), (80, 56), (64, 40)])])
+    sp.part('head', shade(CL, 0.7), [('ellipse', (40, 8, 62, 32))])
+    sp.part('eye', (140, 240, 255, 255), [('rect', (46, 18, 49, 20)), ('rect', (53, 18, 56, 20))])
+    sp.part('effect', (150, 230, 255, 255), [('ellipse', (40, 0, 62, 10))])
+    for gx, gy in ((10, 30), (90, 24), (12, 70), (92, 66), (84, 88)):
+        sp.part('effect', (150, 200, 230, 255), [('poly', [(gx, gy), (gx + 3, gy - 4), (gx + 6, gy), (gx + 3, gy + 5)])])
+    save('ghost', sp)
+    # 13. Dragon, side view facing right: wings (far one behind), neck, head, curled tail, four legs, smoke
+    sp = Sprite(140, 104)
+    G = (60, 140, 70, 255)
+    sp.part('wing.far', shade(G, 0.7), [('poly', [(70, 40), (96, 6), (112, 14), (88, 44)])])
+    sp.part('leg.hind.far', shade(G, 0.8), [('poly', [(46, 64), (54, 64), (52, 92), (44, 92)])])
+    sp.part('leg.front.far', shade(G, 0.8), [('poly', [(88, 64), (96, 64), (96, 92), (88, 92)])])
+    sp.part('tail', G, [('line', ([(40, 58), (20, 70), (14, 86), (30, 94), (44, 88)], 7))])
+    sp.part('torso', G, [('ellipse', (36, 40, 104, 74))])
+    sp.part('neck', G, [('poly', [(92, 46), (104, 26), (112, 30), (102, 54)])])
+    sp.part('head', G, [('poly', [(102, 18), (124, 20), (130, 28), (112, 32), (100, 28)]), ('poly', [(104, 18), (100, 6), (108, 16)])])
+    sp.part('leg.hind.near', G, [('poly', [(52, 62), (62, 62), (62, 96), (50, 96)])])
+    sp.part('leg.front.near', G, [('poly', [(92, 62), (102, 62), (104, 96), (94, 96)])])
+    sp.part('wing.near', (70, 160, 80, 255), [('poly', [(60, 44), (40, 4), (20, 10), (34, 24), (14, 30), (44, 48)])])
+    for gx, gy in ((132, 14), (136, 6)):
+        sp.part('effect', (120, 220, 140, 255), [('ellipse', (gx - 2, gy, gx + 2, gy + 5))])
+    save('dragon', sp)
+
+
 def main():
     # 1. Conventional JRPG warrior with a sword
     sp = Sprite(64, 64)
@@ -232,6 +328,7 @@ def main():
     sp = Sprite(160, 200, scale=4)
     humanoid(sp, 10, 30, 2.9, RED, BROWN, RED, weapon='sword')
     save('illustrated', sp, smooth=True)
+    main_extra()
 
 
 if __name__ == '__main__':

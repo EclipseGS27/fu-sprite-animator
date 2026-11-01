@@ -15,12 +15,25 @@ Open the Studio (token controls → running-figure button, or Settings → Sprit
 or an actor sheet's header menu → *Sprite animation*). Click **Choose sprite** and pick a PNG or
 WebP with a transparent background. The file is used exactly as it is.
 
-- The character should face **right** or **left** in a side or three-quarter view. Set
-  *Character faces* in the Inspector (click empty space to see rig settings).
+- **Solid background?** If the file has a white (or other single-colour) background instead of
+  transparency, the Studio offers to save a transparent copy next to it and use that. Only the
+  background connected to the image edges is cleared; your original file is untouched.
+- Side, three-quarter and front views all work. The character's facing is guessed from the side
+  its weapon is on (you can change *Character faces* in the Inspector — click empty space).
 - Pixel art: keep *Rendering: Pixel art*. Painted, high-resolution sprites: *Illustration*.
 
-## 2. Fit the skeleton (Rig mode, key 1)
-A humanoid skeleton is placed from the character's outline. Fix it by dragging:
+## 2. Check the automatic rig, then fit it (Rig mode, key 1)
+The Studio looks at the silhouette and proposes a skeleton: it finds the head and neck, where
+the legs separate, the feet, the hands (or the hilt of a weapon) and a blade, staff or spear.
+Floating pieces (sparks, glyphs, smoke) are ignored for the skeleton and later follow the
+nearest part. A banner shows what it found and how sure it is (●●● sure, ●○○ guessed):
+- **Keep** — accept it and fix details by hand.
+- **Use proportions instead** — a plain template stretched over the character, if the
+  detection went wrong (for unusual poses it can be the better start).
+- **Discard** — go back to the rig you had (after a re-run).
+The **bone** button in the Skeleton panel runs the automatic rig again at any time.
+
+Then fix it by dragging:
 - **a joint** (round handle) — moves where the bone starts. The bone keeps its tip; if the
   parent ends at that joint, the parent follows. Perfect for "put the elbow on the elbow".
 - **a tip** (selected bone's end) — aims and lengthens the bone.
@@ -43,8 +56,15 @@ Then switch to **Paint** to fix what it got wrong:
 - **Bucket**: click a region to give the whole connected region to the selected bone.
 - The coloured overlay shows which bone owns which pixels.
 
-Typical fixes: sleeve pixels that went to the torso, hair that went to the arm, the sword's
-hilt that went to the hand (the blade must belong to *Weapon*).
+The wand grows every bone's region from the bone itself through the art and stops at outlines
+and colour edges, so once the joints are right most pixels land on the right bone. Typical fixes:
+sleeve pixels that went to the torso, hair that went to the arm, a scarf or cape that went to an
+arm, the sword's hilt that went to the hand (the blade must belong to *Weapon*).
+
+**Hidden** (Paint mode): shows, for the selected bone, its own pixels, the automatic fill
+behind the parts in front of it (cyan) and your additions (gold). Paint to extend the part
+further under its neighbours — for example the torso under a big arm that will swing far away.
+Right-click removes additions. This never changes what you see at rest.
 
 ## 4. Choose how each part moves (Inspector)
 - **Rigid**: moves as one piece. Crisp — best for the head, hands, feet and weapons.

@@ -11,20 +11,36 @@ description: Use when working on automatic rigging or sprite analysis in fu-spri
 - Never assume humanoid: templates are data (`src/rig/templates.ts`); `custom` must always work.
 - Never silently produce a broken rig: run `validateRig` and surface issues.
 
-## Pipeline today (Phase 2)
-1. `bodyBounds` (rows whose longest run ≥ 25% of the widest; 10th/90th percentile edges) — ignores thin weapons.
-2. `fitTemplate` maps normalized template joints into those bounds (mirrored for left-facing).
-3. `autoAssign`: nearest bone segment (minus per-part `reach` × body height), then `cleanIslands`.
-4. `computeFills`: BFS from each part into eligible covered pixels within its convex hull and `0.15 × bodyHeight`.
-5. `buildAtlas` packs own + fill pixels; `buildPartGeometry` grids them.
+## Pipeline today (Phase 3)
+1. Optional `detectBackground` / `removeBackground` (import step, writes a transparent copy).
+2. `detectHumanoid` (src/sprite/landmarks.ts) on the **main body** (components ≥ 15 % of the largest):
+   weapon = longest straight stretch from a free skeleton tip that is far from the thick core and
+   not standing on the ground; facing = side of the body the weapon is on; neck = narrowest row
+   below the first widest row (hat brim/hair/head), else the biggest widening (narrow head on
+   broad shoulders); legs = longest span of rows with two runs under the torso; hands = furthest
+   protrusions (sanity-checked) or the weapon hilt.
+3. `humanoidFromLandmarks` places the humanoid template's bones; `fitTemplate` (proportions)
+   is the fallback and the "Use proportions instead" option.
+4. `geodesicAssign` (edge weight 8): Dijkstra from each bone's segment core through opaque
+   pixels, step cost × (1 + λ·colour difference); then `cleanIslands` and `adoptStrays`
+   (floating pieces go to the nearest part across empty space).
+5. `computeFills` (+ GM hints from the Hidden tool), `buildAtlas`, `buildPartGeometry`.
 
 ## Measuring (do this before and after any change)
-- Ground truth: `test/sprites/<name>.parts.png` + `.parts.json` from `tools/gen_test_sprites.py`.
-- `assignmentAccuracy(name, rig, image)` in `test/unit/groundtruth.ts`. Baseline (Phase 2): warrior 75.7%, mage 58.4%, greatsword 69.4%, knight 68.6%, tiny 72.1%, illustrated 74.2%. Floors are enforced in `test/unit/rig.test.ts` — raise them when you improve, never lower them silently.
-- Don't overfit the template to the generator's sprites: change one thing, measure all six.
+- Ground truth: `test/sprites/<name>.parts.png` + `.parts.json` from `tools/gen_test_sprites.py`
+  (unknown roles such as floating effects are not scored).
+- `assignmentAccuracy` / `labelsAccuracy` / `oracleSegments` in `test/unit/groundtruth.ts`.
+  Phase 3 numbers: warrior 82, mage 57, greatsword 84, knight 77, tiny 74, illustrated 75,
+  swordsman_white 62, mage_front 46, golem 42 (mean 66.6 vs 56.3 proportions-only). Floors in
+  `test/unit/rig.test.ts`; never lower them silently.
+- Visual review: `SPRITES=swordsman_white,golem npm run film`-style tool:
+  `OUT=… SPRITES=… npx vitest run -c vitest.tools.config.ts test/tools/landmarks.test.ts`.
+- The fixtures imitate the user's examples (front view, white background, floating effects,
+  heavy weapons, creatures). Test on the user's real sprites when they are in the repo.
 
-## Phase 3 directions
+## Next directions
 - Landmarks from the silhouette: row/column width profiles (neck = narrowest row under the head blob), distance transform + skeletonization (medial axis) for limb axes and extremities, long thin components for weapons.
 - Colour/edge cues to separate a sleeve from the torso (pixels connected by similar colour to a limb's seed region).
-- Run analysis in a Web Worker for large images (functions are pure and take typed arrays).
-- Hidden-region clone tool (GM picks a source rectangle) and a fill brush.
+- A Web Worker only if real sprites above ~1000 px make import slow (576×480 takes 300 ms).
+- Cape/scarf detection (thin attached flaps at shoulder height) so they are not taken for arms.
+- A clone-from-source hidden-region tool if hints + automatic fill are not enough.

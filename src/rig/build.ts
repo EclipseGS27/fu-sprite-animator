@@ -4,7 +4,7 @@ import type { RigDocument } from '../core/types';
 import { buildAtlas, type Atlas } from '../sprite/atlas';
 import { computeFills, type PartFill } from '../sprite/fill';
 import type { ImageDataLike } from '../sprite/image';
-import { rigLabels } from './document';
+import { rigHints, rigLabels } from './document';
 
 /**
  * Everything derived from a rig and its image that the renderer needs. Built once per rig
@@ -40,6 +40,7 @@ export function buildRig(rig: RigDocument, image: ImageDataLike, labels: Uint8Ar
 	const fills = computeFills(image, labels, order, {
 		radius: Math.max(2, rig.metrics.bodyHeight * 0.15),
 		enabled: new Set(parts.filter((p) => p.fill).map((p) => p.label)),
+		hints: rigHints(rig),
 	});
 	const atlas = buildAtlas(image, labels, fills, order);
 	const bonesWithParts = new Set(parts.map((p) => skeleton.index.get(p.bone)!));

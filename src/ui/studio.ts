@@ -3,7 +3,7 @@ import { wrapDeg } from '../core/math';
 import type { BoneData, ClipDocument, PartData, PhaseTiming, RigDocument, TemplateId } from '../core/types';
 import { CATEGORY_LABELS, getClip, listClips } from '../presets';
 import { buildRig } from '../rig/build';
-import { assignPixels, cloneRig, createRig, parseRig, rigLabels } from '../rig/document';
+import { assignPixels, cloneRig, createRig, lastReport, parseRig, proposeRig, rigHints, rigLabels, type RigReport } from '../rig/document';
 import { addBone, childrenOf, deleteBone, descendants, ensurePart, moveJoint, movePart, moveSubtree, moveTip, removePart, reparent, updateBone, updatePart } from '../rig/edit';
 import { bonesToFrames, tipOf } from '../rig/frames';
 import { History } from '../rig/history';
@@ -12,6 +12,7 @@ import { isUsable, validateRig, type RigIssue } from '../rig/validate';
 import { RigAsset, RigView, loadImageData } from '../render/pixi';
 import { floodAssign, paintCircle } from '../sprite/ownership';
 import { encodeRle } from '../sprite/rle';
+import { detectBackground, removeBackground } from '../sprite/background';
 import { clear, h, ibtn, icon, slider } from './dom';
 import { Timeline } from './timeline';
 import { Viewport, type BoneGizmo, type Handle } from './viewport';
@@ -83,7 +84,11 @@ export class Studio {
 	private savedSnapshot = '';
 
 	mode: Mode = 'rig';
-	tool: 'select' | 'add' | 'brush' | 'bucket' = 'select';
+	tool: 'select' | 'add' | 'brush' | 'bucket' | 'hidden' = 'select';
+	private hints: Uint8Array | null = null;
+	/** An automatic rig waiting for the GM's verdict. */
+	private proposal: { report: RigReport; previous: string | null } | null = null;
+	private elBanner!: HTMLElement;
 	selected: string | null = null;
 	private hover: Handle | null = null;
 	private drag: { kind: string; id: string; lastX: number; lastY: number; startAngle?: number; startRot?: number; startX?: number; startY?: number } | null = null;
@@ -159,7 +164,8 @@ export class Studio {
 			{ class: 'fusa-empty' },
 			h('div', { class: 'fusa-empty-card' }, icon('image'), h('b', null, 'Import a character sprite'), h('p', null, 'PNG or WebP with a transparent background. Pixel art and illustrations both work. The file is used exactly as it is: nothing is resized, recoloured or repainted.'), h('button', { type: 'button', class: 'fusa-btn primary', onclick: () => this.importImage() }, icon('image'), 'Choose sprite'), h('button', { type: 'button', class: 'fusa-btn', onclick: () => this.openDialog() }, icon('open'), 'Open a saved rig')),
 		);
-		center.append(this.elToolbar, this.elEmpty, this.elStatus);
+		this.elBanner = h('div', { class: 'fusa-banner' });
+		center.append(this.elToolbar, this.elEmpty, this.elBanner, this.elStatus);
 		this.viewport = new Viewport(center, {
 			down: (x, y, e) => this.onDown(x, y, e),
 			move: (x, y, e) => this.onMove(x, y, e),
@@ -181,6 +187,7 @@ export class Studio {
 			{ class: 'fusa-toolrow' },
 			ibtn('add', 'Add a bone (drag in the view from joint to tip)', () => this.setTool(this.tool === 'add' ? 'select' : 'add'), { class: 'tool-add' }),
 			ibtn('trash', 'Delete the selected bone (Del)', () => this.deleteSelected()),
+			ibtn('bone', 'Auto-rig: find the joints in the sprite again (you can keep or discard the result)', () => void this.autoRig(), { class: 'tool-auto' }),
 			ibtn('wand', 'Assign every pixel to its nearest bone (replaces painted regions)', () => this.reassign()),
 			h(
 				'select',
@@ -207,6 +214,49 @@ export class Studio {
 		this.renderTransport();
 		this.renderToolbar();
 		this.renderStatus();
+		this.renderBanner();
+	}
+
+	private renderBanner(): void {
+		const e = this.elBanner;
+		clear(e);
+		const p = this.proposal;
+		e.classList.toggle('show', !!p && !!this.rig);
+		if (!p || !this.rig) return;
+		const dots = (v: number) => '●'.repeat(Math.max(1, Math.round(v * 3))) + '○'.repeat(3 - Math.max(1, Math.round(v * 3)));
+		const groups = Object.entries(p.report.confidence).map(([k, v]) => h('span', { class: 'conf', title: `${Math.round(v * 100)}%` }, `${k} ${v > 0 ? dots(v) : '—'}`));
+		e.append(
+			h('div', { class: 'fusa-banner-text' }, h('b', null, p.report.method === 'landmarks' ? 'Automatic rig' : 'Rig from proportions'), h('span', null, `Faces ${this.rig.facing}.`), ...groups, ...p.report.notes.map((n) => h('small', null, n))),
+			h(
+				'div',
+				{ class: 'fusa-banner-actions' },
+				h('button', { type: 'button', class: 'fusa-btn primary small', onclick: () => ((this.proposal = null), this.renderBanner()) }, 'Keep'),
+				p.report.method === 'landmarks' ? h('button', { type: 'button', class: 'fusa-btn small', onclick: () => void this.autoRig(false) }, 'Use proportions instead') : null,
+				p.previous ? h('button', { type: 'button', class: 'fusa-btn subtle small', onclick: () => this.discardProposal() }, 'Discard') : null,
+			),
+		);
+	}
+
+	/** Find the joints again (or fit by proportions) and offer the result. */
+	async autoRig(detect = true): Promise<void> {
+		if (!this.rig || !this.image) return;
+		const previous = this.proposal?.previous ?? this.snapshot();
+		const p = proposeRig(this.image, this.rig.template === 'custom' ? 'custom' : 'humanoid', 'auto', detect);
+		Object.assign(this.rig, { bones: p.bones, parts: p.parts, ownership: p.ownership, metrics: p.metrics, facing: p.facing });
+		this.labels = rigLabels(this.rig);
+		this.selected = null;
+		this.proposal = { report: p.report, previous };
+		this.commit();
+	}
+
+	private discardProposal(): void {
+		const prev = this.proposal?.previous ?? null;
+		this.proposal = null;
+		if (prev) {
+			this.restore(prev);
+			this.history.record(prev);
+		}
+		this.renderBanner();
 	}
 
 	private renderHeader(): void {
@@ -468,7 +518,13 @@ export class Studio {
 		if (this.mode === 'rig') tools.push(h('div', { class: 'fusa-seg small' }, h('button', { type: 'button', class: this.tool !== 'add' ? 'active' : '', onclick: () => this.setTool('select') }, 'Move'), h('button', { type: 'button', class: this.tool === 'add' ? 'active' : '', onclick: () => this.setTool('add') }, icon('add'), 'Add bone')));
 		if (this.mode === 'paint') {
 			tools.push(
-				h('div', { class: 'fusa-seg small' }, h('button', { type: 'button', class: this.tool !== 'bucket' ? 'active' : '', onclick: () => this.setTool('brush') }, icon('brush'), 'Brush'), h('button', { type: 'button', class: this.tool === 'bucket' ? 'active' : '', onclick: () => this.setTool('bucket') }, icon('bucket'), 'Bucket')),
+				h(
+					'div',
+					{ class: 'fusa-seg small' },
+					h('button', { type: 'button', class: this.tool === 'brush' ? 'active' : '', onclick: () => this.setTool('brush') }, icon('brush'), 'Brush'),
+					h('button', { type: 'button', class: this.tool === 'bucket' ? 'active' : '', onclick: () => this.setTool('bucket') }, icon('bucket'), 'Bucket'),
+					h('button', { type: 'button', class: this.tool === 'hidden' ? 'active' : '', title: 'Extend the selected part under the parts in front of it (what shows when they move away). Cyan: the automatic fill; gold: your additions. Right-click removes.', onclick: () => this.setTool('hidden') }, icon('eye'), 'Hidden'),
+				),
 				slider('Size', this.brushSize, 0.5, 12, 0.5, (v) => (this.brushSize = v), (v) => `${v}px`),
 			);
 		}
@@ -496,12 +552,25 @@ export class Studio {
 
 	/** Load an image URL and start a new rig on it. */
 	async newFromImage(src: string, name?: string): Promise<void> {
-		const { data } = await loadImageData(src);
+		let { data } = await loadImageData(src);
 		if (data.width * data.height > 4096 * 4096) throw new Error('This image is too large (over 4096×4096).');
 		const base = name ?? decodeURIComponent(src.split('/').pop() ?? 'Sprite').replace(/\.[a-z0-9]+(\?.*)?$/i, '');
+		const bg = detectBackground(data);
+		if (bg) {
+			const [r, g, b] = bg.color;
+			const ok = await this.host.confirm('Solid background', `This sprite has a solid background (rgb ${r}, ${g}, ${b}) instead of transparency, so it would show as a box on the map. Save a transparent copy and use that? Your original file is not changed.`);
+			if (ok) {
+				const { image } = removeBackground(data, bg);
+				const canvas = document.createElement('canvas');
+				canvas.width = image.width;
+				canvas.height = image.height;
+				canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
+				src = await this.host.storeImage(`${base.replace(/[^a-z0-9_-]+/gi, '_')}-transparent.png`, canvas.toDataURL('image/png'));
+				data = (await loadImageData(src)).data;
+			}
+		}
 		const rig = createRig({ name: base, src, image: data, template: 'humanoid' });
 		this.setRig(rig, data, false);
-		this.host.notify('Skeleton placed from the humanoid template. Drag joints onto the art, then press the wand to reassign pixels.');
 	}
 
 	/** Show a rig (and its image). */
@@ -509,8 +578,11 @@ export class Studio {
 		this.rig = rig;
 		this.image = image;
 		this.labels = rigLabels(rig);
+		this.hints = rigHints(rig);
 		this.selected = null;
 		this.pose.clear();
+		const report = lastReport.get(rig);
+		this.proposal = report && !saved ? { report, previous: null } : null;
 		this.history.reset(this.snapshot());
 		this.savedSnapshot = saved ? this.snapshot() : '';
 		this.rebuild();
@@ -530,6 +602,7 @@ export class Studio {
 	commit(): void {
 		if (!this.rig || !this.labels) return;
 		this.rig.ownership = encodeRle(this.labels);
+		this.rig.fillHints = this.hints && this.hints.some((v) => v) ? encodeRle(this.hints) : null;
 		this.rig.updated = Date.now();
 		this.history.record(this.snapshot());
 		this.needsBuild = true;
@@ -542,6 +615,7 @@ export class Studio {
 		if (!snap || !this.image) return;
 		this.rig = JSON.parse(snap) as RigDocument;
 		this.labels = rigLabels(this.rig);
+		this.hints = rigHints(this.rig);
 		if (this.selected && !this.boneOf(this.selected)) this.selected = null;
 		this.needsBuild = true;
 		this.validate();
@@ -584,6 +658,22 @@ export class Studio {
 
 	private refreshRegions(): void {
 		if (!this.rig) return;
+		if (this.mode === 'paint' && this.tool === 'hidden') {
+			// the selected part (its colour), its automatic fill (cyan) and the GM's additions (gold)
+			const part = this.partOf(this.selected);
+			const W = this.rig.image.width;
+			const H = this.rig.image.height;
+			const show = new Uint8Array(W * H);
+			if (part && this.labels) {
+				for (let i = 0; i < show.length; i++) if (this.labels[i] === part.label) show[i] = 1;
+				for (const i of this.view?.build.fills.get(part.label)?.indices ?? []) show[i] = 2;
+				if (this.hints) for (let i = 0; i < show.length; i++) if (this.hints[i] === part.label) show[i] = 3;
+			}
+			const own = this.boneOf(this.selected)?.color ?? '#c9a7ff';
+			this.viewport.setRegions(show, W, H, (l) => (l === 1 ? own : l === 2 ? '#5ee6ff' : '#f2c45a'), true);
+			this.viewport.setRegionAlpha(0.6);
+			return;
+		}
 		const colour = new Map(this.rig.parts.map((p) => [p.label, this.boneOf(p.bone)?.color ?? '#c9a7ff']));
 		const show = this.showRegions && (this.mode === 'rig' || this.mode === 'paint');
 		this.viewport.setRegions(this.labels, this.rig.image.width, this.rig.image.height, (l) => colour.get(l) ?? '#ff00ff', show);
@@ -610,6 +700,7 @@ export class Studio {
 		this.tool = tool;
 		this.renderToolbar();
 		this.renderStatus();
+		this.refreshRegions();
 	}
 
 	select(id: string | null): void {
@@ -697,6 +788,14 @@ export class Studio {
 			this.drag = { kind, id: hit.id, lastX: x, lastY: y };
 			return;
 		}
+		if (this.mode === 'paint' && this.tool === 'hidden') {
+			const part = this.partOf(this.selected);
+			if (!part) return this.host.notify('Select the bone whose part should extend under its neighbours.', 'info');
+			this.hints ??= new Uint8Array(this.rig.image.width * this.rig.image.height);
+			this.drag = { kind: 'hint', id: String(right ? -part.label : part.label), lastX: x, lastY: y };
+			this.hintAt(x, y, right ? -part.label : part.label);
+			return;
+		}
 		if (this.mode === 'paint') {
 			const target = this.paintLabel(right);
 			if (target === null) return;
@@ -739,6 +838,13 @@ export class Studio {
 			d.lastX = x;
 			d.lastY = y;
 			this.renderInspector();
+			return;
+		}
+		if (this.mode === 'paint' && d.kind === 'hint') {
+			const steps = Math.max(1, Math.ceil(Math.hypot(x - d.lastX, y - d.lastY) / Math.max(0.5, this.brushSize / 2)));
+			for (let k = 1; k <= steps; k++) this.hintAt(d.lastX + ((x - d.lastX) * k) / steps, d.lastY + ((y - d.lastY) * k) / steps, Number(d.id));
+			d.lastX = x;
+			d.lastY = y;
 			return;
 		}
 		if (this.mode === 'paint' && d.kind === 'paint') {
@@ -835,6 +941,27 @@ export class Studio {
 		}
 		const part = this.partOf(b.id) ?? ensurePart(this.rig, b.id);
 		return part.label;
+	}
+
+	/** Mark (label > 0) or unmark (label < 0) hidden-region hints under the brush. */
+	private hintAt(x: number, y: number, label: number): void {
+		if (!this.hints || !this.image || !this.rig) return;
+		const W = this.rig.image.width;
+		const r = this.brushSize;
+		let changed = false;
+		for (let py = Math.max(0, Math.floor(y - r)); py <= Math.min(this.rig.image.height - 1, Math.ceil(y + r)); py++) {
+			for (let px = Math.max(0, Math.floor(x - r)); px <= Math.min(W - 1, Math.ceil(x + r)); px++) {
+				if ((px + 0.5 - x) ** 2 + (py + 0.5 - y) ** 2 > r * r) continue;
+				const i = py * W + px;
+				if (this.image.data[i * 4 + 3] !== 255) continue;
+				const v = label > 0 ? label : this.hints[i] === -label ? 0 : this.hints[i]!;
+				if (this.hints[i] !== v) {
+					this.hints[i] = v;
+					changed = true;
+				}
+			}
+		}
+		if (changed) this.refreshRegions();
 	}
 
 	private paintAt(x: number, y: number, label: number): void {
@@ -966,7 +1093,7 @@ export class Studio {
 			this.poseDirty = false;
 		}
 		if (v.dirty) v.render(this.viewport.app.renderer);
-		const brush = this.mode === 'paint' && this.cursor && this.tool === 'brush' ? { x: this.cursor.x, y: this.cursor.y, r: this.brushSize } : null;
+		const brush = this.mode === 'paint' && this.cursor && (this.tool === 'brush' || this.tool === 'hidden') ? { x: this.cursor.x, y: this.cursor.y, r: this.brushSize } : null;
 		this.viewport.drawBones(this.gizmos(), this.showBones || this.mode === 'rig' || this.mode === 'pose', brush);
 	}
 

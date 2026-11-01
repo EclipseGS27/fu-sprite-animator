@@ -11,11 +11,14 @@ import { computeFills, convexHull, insideHull } from '../../src/sprite/fill';
 import { autoAssign, cleanIslands, countUnassigned, floodAssign, paintCircle } from '../../src/sprite/ownership';
 import { decodeRle, encodeRle } from '../../src/sprite/rle';
 import { SPRITES, readPng, spritePath } from './png';
+import { detectBackground, removeBackground } from '../../src/sprite/background';
 import { assignmentAccuracy, groundTruthRoles } from './groundtruth';
 
-const HUMANOIDS = new Set(['warrior', 'mage', 'greatsword', 'knight', 'tiny', 'illustrated']);
+const HUMANOIDS = new Set(['warrior', 'mage', 'greatsword', 'knight', 'tiny', 'illustrated', 'swordsman_white', 'mage_front', 'golem']);
 const rigFor = (name: string) => {
-	const image = readPng(spritePath(name));
+	let image = readPng(spritePath(name));
+	const bg = detectBackground(image);
+	if (bg) image = removeBackground(image, bg).image;
 	const rig = createRig({ name, src: `${name}.png`, image, template: HUMANOIDS.has(name) ? 'humanoid' : 'custom' });
 	return { image, rig };
 };
@@ -248,10 +251,24 @@ describe('history', () => {
 
 describe('auto assignment quality (baseline, Phase 2)', () => {
 	// Template fitted to body bounds + nearest-bone assignment. Phase 3 should raise these.
-	const floor: Record<string, number> = { warrior: 0.72, mage: 0.55, greatsword: 0.64, knight: 0.56, tiny: 0.63, illustrated: 0.7 };
+	// Phase 3 (landmarks + edge-aware geodesic assignment). Measured: warrior 82, mage 57,
+	// greatsword 84, knight 77, tiny 74, illustrated 75, swordsman 62, front mage 46, golem 42.
+	const floor: Record<string, number> = { warrior: 0.79, mage: 0.54, greatsword: 0.8, knight: 0.73, tiny: 0.7, illustrated: 0.72, swordsman_white: 0.58, mage_front: 0.42, golem: 0.38 };
 	it.each(Object.keys(floor))('%s stays above its baseline accuracy', (name) => {
 		const { image, rig } = rigFor(name);
 		expect(assignmentAccuracy(name, rig, image)).toBeGreaterThan(floor[name]!);
+	});
+	it('the landmark rig beats the proportions-only rig on average', () => {
+		let a = 0;
+		let b = 0;
+		for (const name of Object.keys(floor)) {
+			let image = readPng(spritePath(name));
+			const bg = detectBackground(image);
+			if (bg) image = removeBackground(image, bg).image;
+			a += assignmentAccuracy(name, createRig({ name, src: name, image, template: 'humanoid' }), image);
+			b += assignmentAccuracy(name, createRig({ name, src: name, image, template: 'humanoid', detect: false }), image);
+		}
+		expect(a).toBeGreaterThan(b + 0.5); // > 5 points better on average over 9 sprites
 	});
 });
 

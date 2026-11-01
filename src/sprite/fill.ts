@@ -22,6 +22,8 @@ export interface FillOptions {
 	radius: number;
 	/** Labels that get a fill (default: all). */
 	enabled?: Set<number>;
+	/** GM-painted extension areas: pixel → label that should extend there (still only under higher, opaque parts). */
+	hints?: Uint8Array | null;
 }
 
 /** Convex hull (monotone chain) of points, counter-clockwise in y-up terms. */
@@ -96,12 +98,19 @@ export function computeFills(img: ImageDataLike, labels: Uint8Array, order: numb
 		const corners: [number, number][] = [];
 		for (const [y, [x0, x1]] of rows) corners.push([x0, y], [x1 + 1, y], [x0, y + 1], [x1 + 1, y + 1]);
 		const hull = convexHull(corners);
-		const eligible = (j: number): boolean => {
+		const hints = opts.hints;
+		const hinted = (j: number) => !!hints && hints[j] === label;
+		const covered = (j: number): boolean => {
 			const l = labels[j]!;
 			if (!l || l === label) return false;
 			const r = rank.get(l);
 			if (r === undefined || r <= myRank) return false;
-			if (data[j * 4 + 3] !== 255) return false;
+			return data[j * 4 + 3] === 255;
+		};
+		const eligible = (j: number, step: number): boolean => {
+			if (!covered(j)) return false;
+			if (hinted(j)) return true;
+			if (step > reach) return false;
 			const x = j % w;
 			return insideHull(hull, x + 0.5, (j - x) / w + 0.5);
 		};
@@ -113,7 +122,8 @@ export function computeFills(img: ImageDataLike, labels: Uint8Array, order: numb
 			queue.push(i);
 		}
 		const filled: number[] = [];
-		for (let step = 1; step <= reach && queue.length; step++) {
+		const maxSteps = hints ? w + h : reach;
+		for (let step = 1; step <= maxSteps && queue.length; step++) {
 			const next: number[] = [];
 			for (const i of queue) {
 				const x = i % w;
@@ -126,7 +136,7 @@ export function computeFills(img: ImageDataLike, labels: Uint8Array, order: numb
 						const nx = x + dx;
 						if (nx < 0 || nx >= w) continue;
 						const j = ny * w + nx;
-						if (dist[j] !== -1 || !eligible(j)) continue;
+						if (dist[j] !== -1 || !eligible(j, step)) continue;
 						dist[j] = step;
 						src[j] = src[i]!;
 						next.push(j);

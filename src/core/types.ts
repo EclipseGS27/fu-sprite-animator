@@ -93,6 +93,8 @@ export interface RigDocument {
 	parts: PartData[];
 	/** Pixel → part label map, row-major, run-length encoded (see sprite/rle.ts). */
 	ownership: string | null;
+	/** Optional: where the GM extended a part under its neighbours (same encoding; label = part). */
+	fillHints?: string | null;
 	render: RenderSettings;
 	/** Per-role amplitude multipliers applied to every clip on this rig (per-character adjustment). */
 	roleScale?: Record<RoleId, number>;

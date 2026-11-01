@@ -1,6 +1,9 @@
 import type { BoneData, Facing, PartData, RenderSettings, RigDocument, TemplateId } from '../core/types';
 import { bodyBounds, looksLikePixelArt, opaqueBounds, type ImageDataLike } from '../sprite/image';
-import { autoAssign, type BoneSegment } from '../sprite/ownership';
+import { type BoneSegment } from '../sprite/ownership';
+import { geodesicAssign } from '../sprite/geodesic';
+import { detectHumanoid, type HumanoidLandmarks } from '../sprite/landmarks';
+import { humanoidFromLandmarks } from './autorig';
 import { decodeRle, encodeRle } from '../sprite/rle';
 import { bonesToFrames, tipOf } from './frames';
 import { TEMPLATES, fitTemplate } from './templates';
@@ -30,7 +33,19 @@ export interface CreateRigOptions {
 	facing?: Facing;
 	/** Assign pixels to bones right away (default true). */
 	assign?: boolean;
+	/** Which way the character looks; default: guessed from the weapon (else right). */
+	/** Place bones on landmarks found in the silhouette (default true; humanoid only). */
+	detect?: boolean;
 }
+
+/** What automatic rigging found, for the Studio to show. */
+export interface RigReport {
+	method: 'landmarks' | 'proportions';
+	confidence: Record<string, number>;
+	notes: string[];
+}
+
+export const lastReport = new WeakMap<RigDocument, RigReport>();
 
 /** A new rig: the template fitted to the character's bounds and pixels assigned to the nearest bone. */
 export function createRig(o: CreateRigOptions): RigDocument {
@@ -38,8 +53,13 @@ export function createRig(o: CreateRigOptions): RigDocument {
 	const bounds = opaqueBounds(o.image) ?? full;
 	const body = bodyBounds(o.image) ?? full;
 	const template = TEMPLATES[o.template ?? 'humanoid'] ?? TEMPLATES.humanoid!;
-	const facing = o.facing ?? 'right';
-	const { bones, parts } = fitTemplate(template, body, facing);
+	let facing: Facing = o.facing ?? 'right';
+	let landmarks: HumanoidLandmarks | null = null;
+	if (template.id === 'humanoid' && o.detect !== false) {
+		landmarks = detectHumanoid(o.image, o.facing ?? 'auto');
+		if (landmarks) facing = landmarks.facing;
+	}
+	const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : fitTemplate(template, body, facing);
 	const now = Date.now();
 	const rig: RigDocument = {
 		format: RIG_FORMAT,
@@ -58,7 +78,9 @@ export function createRig(o: CreateRigOptions): RigDocument {
 		updated: now,
 		revision: 1,
 	};
+	if (landmarks) rig.metrics.bodyHeight = landmarks.body.height;
 	if (o.assign !== false) rig.ownership = encodeRle(assignPixels(rig, o.image));
+	lastReport.set(rig, landmarks ? { method: 'landmarks', confidence: landmarks.confidence, notes: landmarks.notes } : { method: 'proportions', confidence: {}, notes: [] });
 	return rig;
 }
 
@@ -66,6 +88,20 @@ export function createRig(o: CreateRigOptions): RigDocument {
 export function rigLabels(rig: RigDocument): Uint8Array {
 	const n = rig.image.width * rig.image.height;
 	return rig.ownership ? decodeRle(rig.ownership, n) : new Uint8Array(n);
+}
+
+/** The GM's hidden-region hints (null when none). */
+export function rigHints(rig: RigDocument): Uint8Array | null {
+	return rig.fillHints ? decodeRle(rig.fillHints, rig.image.width * rig.image.height) : null;
+}
+
+/**
+ * Propose a fresh skeleton for an existing rig's image: detect landmarks (humanoid) or fit the
+ * template, assign pixels. Returns the pieces to put into the rig and what was found.
+ */
+export function proposeRig(image: ImageDataLike, template: TemplateId, facing: Facing | 'auto', detect = true): Pick<RigDocument, 'bones' | 'parts' | 'ownership' | 'metrics' | 'facing' | 'template'> & { report: RigReport } {
+	const fresh = createRig({ name: 'proposal', src: '', image, template, facing: facing === 'auto' ? undefined : facing, detect });
+	return { bones: fresh.bones, parts: fresh.parts, ownership: fresh.ownership, metrics: fresh.metrics, facing: fresh.facing, template: fresh.template, report: lastReport.get(fresh)! };
 }
 
 /** Bone segments for automatic assignment: one per part, on its bone. */
@@ -82,9 +118,12 @@ export function segmentsFor(rig: RigDocument): BoneSegment[] {
 	return out;
 }
 
-/** Assign every visible pixel to the nearest part's bone. */
+/**
+ * Assign every visible pixel to a part: each bone grows from its own segment through the art,
+ * stopping at outlines and colour edges (edge-aware geodesic distance).
+ */
 export function assignPixels(rig: RigDocument, image: ImageDataLike): Uint8Array {
-	return autoAssign(image, segmentsFor(rig));
+	return geodesicAssign(image, segmentsFor(rig), { edgeWeight: 8 });
 }
 
 /** Next free part label (1–254). */
@@ -167,12 +206,14 @@ export function parseRig(input: unknown): RigDocument {
 			idleFps: Math.max(0, Math.min(60, num(render.idleFps, 12))),
 			resolution: Math.min(4, Math.max(0.25, num(render.resolution, 1))),
 		},
-		roleScale: o.roleScale && typeof o.roleScale === 'object' ? (o.roleScale as Record<string, number>) : undefined,
 		created: num(o.created, Date.now()),
 		updated: num(o.updated, Date.now()),
 		revision: Math.max(1, Math.round(num(o.revision, 1))),
 	};
+	if (typeof o.fillHints === 'string') rig.fillHints = o.fillHints;
+	if (o.roleScale && typeof o.roleScale === 'object') rig.roleScale = o.roleScale as Record<string, number>;
 	if (rig.ownership) rigLabels(rig); // throws if the map does not match the image
+	if (rig.fillHints) rigHints(rig);
 	return rig;
 }
 

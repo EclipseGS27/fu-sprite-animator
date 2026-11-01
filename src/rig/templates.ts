@@ -93,14 +93,12 @@ export function defaultPart(id: string, name: string, bone: string, label: numbe
 	return { id, name, bone, label, deform, softness: deform === 'mesh' ? 0.03 : 0, stiffness: 0, cell: 0, fill: true };
 }
 
-/** Place a template over the character's bounds. Returns bones (parent-first) and parts (draw order). */
-export function fitTemplate(t: RigTemplate, bounds: Rect, facing: Facing): { bones: BoneData[]; parts: PartData[] } {
-	const map = ([u, v]: [number, number]): [number, number] => [bounds.x + (facing === 'left' ? 1 - u : u) * bounds.width, bounds.y + v * bounds.height];
+/** Build a template's bones and parts with each bone placed at explicit points (sprite pixels). */
+export function buildFromTemplate(t: RigTemplate, place: (tb: TemplateBone) => { from: [number, number]; to: [number, number] }): { bones: BoneData[]; parts: PartData[] } {
 	const frames = new Map<string, Frame>();
 	const bones: BoneData[] = t.bones.map((tb) => {
-		const [ax, ay] = map(tb.from);
-		const [bx, by] = map(tb.to);
-		frames.set(tb.id, frameFromPoints(ax, ay, bx, by));
+		const { from, to } = place(tb);
+		frames.set(tb.id, frameFromPoints(from[0], from[1], to[0], to[1]));
 		return { id: tb.id, name: tb.name, parent: tb.parent, role: tb.role, x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, length: 0, color: tb.color };
 	});
 	applyFrames(bones, frames);
@@ -115,4 +113,10 @@ export function fitTemplate(t: RigTemplate, bounds: Rect, facing: Facing): { bon
 		return p;
 	});
 	return { bones, parts };
+}
+
+/** Place a template over the character's bounds (proportions only). */
+export function fitTemplate(t: RigTemplate, bounds: Rect, facing: Facing): { bones: BoneData[]; parts: PartData[] } {
+	const map = ([u, v]: [number, number]): [number, number] => [bounds.x + (facing === 'left' ? 1 - u : u) * bounds.width, bounds.y + v * bounds.height];
+	return buildFromTemplate(t, (tb) => ({ from: map(tb.from), to: map(tb.to) }));
 }

@@ -448,16 +448,6 @@ var Affine = class _Affine {
     return Math.abs(this.a - 1) < eps && Math.abs(this.b) < eps && Math.abs(this.c) < eps && Math.abs(this.d - 1) < eps;
   }
 };
-function distanceToSegment(px, py, ax, ay, bx, by) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const len2 = dx * dx + dy * dy;
-  let t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
-  t = clamp(t, 0, 1);
-  const qx = ax + dx * t - px;
-  const qy = ay + dy * t - py;
-  return Math.sqrt(qx * qx + qy * qy);
-}
 function rng(seed) {
   let s = seed >>> 0;
   return () => {
@@ -475,30 +465,6 @@ function hashString(str2) {
 }
 
 // src/sprite/ownership.ts
-function autoAssign(img, segments, opts = {}) {
-  const { width: w, height: h2, data } = img;
-  const alphaMin = opts.alphaMin ?? 1;
-  const labels = new Uint8Array(w * h2);
-  if (!segments.length) return labels;
-  for (let y = 0; y < h2; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = y * w + x;
-      if (data[i * 4 + 3] < alphaMin) continue;
-      let best = 0;
-      let bestD = Infinity;
-      for (const s of segments) {
-        const d = distanceToSegment(x + 0.5, y + 0.5, s.ax, s.ay, s.bx, s.by) - s.bias;
-        if (d < bestD) {
-          bestD = d;
-          best = s.label;
-        }
-      }
-      labels[i] = best;
-    }
-  }
-  cleanIslands(labels, w, h2, opts.islandRatio ?? 0.25);
-  return labels;
-}
 function components(labels, w, h2, label, seen) {
   const out = [];
   const stack = [];
@@ -610,59 +576,746 @@ function labelCounts(labels) {
   return out;
 }
 
-// src/sprite/rle.ts
-function toBase64(bytes) {
-  let bin = "";
-  const CHUNK = 32768;
-  for (let i = 0; i < bytes.length; i += CHUNK) bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  return btoa(bin);
-}
-function fromBase64(str2) {
-  const bin = atob(str2);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-function encodeRle(data) {
-  const out = [];
-  let i = 0;
-  while (i < data.length) {
-    const v = data[i];
-    let run = 1;
-    while (i + run < data.length && data[i + run] === v) run++;
-    out.push(v);
-    let r = run;
-    while (r >= 128) {
-      out.push(r & 127 | 128);
-      r >>>= 7;
-    }
-    out.push(r);
-    i += run;
+// src/sprite/geodesic.ts
+var Heap = class {
+  cost;
+  idx;
+  size = 0;
+  constructor(capacity) {
+    this.cost = new Float64Array(capacity);
+    this.idx = new Int32Array(capacity);
   }
-  return toBase64(Uint8Array.from(out));
-}
-function decodeRle(str2, length) {
-  const bytes = fromBase64(str2);
-  const out = new Uint8Array(length);
-  let p = 0;
-  let o = 0;
-  while (p < bytes.length) {
-    const v = bytes[p++];
-    let run = 0;
-    let shift = 0;
+  push(c, i) {
+    if (this.size === this.cost.length) {
+      const nc = new Float64Array(this.cost.length * 2);
+      nc.set(this.cost);
+      const ni = new Int32Array(this.idx.length * 2);
+      ni.set(this.idx);
+      this.cost = nc;
+      this.idx = ni;
+    }
+    let k3 = this.size++;
+    while (k3 > 0) {
+      const p = k3 - 1 >> 1;
+      if (this.cost[p] <= c) break;
+      this.cost[k3] = this.cost[p];
+      this.idx[k3] = this.idx[p];
+      k3 = p;
+    }
+    this.cost[k3] = c;
+    this.idx[k3] = i;
+  }
+  /** Pop the smallest; returns the index and leaves its cost in `lastCost`. */
+  lastCost = 0;
+  pop() {
+    const top = this.idx[0];
+    this.lastCost = this.cost[0];
+    const c = this.cost[--this.size];
+    const i = this.idx[this.size];
+    let k3 = 0;
     for (; ; ) {
-      if (p >= bytes.length) throw new Error("Ownership map is truncated.");
-      const b = bytes[p++];
-      run |= (b & 127) << shift;
-      if (!(b & 128)) break;
-      shift += 7;
+      let m = 2 * k3 + 1;
+      if (m >= this.size) break;
+      if (m + 1 < this.size && this.cost[m + 1] < this.cost[m]) m++;
+      if (this.cost[m] >= c) break;
+      this.cost[k3] = this.cost[m];
+      this.idx[k3] = this.idx[m];
+      k3 = m;
     }
-    if (o + run > length) throw new Error("Ownership map is larger than the image.");
-    out.fill(v, o, o + run);
-    o += run;
+    this.cost[k3] = c;
+    this.idx[k3] = i;
+    return top;
   }
-  if (o !== length) throw new Error(`Ownership map covers ${o} of ${length} pixels.`);
+};
+function geodesicAssign(img, segments, o = {}) {
+  const { width: w, height: h2, data } = img;
+  const n = w * h2;
+  const alphaMin = o.alphaMin ?? 1;
+  const lambda = o.edgeWeight ?? 6;
+  const core = o.seedCore ?? 0.7;
+  const labels = new Uint8Array(n);
+  if (!segments.length) return labels;
+  const inMask = (i) => data[i * 4 + 3] >= alphaMin;
+  const dist = new Float64Array(n).fill(Infinity);
+  const heap = new Heap(Math.max(64, n >> 2));
+  for (const s of segments) {
+    const len = Math.hypot(s.bx - s.ax, s.by - s.ay);
+    const t0 = len > 4 ? (1 - core) / 2 : 0;
+    const t1 = len > 4 ? 1 - t0 : 1;
+    const steps = Math.max(1, Math.ceil(len * 2));
+    let seeded = false;
+    for (let k3 = 0; k3 <= steps; k3++) {
+      const t = t0 + (t1 - t0) * k3 / steps;
+      const x = Math.floor(s.ax + (s.bx - s.ax) * t);
+      const y = Math.floor(s.ay + (s.by - s.ay) * t);
+      if (x < 0 || y < 0 || x >= w || y >= h2) continue;
+      const i = y * w + x;
+      if (!inMask(i)) continue;
+      const c = -s.bias;
+      if (c < dist[i]) {
+        dist[i] = c;
+        labels[i] = s.label;
+        heap.push(c, i);
+      }
+      seeded = true;
+    }
+    if (!seeded) {
+      let best = -1;
+      let bestD = Infinity;
+      const mx = (s.ax + s.bx) / 2;
+      const my = (s.ay + s.by) / 2;
+      for (let i = 0; i < n; i++) {
+        if (!inMask(i)) continue;
+        const d = (i % w + 0.5 - mx) ** 2 + (Math.floor(i / w) + 0.5 - my) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+      if (best >= 0 && Math.sqrt(bestD) - s.bias < dist[best]) {
+        dist[best] = Math.sqrt(bestD) - s.bias;
+        labels[best] = s.label;
+        heap.push(dist[best], best);
+      }
+    }
+  }
+  const diff = (a, b) => {
+    const pa = a * 4;
+    const pb = b * 4;
+    return Math.max(Math.abs(data[pa] - data[pb]), Math.abs(data[pa + 1] - data[pb + 1]), Math.abs(data[pa + 2] - data[pb + 2]), Math.abs(data[pa + 3] - data[pb + 3])) / 255;
+  };
+  while (heap.size) {
+    const i = heap.pop();
+    const c = heap.lastCost;
+    if (c > dist[i]) continue;
+    const x = i % w;
+    const y = (i - x) / w;
+    for (let dy = -1; dy <= 1; dy++) {
+      const ny = y + dy;
+      if (ny < 0 || ny >= h2) continue;
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx;
+        if (nx < 0 || nx >= w) continue;
+        const j = ny * w + nx;
+        if (!inMask(j)) continue;
+        const step = (dx && dy ? Math.SQRT2 : 1) * (1 + lambda * diff(i, j));
+        const nc = c + step;
+        if (nc < dist[j]) {
+          dist[j] = nc;
+          labels[j] = labels[i];
+          heap.push(nc, j);
+        }
+      }
+    }
+  }
+  cleanIslands(labels, w, h2, o.islandRatio ?? 0.25);
+  adoptStrays(labels, img, alphaMin);
+  return labels;
+}
+function adoptStrays(labels, img, alphaMin = 1) {
+  const { width: w, height: h2, data } = img;
+  let strays = 0;
+  for (let i = 0; i < labels.length; i++) if (!labels[i] && data[i * 4 + 3] >= alphaMin) strays++;
+  if (!strays) return 0;
+  const from = new Uint8Array(labels.length);
+  let queue = [];
+  for (let i = 0; i < labels.length; i++) {
+    if (labels[i]) {
+      from[i] = labels[i];
+      queue.push(i);
+    }
+  }
+  if (!queue.length) return 0;
+  while (queue.length) {
+    const next = [];
+    for (const i of queue) {
+      const x = i % w;
+      const y = (i - x) / w;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h2 - 1 ? i + w : -1]) {
+        if (j < 0 || from[j]) continue;
+        from[j] = from[i];
+        next.push(j);
+      }
+    }
+    queue = next;
+  }
+  let adopted = 0;
+  for (let i = 0; i < labels.length; i++) {
+    if (!labels[i] && data[i * 4 + 3] >= alphaMin && from[i]) {
+      labels[i] = from[i];
+      adopted++;
+    }
+  }
+  return adopted;
+}
+
+// src/sprite/morph.ts
+function alphaMask(img, alphaMin = 128) {
+  const m = new Uint8Array(img.width * img.height);
+  for (let i = 0; i < m.length; i++) m[i] = img.data[i * 4 + 3] >= alphaMin ? 1 : 0;
+  return m;
+}
+function distanceTransform(mask, w, h2) {
+  const INF = 1e9;
+  const d = new Float32Array(w * h2);
+  for (let i = 0; i < d.length; i++) d[i] = mask[i] ? INF : 0;
+  const at = (x, y) => x < 0 || y < 0 || x >= w || y >= h2 ? 0 : d[y * w + x];
+  for (let y = 0; y < h2; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!d[i]) continue;
+      d[i] = Math.min(d[i], at(x - 1, y) + 3, at(x, y - 1) + 3, at(x - 1, y - 1) + 4, at(x + 1, y - 1) + 4);
+    }
+  }
+  for (let y = h2 - 1; y >= 0; y--) {
+    for (let x = w - 1; x >= 0; x--) {
+      const i = y * w + x;
+      if (!d[i]) continue;
+      d[i] = Math.min(d[i], at(x + 1, y) + 3, at(x, y + 1) + 3, at(x + 1, y + 1) + 4, at(x - 1, y + 1) + 4);
+    }
+  }
+  for (let i = 0; i < d.length; i++) d[i] = d[i] / 3;
+  return d;
+}
+function components2(mask, w, h2) {
+  const seen = new Uint8Array(mask.length);
+  const out = [];
+  for (let s = 0; s < mask.length; s++) {
+    if (!mask[s] || seen[s]) continue;
+    const comp = [];
+    const stack = [s];
+    seen[s] = 1;
+    while (stack.length) {
+      const i = stack.pop();
+      comp.push(i);
+      const x = i % w;
+      const y = (i - x) / w;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= w || yy >= h2) continue;
+          const j = yy * w + xx;
+          if (mask[j] && !seen[j]) {
+            seen[j] = 1;
+            stack.push(j);
+          }
+        }
+      }
+    }
+    out.push(comp);
+  }
   return out;
+}
+function skeletonize(mask, w, h2) {
+  const m = mask.slice();
+  const get = (x, y) => x < 0 || y < 0 || x >= w || y >= h2 ? 0 : m[y * w + x];
+  let changed = true;
+  const del = [];
+  while (changed) {
+    changed = false;
+    for (const step of [0, 1]) {
+      del.length = 0;
+      for (let y = 0; y < h2; y++) {
+        for (let x = 0; x < w; x++) {
+          if (!m[y * w + x]) continue;
+          const p2 = get(x, y - 1);
+          const p3 = get(x + 1, y - 1);
+          const p4 = get(x + 1, y);
+          const p5 = get(x + 1, y + 1);
+          const p6 = get(x, y + 1);
+          const p7 = get(x - 1, y + 1);
+          const p8 = get(x - 1, y);
+          const p9 = get(x - 1, y - 1);
+          const b = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+          if (b < 2 || b > 6) continue;
+          const seq = [p2, p3, p4, p5, p6, p7, p8, p9, p2];
+          let a = 0;
+          for (let k3 = 0; k3 < 8; k3++) if (!seq[k3] && seq[k3 + 1]) a++;
+          if (a !== 1) continue;
+          if (step === 0 ? p2 * p4 * p6 || p4 * p6 * p8 : p2 * p4 * p8 || p2 * p6 * p8) continue;
+          del.push(y * w + x);
+        }
+      }
+      for (const i of del) m[i] = 0;
+      if (del.length) changed = true;
+    }
+  }
+  return m;
+}
+
+// src/sprite/landmarks.ts
+var clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+var lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+var median = (v) => {
+  if (!v.length) return 0;
+  const s = v.slice().sort((a, b) => a - b);
+  return s[s.length >> 1];
+};
+function rowRuns(mask, w, y, minLen = 1) {
+  const out = [];
+  let s = -1;
+  for (let x = 0; x <= w; x++) {
+    const on = x < w && mask[y * w + x] === 1;
+    if (on && s < 0) s = x;
+    if (!on && s >= 0) {
+      if (x - s >= minLen) out.push({ x0: s, x1: x - 1 });
+      s = -1;
+    }
+  }
+  return out;
+}
+function skeletonBranches(skel, w, h2) {
+  const at = (x, y) => x < 0 || y < 0 || x >= w || y >= h2 ? 0 : skel[y * w + x];
+  const ring = (i) => {
+    const x = i % w;
+    const y = (i - x) / w;
+    return [at(x, y - 1), at(x + 1, y - 1), at(x + 1, y), at(x + 1, y + 1), at(x, y + 1), at(x - 1, y + 1), at(x - 1, y), at(x - 1, y - 1)];
+  };
+  const crossings = (i) => {
+    const r = ring(i);
+    let a = 0;
+    for (let k3 = 0; k3 < 8; k3++) if (!r[k3] && r[(k3 + 1) % 8]) a++;
+    return a;
+  };
+  const nb = (i) => {
+    const x = i % w;
+    const y = (i - x) / w;
+    const out2 = [];
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        if (at(x + dx, y + dy)) out2.push((y + dy) * w + x + dx);
+      }
+    }
+    return out2;
+  };
+  const px = (i) => i % w;
+  const py = (i) => Math.floor(i / w);
+  const out = [];
+  for (let i = 0; i < skel.length; i++) {
+    if (!skel[i] || crossings(i) !== 1) continue;
+    const path = [i];
+    const seen = /* @__PURE__ */ new Set([i]);
+    let cur = i;
+    for (; ; ) {
+      const next = nb(cur).filter((j) => !seen.has(j));
+      if (!next.length) break;
+      const back = path[Math.max(0, path.length - 3)];
+      next.sort((a2, b2) => Math.hypot(px(b2) - px(back), py(b2) - py(back)) - Math.hypot(px(a2) - px(back), py(a2) - py(back)));
+      for (const j of next) seen.add(j);
+      cur = next[0];
+      path.push(cur);
+      if (crossings(cur) >= 3) break;
+    }
+    const a = path[0];
+    const b = path[path.length - 1];
+    const chord = Math.hypot(px(a) - px(b), py(a) - py(b));
+    let len = 0;
+    for (let k3 = 1; k3 < path.length; k3++) len += Math.hypot(px(path[k3 - 1]) - px(path[k3]), py(path[k3 - 1]) - py(path[k3]));
+    out.push({ path, length: len, straightness: len > 0 ? chord / len : 0 });
+  }
+  return out;
+}
+function detectWeapon(mask, w, h2, height) {
+  const skel = skeletonize(mask, w, h2);
+  const dt = distanceTransform(mask, w, h2);
+  let best = null;
+  let bestScore = 0;
+  let medianThick = 0;
+  {
+    const all = [];
+    for (let i = 0; i < skel.length; i++) if (skel[i]) all.push(dt[i]);
+    medianThick = median(all);
+  }
+  let bottom = 0;
+  let bodyCx = 0;
+  let bodyCy = 0;
+  let bodyN = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const y = Math.floor(i / w);
+    bottom = Math.max(bottom, y);
+    if (dt[i] >= medianThick) {
+      bodyCx += i % w + 0.5;
+      bodyCy += y + 0.5;
+      bodyN++;
+    }
+  }
+  bodyCx /= bodyN || 1;
+  bodyCy /= bodyN || 1;
+  const straightPrefix = (b) => {
+    const px = (i) => i % w + 0.5;
+    const py = (i) => Math.floor(i / w) + 0.5;
+    const p0 = b.path[0];
+    let keep = 1;
+    for (let k3 = 2; k3 < b.path.length; k3++) {
+      const pk = b.path[k3];
+      const L = Math.hypot(px(pk) - px(p0), py(pk) - py(p0)) || 1;
+      const tol = Math.max(1.25, L * 0.04);
+      let ok = true;
+      for (let j = 1; j < k3 && ok; j++) {
+        const q = b.path[j];
+        const dev = Math.abs((px(pk) - px(p0)) * (py(p0) - py(q)) - (px(p0) - px(q)) * (py(pk) - py(p0))) / L;
+        if (dev > tol) ok = false;
+      }
+      if (!ok) break;
+      keep = k3 + 1;
+    }
+    const path = b.path.slice(0, keep);
+    const last = path[path.length - 1];
+    const len = Math.hypot(px(last) - px(p0), py(last) - py(p0));
+    return { path, length: len, straightness: 1 };
+  };
+  for (const whole of skeletonBranches(skel, w, h2)) {
+    const b = straightPrefix(whole);
+    if (b.length < height * 0.3) continue;
+    const tip = b.path[0];
+    const tipY = Math.floor(tip / w);
+    const baseY = Math.floor(b.path[b.path.length - 1] / w);
+    if (tipY >= bottom - height * 0.04 && tipY > baseY) continue;
+    {
+      const tx0 = tip % w;
+      let solid = 0;
+      for (let y = tipY; y <= bottom; y++) if (mask[y * w + tx0]) solid++;
+      if (tipY > baseY && solid >= (bottom - tipY + 1) * 0.8) continue;
+    }
+    const thick2 = median(b.path.map((i) => dt[i]));
+    const tx = tip % w + 0.5;
+    const far = Math.hypot(tx - bodyCx, tipY + 0.5 - bodyCy) >= height * 0.4;
+    if (!far) continue;
+    if (thick2 > Math.max(1.6, medianThick * 1.15) && b.length < height * 0.35) continue;
+    const score = b.length * b.straightness;
+    if (score > bestScore) {
+      bestScore = score;
+      best = b;
+    }
+  }
+  if (!best) return null;
+  const thick = Math.max(1, median(best.path.map((i) => dt[i])));
+  const pixels = /* @__PURE__ */ new Set();
+  const r = Math.ceil(thick + 1);
+  for (const i of best.path.slice(0, Math.max(2, best.path.length - Math.ceil(thick)))) {
+    const x = i % w;
+    const y = (i - x) / w;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const xx = x + dx;
+        const yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h2) continue;
+        const j = yy * w + xx;
+        if (mask[j] && Math.hypot(dx, dy) <= thick + 0.75) pixels.add(j);
+      }
+    }
+  }
+  const tipI = best.path[0];
+  const hiltI = best.path[best.path.length - 1];
+  return { pixels: [...pixels], tip: [tipI % w + 0.5, Math.floor(tipI / w) + 0.5], hilt: [hiltI % w + 0.5, Math.floor(hiltI / w) + 0.5], length: best.length };
+}
+function detectHumanoid(img, facingIn = "auto") {
+  const { width: w, height: h2 } = img;
+  const full = alphaMask(img, 128);
+  {
+    const comps = components2(full, w, h2).sort((a, b) => b.length - a.length);
+    const keep = new Uint8Array(full.length);
+    const main = comps[0]?.length ?? 0;
+    for (const c of comps) if (c.length >= main * 0.15) for (const i of c) keep[i] = 1;
+    full.set(keep);
+  }
+  let anyPx = false;
+  let fTop = h2;
+  let fBottom = -1;
+  for (let i = 0; i < full.length; i++) {
+    if (!full[i]) continue;
+    anyPx = true;
+    const y = Math.floor(i / w);
+    fTop = Math.min(fTop, y);
+    fBottom = Math.max(fBottom, y);
+  }
+  if (!anyPx) return null;
+  const notes = [];
+  const weaponFound = detectWeapon(full, w, h2, fBottom - fTop + 1);
+  let facing = facingIn === "auto" ? "right" : facingIn;
+  if (facingIn === "auto" && weaponFound) {
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < full.length; i++) {
+      if (!full[i]) continue;
+      sum += i % w;
+      n++;
+    }
+    const centre = sum / (n || 1);
+    const mid = (weaponFound.tip[0] + weaponFound.hilt[0]) / 2;
+    const side = mid - centre;
+    const dir = weaponFound.tip[0] - weaponFound.hilt[0];
+    const lean = Math.abs(side) > (fBottom - fTop) * 0.05 ? side : dir;
+    facing = lean >= 0 ? "right" : "left";
+    notes.push(`Facing ${facing}: the weapon is on that side.`);
+  }
+  const s = facing === "right" ? 1 : -1;
+  const mask = full.slice();
+  if (weaponFound) for (const i of weaponFound.pixels) mask[i] = 0;
+  let top = h2;
+  let bottom = -1;
+  let left = w;
+  let right = -1;
+  const xs = [];
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const x = i % w;
+    const y = (i - x) / w;
+    top = Math.min(top, y);
+    bottom = Math.max(bottom, y);
+    left = Math.min(left, x);
+    right = Math.max(right, x);
+    xs.push(x);
+  }
+  const H = bottom - top + 1;
+  const cx = median(xs) + 0.5;
+  const mainRun = (y) => {
+    const runs = rowRuns(mask, w, y);
+    if (!runs.length) return null;
+    let best = runs[0];
+    let bestD = Infinity;
+    for (const r of runs) {
+      const d = cx >= r.x0 && cx <= r.x1 + 1 ? 0 : Math.min(Math.abs(cx - r.x0), Math.abs(cx - r.x1 - 1));
+      if (d < bestD) {
+        bestD = d;
+        best = r;
+      }
+    }
+    return best;
+  };
+  const widthAt = (y) => {
+    const r = mainRun(y);
+    return r ? r.x1 - r.x0 + 1 : 0;
+  };
+  const centreAt = (y) => {
+    const r = mainRun(Math.round(y));
+    return r ? (r.x0 + r.x1 + 1) / 2 : cx;
+  };
+  let neckY = Math.round(top + H * 0.33);
+  let headConf = 0.2;
+  {
+    const y0 = Math.round(top + H * 0.12);
+    const y1 = Math.round(top + H * 0.5);
+    const widths = [];
+    for (let y = top; y <= y1 + 3; y++) widths.push(widthAt(y));
+    const W = (y) => widths[y - top] ?? 0;
+    let peak = top;
+    let run = 0;
+    for (let y = top; y <= y1; y++) {
+      const wy = W(y);
+      if (wy > run) {
+        run = wy;
+        peak = y;
+      } else if (wy < run - Math.max(2, run * 0.1)) break;
+    }
+    let minW = Infinity;
+    let minY = neckY;
+    for (let y = Math.max(peak + 1, y0); y <= y1; y++) {
+      const wy = W(y);
+      if (wy > 0 && wy < minW) {
+        minW = wy;
+        minY = y;
+      }
+    }
+    let jump = 0;
+    let jumpY = -1;
+    for (let y = y0; y <= y1; y++) {
+      const wy = W(y);
+      const below = Math.max(W(y + 2), W(y + 3));
+      if (wy > 0 && below / wy > jump) {
+        jump = below / wy;
+        jumpY = y;
+      }
+    }
+    const headW = W(peak);
+    const dip = headW > 0 && minW < Infinity ? (headW - minW) / headW : 0;
+    if (dip >= 0.08 && minY > peak) {
+      neckY = minY;
+      headConf = clamp01(dip * 3);
+    } else if (jump >= 1.35 && jumpY > 0) {
+      neckY = jumpY;
+      headConf = clamp01((jump - 1) * 1.5);
+    } else notes.push("No clear neck: head size guessed from proportions.");
+  }
+  const neck = [centreAt(neckY), neckY + 0.5];
+  const topPt = [neck[0], top];
+  const minRun = Math.max(1, Math.round(H * 0.03));
+  let torsoHalf = 0;
+  {
+    const ws = [];
+    for (let y = Math.round(neckY + H * 0.08); y <= Math.round(top + H * 0.6); y++) ws.push(widthAt(y) / 2);
+    ws.sort((a, b) => a - b);
+    torsoHalf = Math.max(2, ws[Math.floor(ws.length * 0.2)] ?? 2);
+  }
+  const underTorso = (r) => Math.abs((r.x0 + r.x1 + 1) / 2 - cx) <= torsoHalf * 1.3;
+  const legRuns = (y) => rowRuns(mask, w, y, minRun).filter(underTorso);
+  let span = null;
+  {
+    let start = -1;
+    let gap = 0;
+    for (let y = Math.round(top + H * 0.5); y <= bottom; y++) {
+      const n = legRuns(y).length;
+      if (n >= 2) {
+        if (start < 0) start = y;
+        gap = 0;
+        if (!span || y - start > span[1] - span[0]) span = [start, y];
+      } else if (start >= 0 && ++gap > 1) {
+        start = -1;
+        gap = 0;
+      }
+    }
+    if (span && span[1] - span[0] + 1 < H * 0.08) span = null;
+  }
+  const legRows = (y0, y1) => {
+    const back2 = [];
+    const front2 = [];
+    for (let y = Math.round(y0); y <= Math.round(y1); y++) {
+      const runs = legRuns(y).sort((a, b) => b.x1 - b.x0 - (a.x1 - a.x0)).slice(0, 2);
+      if (runs.length < 2) continue;
+      runs.sort((a, b) => (a.x0 - b.x0) * s);
+      back2.push((runs[0].x0 + runs[0].x1 + 1) / 2);
+      front2.push((runs[1].x0 + runs[1].x1 + 1) / 2);
+    }
+    return { back: median(back2), front: median(front2), n: back2.length };
+  };
+  let hipY;
+  let hipF;
+  let hipB;
+  let kneeF;
+  let kneeB;
+  let ankleF;
+  let ankleB;
+  let legConf;
+  const ankleY = bottom - H * 0.06;
+  if (span) {
+    const [c0, c12] = span;
+    const len = c12 - c0;
+    const hi = legRows(c0, c0 + len * 0.25);
+    const mid = legRows(c0 + len * 0.35, c0 + len * 0.65);
+    const lo = legRows(c0 + len * 0.75, c12);
+    hipY = c0 - H * 0.03;
+    const kneeY = (c0 + ankleY) / 2;
+    hipF = [hi.front, hipY];
+    hipB = [hi.back, hipY];
+    kneeF = [mid.n ? mid.front : hi.front, kneeY];
+    kneeB = [mid.n ? mid.back : hi.back, kneeY];
+    ankleF = [lo.n ? lo.front : kneeF[0], ankleY];
+    ankleB = [lo.n ? lo.back : kneeB[0], ankleY];
+    legConf = clamp01(len / (H * 0.25));
+  } else {
+    notes.push("Legs not separated (robe or long coat): legs placed from proportions.");
+    const bw = right - left + 1;
+    hipY = top + H * 0.62;
+    hipF = [cx + s * bw * 0.08, hipY];
+    hipB = [cx - s * bw * 0.06, hipY];
+    kneeF = [hipF[0] + s * bw * 0.04, (hipY + ankleY) / 2];
+    kneeB = [hipB[0] - s * bw * 0.04, (hipY + ankleY) / 2];
+    ankleF = [kneeF[0], ankleY];
+    ankleB = [kneeB[0], ankleY];
+    legConf = 0.2;
+  }
+  const toe = (ankle) => {
+    let best = [ankle[0] + s * H * 0.06, bottom];
+    let bestX = -Infinity;
+    for (let y = Math.round(bottom - H * 0.06); y <= bottom; y++) {
+      for (const r of rowRuns(mask, w, y)) {
+        const c = (r.x0 + r.x1 + 1) / 2;
+        if (Math.abs(c - ankle[0]) > H * 0.12) continue;
+        const ex = s > 0 ? r.x1 + 1 : r.x0;
+        if (ex * s > bestX) {
+          bestX = ex * s;
+          best = [ex - s * 0.5, y + 0.5];
+        }
+      }
+    }
+    return best;
+  };
+  const toeF = toe(ankleF);
+  const toeB = toe(ankleB);
+  const pelvis = [(hipF[0] + hipB[0]) / 2, hipY - H * 0.02];
+  const bandTop = Math.round(neckY + H * 0.06);
+  const bandBottom = Math.round(hipY + H * 0.12);
+  const halfWidths = [];
+  for (let y = bandTop; y <= bandBottom; y++) halfWidths.push(widthAt(y) / 2);
+  const wc = Math.max(1, median(halfWidths));
+  let back = null;
+  let front = null;
+  for (let y = bandTop; y <= bandBottom; y++) {
+    for (const r of rowRuns(mask, w, y)) {
+      for (const ex of [r.x0 + 0.5, r.x1 + 0.5]) {
+        if (!back || ex * s < back[0] * s) back = [ex, y + 0.5];
+        if (!front || ex * s > front[0] * s) front = [ex, y + 0.5];
+      }
+    }
+  }
+  const midC = centreAt((bandTop + bandBottom) / 2);
+  const protrudeB = back ? Math.abs(back[0] - midC) - wc : 0;
+  const protrudeF = front ? Math.abs(front[0] - midC) - wc : 0;
+  let armConf = clamp01(Math.min(protrudeB, protrudeF) / (H * 0.06));
+  const shoulderY = neckY + H * 0.09;
+  const sC = centreAt(shoulderY);
+  const shoulderF = [sC + s * wc * 0.55, shoulderY];
+  const shoulderB = [sC - s * wc * 0.55, shoulderY];
+  let handF = front ?? [shoulderF[0] + s * wc, shoulderY + H * 0.2];
+  let handB = back ?? [shoulderB[0] - s * wc, shoulderY + H * 0.2];
+  if (weaponFound) {
+    handF = weaponFound.hilt;
+    armConf = Math.max(armConf, 0.5);
+  }
+  const plausible = (hand, shoulder) => {
+    const d = Math.hypot(hand[0] - shoulder[0], hand[1] - shoulder[1]);
+    return d <= H * 0.48 && hand[1] >= shoulder[1] - H * 0.04;
+  };
+  if (protrudeB < 1 || !plausible(handB, shoulderB)) {
+    if (protrudeB >= 1) notes.push("Back hand unclear: placed from proportions.");
+    handB = [shoulderB[0] - s * wc * 0.4, hipY];
+  }
+  if (!weaponFound && (protrudeF < 1 || !plausible(handF, shoulderF))) {
+    if (protrudeF >= 1) notes.push("Front hand unclear: placed from proportions.");
+    handF = [shoulderF[0] + s * wc * 0.4, hipY];
+  }
+  const handLen = H * 0.07;
+  const wrist = (shoulder, hand) => {
+    const d = Math.hypot(hand[0] - shoulder[0], hand[1] - shoulder[1]) || 1;
+    return lerp(hand, shoulder, Math.min(0.4, handLen / d));
+  };
+  const wristF = wrist(shoulderF, handF);
+  const wristB = wrist(shoulderB, handB);
+  const elbow = (shoulder, wr) => {
+    const m = lerp(shoulder, wr, 0.5);
+    return [m[0], m[1] + H * 0.015];
+  };
+  return {
+    facing,
+    body: { x: left, y: top, width: right - left + 1, height: H },
+    top: topPt,
+    neck,
+    pelvis,
+    ground: [pelvis[0], bottom + 1],
+    shoulderFront: shoulderF,
+    shoulderBack: shoulderB,
+    elbowFront: elbow(shoulderF, wristF),
+    elbowBack: elbow(shoulderB, wristB),
+    wristFront: wristF,
+    wristBack: wristB,
+    handFront: handF,
+    handBack: handB,
+    hipFront: hipF,
+    hipBack: hipB,
+    kneeFront: kneeF,
+    kneeBack: kneeB,
+    ankleFront: ankleF,
+    ankleBack: ankleB,
+    toeFront: toeF,
+    toeBack: toeB,
+    weapon: weaponFound ? { hilt: weaponFound.hilt, tip: weaponFound.tip } : null,
+    confidence: { head: headConf, legs: legConf, arms: armConf, weapon: weaponFound ? 0.8 : 0 },
+    notes
+  };
 }
 
 // src/core/skeleton.ts
@@ -893,13 +1546,11 @@ var KNOWN_ROLES = [.../* @__PURE__ */ new Set([...HUMANOID.bones.map((b) => b.ro
 function defaultPart(id, name, bone2, label, deform = "mesh") {
   return { id, name, bone: bone2, label, deform, softness: deform === "mesh" ? 0.03 : 0, stiffness: 0, cell: 0, fill: true };
 }
-function fitTemplate(t, bounds, facing) {
-  const map = ([u, v]) => [bounds.x + (facing === "left" ? 1 - u : u) * bounds.width, bounds.y + v * bounds.height];
+function buildFromTemplate(t, place) {
   const frames = /* @__PURE__ */ new Map();
   const bones = t.bones.map((tb) => {
-    const [ax, ay] = map(tb.from);
-    const [bx, by] = map(tb.to);
-    frames.set(tb.id, frameFromPoints(ax, ay, bx, by));
+    const { from, to } = place(tb);
+    frames.set(tb.id, frameFromPoints(from[0], from[1], to[0], to[1]));
     return { id: tb.id, name: tb.name, parent: tb.parent, role: tb.role, x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, length: 0, color: tb.color };
   });
   applyFrames(bones, frames);
@@ -914,6 +1565,98 @@ function fitTemplate(t, bounds, facing) {
     return p;
   });
   return { bones, parts };
+}
+function fitTemplate(t, bounds, facing) {
+  const map = ([u, v]) => [bounds.x + (facing === "left" ? 1 - u : u) * bounds.width, bounds.y + v * bounds.height];
+  return buildFromTemplate(t, (tb) => ({ from: map(tb.from), to: map(tb.to) }));
+}
+
+// src/rig/autorig.ts
+function humanoidFromLandmarks(L) {
+  const H = L.body.height;
+  const s = L.facing === "right" ? 1 : -1;
+  const pelvisLow = [L.pelvis[0], L.pelvis[1] + H * 0.035];
+  const pelvisTop = [L.pelvis[0], L.pelvis[1] - H * 0.04];
+  const weapon = L.weapon ? [L.weapon.hilt, L.weapon.tip] : [L.handFront, [L.handFront[0] + s * H * 0.22, L.handFront[1] - H * 0.32]];
+  const place = {
+    root: [L.ground, [L.ground[0] + s * H * 0.12, L.ground[1]]],
+    pelvis: [pelvisLow, pelvisTop],
+    torso: [pelvisTop, L.neck],
+    head: [L.neck, L.top],
+    arm_upper_back: [L.shoulderBack, L.elbowBack],
+    arm_lower_back: [L.elbowBack, L.wristBack],
+    hand_back: [L.wristBack, L.handBack],
+    leg_upper_back: [L.hipBack, L.kneeBack],
+    leg_lower_back: [L.kneeBack, L.ankleBack],
+    foot_back: [L.ankleBack, L.toeBack],
+    leg_upper_front: [L.hipFront, L.kneeFront],
+    leg_lower_front: [L.kneeFront, L.ankleFront],
+    foot_front: [L.ankleFront, L.toeFront],
+    arm_upper_front: [L.shoulderFront, L.elbowFront],
+    arm_lower_front: [L.elbowFront, L.wristFront],
+    hand_front: [L.wristFront, L.handFront],
+    weapon
+  };
+  return buildFromTemplate(HUMANOID, (tb) => {
+    const p = place[tb.id];
+    if (!p) throw new Error(`No placement for ${tb.id}`);
+    return { from: p[0], to: p[1] };
+  });
+}
+
+// src/sprite/rle.ts
+function toBase64(bytes) {
+  let bin = "";
+  const CHUNK = 32768;
+  for (let i = 0; i < bytes.length; i += CHUNK) bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  return btoa(bin);
+}
+function fromBase64(str2) {
+  const bin = atob(str2);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function encodeRle(data) {
+  const out = [];
+  let i = 0;
+  while (i < data.length) {
+    const v = data[i];
+    let run = 1;
+    while (i + run < data.length && data[i + run] === v) run++;
+    out.push(v);
+    let r = run;
+    while (r >= 128) {
+      out.push(r & 127 | 128);
+      r >>>= 7;
+    }
+    out.push(r);
+    i += run;
+  }
+  return toBase64(Uint8Array.from(out));
+}
+function decodeRle(str2, length) {
+  const bytes = fromBase64(str2);
+  const out = new Uint8Array(length);
+  let p = 0;
+  let o = 0;
+  while (p < bytes.length) {
+    const v = bytes[p++];
+    let run = 0;
+    let shift = 0;
+    for (; ; ) {
+      if (p >= bytes.length) throw new Error("Ownership map is truncated.");
+      const b = bytes[p++];
+      run |= (b & 127) << shift;
+      if (!(b & 128)) break;
+      shift += 7;
+    }
+    if (o + run > length) throw new Error("Ownership map is larger than the image.");
+    out.fill(v, o, o + run);
+    o += run;
+  }
+  if (o !== length) throw new Error(`Ownership map covers ${o} of ${length} pixels.`);
+  return out;
 }
 
 // src/rig/document.ts
@@ -930,13 +1673,19 @@ function defaultRender(img) {
   const pixel = img ? looksLikePixelArt(img) : true;
   return { mode: pixel ? "pixel" : "smooth", padding: 0.35, snap: pixel, idleFps: pixel ? 12 : 0, resolution: 1 };
 }
+var lastReport = /* @__PURE__ */ new WeakMap();
 function createRig(o) {
   const full = { x: 0, y: 0, width: o.image.width, height: o.image.height };
   const bounds = opaqueBounds(o.image) ?? full;
   const body = bodyBounds(o.image) ?? full;
   const template = TEMPLATES[o.template ?? "humanoid"] ?? TEMPLATES.humanoid;
-  const facing = o.facing ?? "right";
-  const { bones, parts } = fitTemplate(template, body, facing);
+  let facing = o.facing ?? "right";
+  let landmarks = null;
+  if (template.id === "humanoid" && o.detect !== false) {
+    landmarks = detectHumanoid(o.image, o.facing ?? "auto");
+    if (landmarks) facing = landmarks.facing;
+  }
+  const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : fitTemplate(template, body, facing);
   const now = Date.now();
   const rig = {
     format: RIG_FORMAT,
@@ -955,12 +1704,21 @@ function createRig(o) {
     updated: now,
     revision: 1
   };
+  if (landmarks) rig.metrics.bodyHeight = landmarks.body.height;
   if (o.assign !== false) rig.ownership = encodeRle(assignPixels(rig, o.image));
+  lastReport.set(rig, landmarks ? { method: "landmarks", confidence: landmarks.confidence, notes: landmarks.notes } : { method: "proportions", confidence: {}, notes: [] });
   return rig;
 }
 function rigLabels(rig) {
   const n = rig.image.width * rig.image.height;
   return rig.ownership ? decodeRle(rig.ownership, n) : new Uint8Array(n);
+}
+function rigHints(rig) {
+  return rig.fillHints ? decodeRle(rig.fillHints, rig.image.width * rig.image.height) : null;
+}
+function proposeRig(image, template, facing, detect = true) {
+  const fresh = createRig({ name: "proposal", src: "", image, template, facing: facing === "auto" ? void 0 : facing, detect });
+  return { bones: fresh.bones, parts: fresh.parts, ownership: fresh.ownership, metrics: fresh.metrics, facing: fresh.facing, template: fresh.template, report: lastReport.get(fresh) };
 }
 function segmentsFor(rig) {
   const frames = bonesToFrames(rig.bones);
@@ -975,7 +1733,7 @@ function segmentsFor(rig) {
   return out;
 }
 function assignPixels(rig, image) {
-  return autoAssign(image, segmentsFor(rig));
+  return geodesicAssign(image, segmentsFor(rig), { edgeWeight: 8 });
 }
 function nextLabel(parts) {
   const used = new Set(parts.map((p) => p.label));
@@ -1046,12 +1804,14 @@ function parseRig(input) {
       idleFps: Math.max(0, Math.min(60, num(render.idleFps, 12))),
       resolution: Math.min(4, Math.max(0.25, num(render.resolution, 1)))
     },
-    roleScale: o.roleScale && typeof o.roleScale === "object" ? o.roleScale : void 0,
     created: num(o.created, Date.now()),
     updated: num(o.updated, Date.now()),
     revision: Math.max(1, Math.round(num(o.revision, 1)))
   };
+  if (typeof o.fillHints === "string") rig.fillHints = o.fillHints;
+  if (o.roleScale && typeof o.roleScale === "object") rig.roleScale = o.roleScale;
   if (rig.ownership) rigLabels(rig);
+  if (rig.fillHints) rigHints(rig);
   return rig;
 }
 function cloneRig(rig) {
@@ -1365,12 +2125,19 @@ function computeFills(img, labels, order, opts) {
     const corners = [];
     for (const [y, [x0, x1]] of rows) corners.push([x0, y], [x1 + 1, y], [x0, y + 1], [x1 + 1, y + 1]);
     const hull = convexHull(corners);
-    const eligible = (j) => {
+    const hints = opts.hints;
+    const hinted = (j) => !!hints && hints[j] === label;
+    const covered = (j) => {
       const l = labels[j];
       if (!l || l === label) return false;
       const r = rank.get(l);
       if (r === void 0 || r <= myRank) return false;
-      if (data[j * 4 + 3] !== 255) return false;
+      return data[j * 4 + 3] === 255;
+    };
+    const eligible = (j, step) => {
+      if (!covered(j)) return false;
+      if (hinted(j)) return true;
+      if (step > reach) return false;
       const x = j % w;
       return insideHull(hull, x + 0.5, (j - x) / w + 0.5);
     };
@@ -1382,7 +2149,8 @@ function computeFills(img, labels, order, opts) {
       queue.push(i);
     }
     const filled = [];
-    for (let step = 1; step <= reach && queue.length; step++) {
+    const maxSteps = hints ? w + h2 : reach;
+    for (let step = 1; step <= maxSteps && queue.length; step++) {
       const next = [];
       for (const i of queue) {
         const x = i % w;
@@ -1395,7 +2163,7 @@ function computeFills(img, labels, order, opts) {
             const nx = x + dx;
             if (nx < 0 || nx >= w) continue;
             const j = ny * w + nx;
-            if (dist[j] !== -1 || !eligible(j)) continue;
+            if (dist[j] !== -1 || !eligible(j, step)) continue;
             dist[j] = step;
             src[j] = src[i];
             next.push(j);
@@ -1435,7 +2203,8 @@ function buildRig(rig, image, labels = rigLabels(rig)) {
   const order = parts.map((p) => p.label);
   const fills = computeFills(image, labels, order, {
     radius: Math.max(2, rig.metrics.bodyHeight * 0.15),
-    enabled: new Set(parts.filter((p) => p.fill).map((p) => p.label))
+    enabled: new Set(parts.filter((p) => p.fill).map((p) => p.label)),
+    hints: rigHints(rig)
   });
   const atlas = buildAtlas(image, labels, fills, order);
   const bonesWithParts = new Set(parts.map((p) => skeleton.index.get(p.bone)));
@@ -2714,6 +3483,65 @@ var History = class {
   }
 };
 
+// src/sprite/background.ts
+function detectBackground(img, tolerance = 24) {
+  const { width: w, height: h2, data } = img;
+  const border = [];
+  for (let x = 0; x < w; x++) border.push(x, (h2 - 1) * w + x);
+  for (let y = 1; y < h2 - 1; y++) border.push(y * w, y * w + w - 1);
+  let transparent = 0;
+  const counts = /* @__PURE__ */ new Map();
+  for (const i of border) {
+    if (data[i * 4 + 3] < 250) {
+      transparent++;
+      continue;
+    }
+    const r = data[i * 4];
+    const g = data[i * 4 + 1];
+    const b = data[i * 4 + 2];
+    const key = r >> 4 << 8 | g >> 4 << 4 | b >> 4;
+    const c = counts.get(key);
+    if (c) c.n++;
+    else counts.set(key, { n: 1, rgb: [r, g, b] });
+  }
+  if (transparent > border.length * 0.2) return null;
+  let best = null;
+  for (const c of counts.values()) if (!best || c.n > best.n) best = c;
+  if (!best) return null;
+  let near = 0;
+  for (const i of border) {
+    if (data[i * 4 + 3] < 250) continue;
+    if (Math.max(Math.abs(data[i * 4] - best.rgb[0]), Math.abs(data[i * 4 + 1] - best.rgb[1]), Math.abs(data[i * 4 + 2] - best.rgb[2])) <= tolerance) near++;
+  }
+  const coverage = near / border.length;
+  return coverage >= 0.8 ? { color: best.rgb, coverage } : null;
+}
+function removeBackground(img, bg, tolerance = 24) {
+  const { width: w, height: h2, data } = img;
+  const out = new Uint8ClampedArray(data);
+  const near = (i) => out[i * 4 + 3] > 0 && Math.max(Math.abs(out[i * 4] - bg.color[0]), Math.abs(out[i * 4 + 1] - bg.color[1]), Math.abs(out[i * 4 + 2] - bg.color[2])) <= tolerance;
+  const seen = new Uint8Array(w * h2);
+  const stack = [];
+  for (let x = 0; x < w; x++) stack.push(x, (h2 - 1) * w + x);
+  for (let y = 0; y < h2; y++) stack.push(y * w, y * w + w - 1);
+  let cleared = 0;
+  while (stack.length) {
+    const i = stack.pop();
+    if (seen[i]) continue;
+    seen[i] = 1;
+    if (!near(i)) continue;
+    out[i * 4 + 3] = 0;
+    cleared++;
+    const x = i % w;
+    const y = (i - x) / w;
+    if (x > 0) stack.push(i - 1);
+    if (x < w - 1) stack.push(i + 1);
+    if (y > 0) stack.push(i - w);
+    if (y < h2 - 1) stack.push(i + w);
+  }
+  return { image: { width: w, height: h2, data: out }, cleared };
+}
+
 // src/ui/dom.ts
 function h(tag, props = null, ...children) {
   const el = document.createElement(tag);
@@ -3221,6 +4049,10 @@ var Studio = class {
   savedSnapshot = "";
   mode = "rig";
   tool = "select";
+  hints = null;
+  /** An automatic rig waiting for the GM's verdict. */
+  proposal = null;
+  elBanner;
   selected = null;
   hover = null;
   drag = null;
@@ -3291,7 +4123,8 @@ var Studio = class {
       { class: "fusa-empty" },
       h("div", { class: "fusa-empty-card" }, icon("image"), h("b", null, "Import a character sprite"), h("p", null, "PNG or WebP with a transparent background. Pixel art and illustrations both work. The file is used exactly as it is: nothing is resized, recoloured or repainted."), h("button", { type: "button", class: "fusa-btn primary", onclick: () => this.importImage() }, icon("image"), "Choose sprite"), h("button", { type: "button", class: "fusa-btn", onclick: () => this.openDialog() }, icon("open"), "Open a saved rig"))
     );
-    center.append(this.elToolbar, this.elEmpty, this.elStatus);
+    this.elBanner = h("div", { class: "fusa-banner" });
+    center.append(this.elToolbar, this.elEmpty, this.elBanner, this.elStatus);
     this.viewport = new Viewport(center, {
       down: (x, y, e) => this.onDown(x, y, e),
       move: (x, y, e) => this.onMove(x, y, e),
@@ -3312,6 +4145,7 @@ var Studio = class {
       { class: "fusa-toolrow" },
       ibtn("add", "Add a bone (drag in the view from joint to tip)", () => this.setTool(this.tool === "add" ? "select" : "add"), { class: "tool-add" }),
       ibtn("trash", "Delete the selected bone (Del)", () => this.deleteSelected()),
+      ibtn("bone", "Auto-rig: find the joints in the sprite again (you can keep or discard the result)", () => void this.autoRig(), { class: "tool-auto" }),
       ibtn("wand", "Assign every pixel to its nearest bone (replaces painted regions)", () => this.reassign()),
       h(
         "select",
@@ -3336,6 +4170,46 @@ var Studio = class {
     this.renderTransport();
     this.renderToolbar();
     this.renderStatus();
+    this.renderBanner();
+  }
+  renderBanner() {
+    const e = this.elBanner;
+    clear(e);
+    const p = this.proposal;
+    e.classList.toggle("show", !!p && !!this.rig);
+    if (!p || !this.rig) return;
+    const dots = (v) => "\u25CF".repeat(Math.max(1, Math.round(v * 3))) + "\u25CB".repeat(3 - Math.max(1, Math.round(v * 3)));
+    const groups = Object.entries(p.report.confidence).map(([k3, v]) => h("span", { class: "conf", title: `${Math.round(v * 100)}%` }, `${k3} ${v > 0 ? dots(v) : "\u2014"}`));
+    e.append(
+      h("div", { class: "fusa-banner-text" }, h("b", null, p.report.method === "landmarks" ? "Automatic rig" : "Rig from proportions"), h("span", null, `Faces ${this.rig.facing}.`), ...groups, ...p.report.notes.map((n) => h("small", null, n))),
+      h(
+        "div",
+        { class: "fusa-banner-actions" },
+        h("button", { type: "button", class: "fusa-btn primary small", onclick: () => (this.proposal = null, this.renderBanner()) }, "Keep"),
+        p.report.method === "landmarks" ? h("button", { type: "button", class: "fusa-btn small", onclick: () => void this.autoRig(false) }, "Use proportions instead") : null,
+        p.previous ? h("button", { type: "button", class: "fusa-btn subtle small", onclick: () => this.discardProposal() }, "Discard") : null
+      )
+    );
+  }
+  /** Find the joints again (or fit by proportions) and offer the result. */
+  async autoRig(detect = true) {
+    if (!this.rig || !this.image) return;
+    const previous = this.proposal?.previous ?? this.snapshot();
+    const p = proposeRig(this.image, this.rig.template === "custom" ? "custom" : "humanoid", "auto", detect);
+    Object.assign(this.rig, { bones: p.bones, parts: p.parts, ownership: p.ownership, metrics: p.metrics, facing: p.facing });
+    this.labels = rigLabels(this.rig);
+    this.selected = null;
+    this.proposal = { report: p.report, previous };
+    this.commit();
+  }
+  discardProposal() {
+    const prev = this.proposal?.previous ?? null;
+    this.proposal = null;
+    if (prev) {
+      this.restore(prev);
+      this.history.record(prev);
+    }
+    this.renderBanner();
   }
   renderHeader() {
     const e = this.elHeader;
@@ -3587,7 +4461,13 @@ var Studio = class {
     if (this.mode === "rig") tools.push(h("div", { class: "fusa-seg small" }, h("button", { type: "button", class: this.tool !== "add" ? "active" : "", onclick: () => this.setTool("select") }, "Move"), h("button", { type: "button", class: this.tool === "add" ? "active" : "", onclick: () => this.setTool("add") }, icon("add"), "Add bone")));
     if (this.mode === "paint") {
       tools.push(
-        h("div", { class: "fusa-seg small" }, h("button", { type: "button", class: this.tool !== "bucket" ? "active" : "", onclick: () => this.setTool("brush") }, icon("brush"), "Brush"), h("button", { type: "button", class: this.tool === "bucket" ? "active" : "", onclick: () => this.setTool("bucket") }, icon("bucket"), "Bucket")),
+        h(
+          "div",
+          { class: "fusa-seg small" },
+          h("button", { type: "button", class: this.tool === "brush" ? "active" : "", onclick: () => this.setTool("brush") }, icon("brush"), "Brush"),
+          h("button", { type: "button", class: this.tool === "bucket" ? "active" : "", onclick: () => this.setTool("bucket") }, icon("bucket"), "Bucket"),
+          h("button", { type: "button", class: this.tool === "hidden" ? "active" : "", title: "Extend the selected part under the parts in front of it (what shows when they move away). Cyan: the automatic fill; gold: your additions. Right-click removes.", onclick: () => this.setTool("hidden") }, icon("eye"), "Hidden")
+        ),
         slider("Size", this.brushSize, 0.5, 12, 0.5, (v) => this.brushSize = v, (v) => `${v}px`)
       );
     }
@@ -3611,20 +4491,36 @@ var Studio = class {
   }
   /** Load an image URL and start a new rig on it. */
   async newFromImage(src, name) {
-    const { data } = await loadImageData(src);
+    let { data } = await loadImageData(src);
     if (data.width * data.height > 4096 * 4096) throw new Error("This image is too large (over 4096\xD74096).");
     const base2 = name ?? decodeURIComponent(src.split("/").pop() ?? "Sprite").replace(/\.[a-z0-9]+(\?.*)?$/i, "");
+    const bg = detectBackground(data);
+    if (bg) {
+      const [r, g, b] = bg.color;
+      const ok = await this.host.confirm("Solid background", `This sprite has a solid background (rgb ${r}, ${g}, ${b}) instead of transparency, so it would show as a box on the map. Save a transparent copy and use that? Your original file is not changed.`);
+      if (ok) {
+        const { image } = removeBackground(data, bg);
+        const canvas2 = document.createElement("canvas");
+        canvas2.width = image.width;
+        canvas2.height = image.height;
+        canvas2.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
+        src = await this.host.storeImage(`${base2.replace(/[^a-z0-9_-]+/gi, "_")}-transparent.png`, canvas2.toDataURL("image/png"));
+        data = (await loadImageData(src)).data;
+      }
+    }
     const rig = createRig({ name: base2, src, image: data, template: "humanoid" });
     this.setRig(rig, data, false);
-    this.host.notify("Skeleton placed from the humanoid template. Drag joints onto the art, then press the wand to reassign pixels.");
   }
   /** Show a rig (and its image). */
   setRig(rig, image, saved) {
     this.rig = rig;
     this.image = image;
     this.labels = rigLabels(rig);
+    this.hints = rigHints(rig);
     this.selected = null;
     this.pose.clear();
+    const report2 = lastReport.get(rig);
+    this.proposal = report2 && !saved ? { report: report2, previous: null } : null;
     this.history.reset(this.snapshot());
     this.savedSnapshot = saved ? this.snapshot() : "";
     this.rebuild();
@@ -3642,6 +4538,7 @@ var Studio = class {
   commit() {
     if (!this.rig || !this.labels) return;
     this.rig.ownership = encodeRle(this.labels);
+    this.rig.fillHints = this.hints && this.hints.some((v) => v) ? encodeRle(this.hints) : null;
     this.rig.updated = Date.now();
     this.history.record(this.snapshot());
     this.needsBuild = true;
@@ -3653,6 +4550,7 @@ var Studio = class {
     if (!snap || !this.image) return;
     this.rig = JSON.parse(snap);
     this.labels = rigLabels(this.rig);
+    this.hints = rigHints(this.rig);
     if (this.selected && !this.boneOf(this.selected)) this.selected = null;
     this.needsBuild = true;
     this.validate();
@@ -3690,6 +4588,23 @@ var Studio = class {
   }
   refreshRegions() {
     if (!this.rig) return;
+    if (this.mode === "paint" && this.tool === "hidden") {
+      const part = this.partOf(this.selected);
+      const W = this.rig.image.width;
+      const H = this.rig.image.height;
+      const show2 = new Uint8Array(W * H);
+      if (part && this.labels) {
+        for (let i = 0; i < show2.length; i++) if (this.labels[i] === part.label) show2[i] = 1;
+        for (const i of this.view?.build.fills.get(part.label)?.indices ?? []) show2[i] = 2;
+        if (this.hints) {
+          for (let i = 0; i < show2.length; i++) if (this.hints[i] === part.label) show2[i] = 3;
+        }
+      }
+      const own = this.boneOf(this.selected)?.color ?? "#c9a7ff";
+      this.viewport.setRegions(show2, W, H, (l) => l === 1 ? own : l === 2 ? "#5ee6ff" : "#f2c45a", true);
+      this.viewport.setRegionAlpha(0.6);
+      return;
+    }
     const colour = new Map(this.rig.parts.map((p) => [p.label, this.boneOf(p.bone)?.color ?? "#c9a7ff"]));
     const show = this.showRegions && (this.mode === "rig" || this.mode === "paint");
     this.viewport.setRegions(this.labels, this.rig.image.width, this.rig.image.height, (l) => colour.get(l) ?? "#ff00ff", show);
@@ -3713,6 +4628,7 @@ var Studio = class {
     this.tool = tool;
     this.renderToolbar();
     this.renderStatus();
+    this.refreshRegions();
   }
   select(id) {
     if (id === this.selected) return;
@@ -3792,6 +4708,14 @@ var Studio = class {
       this.drag = { kind, id: hit.id, lastX: x, lastY: y };
       return;
     }
+    if (this.mode === "paint" && this.tool === "hidden") {
+      const part = this.partOf(this.selected);
+      if (!part) return this.host.notify("Select the bone whose part should extend under its neighbours.", "info");
+      this.hints ??= new Uint8Array(this.rig.image.width * this.rig.image.height);
+      this.drag = { kind: "hint", id: String(right ? -part.label : part.label), lastX: x, lastY: y };
+      this.hintAt(x, y, right ? -part.label : part.label);
+      return;
+    }
     if (this.mode === "paint") {
       const target = this.paintLabel(right);
       if (target === null) return;
@@ -3833,6 +4757,13 @@ var Studio = class {
       d.lastX = x;
       d.lastY = y;
       this.renderInspector();
+      return;
+    }
+    if (this.mode === "paint" && d.kind === "hint") {
+      const steps = Math.max(1, Math.ceil(Math.hypot(x - d.lastX, y - d.lastY) / Math.max(0.5, this.brushSize / 2)));
+      for (let k3 = 1; k3 <= steps; k3++) this.hintAt(d.lastX + (x - d.lastX) * k3 / steps, d.lastY + (y - d.lastY) * k3 / steps, Number(d.id));
+      d.lastX = x;
+      d.lastY = y;
       return;
     }
     if (this.mode === "paint" && d.kind === "paint") {
@@ -3924,6 +4855,26 @@ var Studio = class {
     }
     const part = this.partOf(b.id) ?? ensurePart(this.rig, b.id);
     return part.label;
+  }
+  /** Mark (label > 0) or unmark (label < 0) hidden-region hints under the brush. */
+  hintAt(x, y, label) {
+    if (!this.hints || !this.image || !this.rig) return;
+    const W = this.rig.image.width;
+    const r = this.brushSize;
+    let changed = false;
+    for (let py = Math.max(0, Math.floor(y - r)); py <= Math.min(this.rig.image.height - 1, Math.ceil(y + r)); py++) {
+      for (let px = Math.max(0, Math.floor(x - r)); px <= Math.min(W - 1, Math.ceil(x + r)); px++) {
+        if ((px + 0.5 - x) ** 2 + (py + 0.5 - y) ** 2 > r * r) continue;
+        const i = py * W + px;
+        if (this.image.data[i * 4 + 3] !== 255) continue;
+        const v = label > 0 ? label : this.hints[i] === -label ? 0 : this.hints[i];
+        if (this.hints[i] !== v) {
+          this.hints[i] = v;
+          changed = true;
+        }
+      }
+    }
+    if (changed) this.refreshRegions();
   }
   paintAt(x, y, label) {
     if (!this.labels || !this.image) return;
@@ -4043,7 +4994,7 @@ var Studio = class {
       this.poseDirty = false;
     }
     if (v.dirty) v.render(this.viewport.app.renderer);
-    const brush = this.mode === "paint" && this.cursor && this.tool === "brush" ? { x: this.cursor.x, y: this.cursor.y, r: this.brushSize } : null;
+    const brush = this.mode === "paint" && this.cursor && (this.tool === "brush" || this.tool === "hidden") ? { x: this.cursor.x, y: this.cursor.y, r: this.brushSize } : null;
     this.viewport.drawBones(this.gizmos(), this.showBones || this.mode === "rig" || this.mode === "pose", brush);
   }
   /* ------------------------------------------------------------------ */

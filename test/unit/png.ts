@@ -61,7 +61,7 @@ export function readPng(path: string): ImageDataLike {
 	return { width, height, data };
 }
 
-export const SPRITES = ['warrior', 'mage', 'greatsword', 'knight', 'tiny', 'wolf', 'slime', 'illustrated'] as const;
+export const SPRITES = ['warrior', 'mage', 'greatsword', 'knight', 'tiny', 'wolf', 'slime', 'illustrated', 'swordsman_white', 'mage_front', 'golem', 'ghost', 'dragon'] as const;
 export const spritePath = (name: string) => new URL(`../sprites/${name}.png`, import.meta.url).pathname;
 
 /** Write an RGBA PNG (for debugging and visual review). */
