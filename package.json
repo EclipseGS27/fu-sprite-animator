@@ -1,0 +1,22 @@
+{
+  "name": "fu-sprite-animator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fabula Ultima Sprite Animator: 2D skeletal animation of flat character sprites for Foundry VTT v13.",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "watch": "node tools/build.mjs --watch",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:render": "node test/render/run.mjs",
+    "check": "npm run typecheck && npm run test && npm run build && npm run test:render"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "esbuild": "^0.25.0",
+    "pixi.js": "7.4.3",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
