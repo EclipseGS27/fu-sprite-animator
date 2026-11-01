@@ -1,0 +1,44 @@
+{
+  "id": "fu-sprite-animator",
+  "title": "Fabula Ultima Sprite Animator",
+  "description": "2D skeletal animation for character sprites. Rig any PNG or WebP sprite in the Sprite Animation Studio (bones, joints, bending parts, hidden-region fill), preview reusable animations (idle, sword slash, heavy slash, magic cast, hits) and let actors' tokens play them on the map. Pixel art stays pixel-exact. Works alongside Fabula Ultima Battle Animations.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "George Sowidan"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "relationships": {
+    "systems": [
+      {
+        "id": "projectfu",
+        "type": "system",
+        "compatibility": {
+          "minimum": "4.14.0"
+        }
+      }
+    ],
+    "recommends": [
+      {
+        "id": "fu-animations",
+        "type": "module",
+        "reason": "Battle effects, dashes and impacts; the sprite animator animates the characters themselves."
+      }
+    ]
+  },
+  "esmodules": [
+    "dist/fu-sprite-animator.mjs"
+  ],
+  "styles": [
+    "styles/studio.css"
+  ],
+  "socket": true,
+  "url": "https://github.com/EclipseGS27/fu-sprite-animator",
+  "manifest": "https://raw.githubusercontent.com/EclipseGS27/fu-sprite-animator/main/module.json",
+  "download": "https://github.com/EclipseGS27/fu-sprite-animator/archive/refs/heads/main.zip",
+  "bugs": "https://github.com/EclipseGS27/fu-sprite-animator/issues"
+}

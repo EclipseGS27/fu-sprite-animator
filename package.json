@@ -10,8 +10,11 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:render": "node test/render/run.mjs",
-    "check": "npm run typecheck && npm run test && npm run build && npm run test:render",
-    "film": "vitest run -c vitest.tools.config.ts"
+    "check": "npm run typecheck && npm test && npm run build && npm run test:render && npm run test:ui && node test/render/integration.mjs",
+    "film": "vitest run -c vitest.tools.config.ts",
+    "test:ui": "node test/render/studio-e2e.mjs",
+    "test:integration": "npm run build && node test/render/integration.mjs",
+    "screenshots": "node test/render/shoot.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
