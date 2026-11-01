@@ -123,3 +123,24 @@ None of the references solve "one flat PNG → parts + skeleton". Our approach (
 | Hidden-region cloning from a GM-chosen source rect | Yes | Low | Phase 3 |
 | Mesh-only deformation (no cut, stretch joints) | Yes, but stretches | None | Yes, per part (`mesh` mode) |
 | AI inpainting | No (invents art) | None | Never mandatory; not planned |
+
+## 7. Learned while building Phase 2
+- **Trimmed textures work for sizing** (`orig` = sprite size, `trim` = padded render area):
+  verified with `PIXI.Sprite` in PixiJS 7.4.3; Foundry's `SpriteMesh` documents the same trim
+  members. Confirm with `SpriteAnimator.selfTest()` in Foundry.
+- **Rest-pose identity holds on the GPU**: atlas uploaded with `BaseTexture.fromBuffer` +
+  `ALPHA_MODES.UNPACK`, integer vertices, `NEAREST`, native-resolution render texture →
+  pixel-exact for opaque and pixel-art sprites. Linear (smooth) mode drifts ≤ 8/255 on
+  semi-transparent edges.
+- **Strikes need world-angle keys**, including the blade: with offsets only, a blade kept its
+  rest angle relative to the forearm and pointed up at impact.
+- **Rotation blending must go the short way** or attacks spin 300°+ when fading back to idle.
+- **The near arm crosses the face** in side-view sprites when raised overhead; the slash cocks
+  the elbow behind the shoulder instead.
+- **Automatic assignment baseline**: 58–76 % of pixels match the ground truth on the test set
+  with a bounds-fitted template and nearest-segment assignment. Widening the bounds or shrinking
+  the torso's reach made it worse; real gains need silhouette landmarks (Phase 3).
+- **fu-animations reads `token.mesh.texture`'s image source** for element outlines and feet;
+  render textures have none, so it falls back to a capsule shape (no error).
+- Foundry's `Actor#getActiveTokens()` already returns only the viewed scene's tokens; filtering
+  by `token.scene` broke the mock and is unnecessary.

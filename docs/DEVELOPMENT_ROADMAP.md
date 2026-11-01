@@ -7,7 +7,7 @@ feature lives in [DEVELOPMENT_STATUS.md](../DEVELOPMENT_STATUS.md).
 Reference repositories, licenses, Foundry v13 constraints, existing modules, architecture, risks.
 **Deliverable**: PROJECT_KNOWLEDGE.md, ARCHITECTURE.md, this roadmap, LICENSES_AND_DEPENDENCIES.md.
 
-## Phase 2 — Functional prototype (current)
+## Phase 2 — Functional prototype (built; awaiting the in-Foundry checklist)
 **Definition of the first working prototype** — a GM can, inside Foundry:
 1. Open the Sprite Animation Studio and import a PNG/WebP (the file is kept exactly as uploaded).
 2. Place a humanoid skeleton fitted to the sprite, then move joints, change lengths, rename, add,

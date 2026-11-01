@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "pixijs-scene-mesh": {
+      "source": "pixijs/pixijs-skills",
+      "sourceType": "github",
+      "skillPath": "skills/pixijs-scene-mesh/SKILL.md",
+      "computedHash": "bb536a8d47a4dc8ba066e5597dc40f0f6805fa2f949d44fb3ef0fef147bc9b7e"
+    }
+  }
+}
