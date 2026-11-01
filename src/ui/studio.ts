@@ -259,7 +259,7 @@ export class Studio {
 			const n = part ? (counts.get(part.label) ?? 0) : 0;
 			const el = h(
 				'div',
-				{ class: `fusa-node ${b.id === this.selected ? 'selected' : ''}`, role: 'treeitem', style: `--depth:${depth}`, title: b.role ? `Role: ${b.role}` : 'No role', onclick: () => this.select(b.id), ondblclick: () => this.renameInline(el, b) },
+				{ class: `fusa-node ${b.id === this.selected ? 'selected' : ''}`, role: 'treeitem', style: `--depth:${depth}`, title: b.role ? `Role: ${b.role}` : 'No role', dataset: { id: b.id }, onclick: () => this.select(b.id), ondblclick: () => this.renameInline(b) },
 				h('span', { class: 'swatch', style: `background:${b.color ?? '#c9a7ff'}` }),
 				h('span', { class: 'label' }, b.name),
 				part ? h('span', { class: 'px', title: `${n} pixels, ${part.deform}` }, n ? String(n) : '—') : h('span', { class: 'px none', title: 'No pixels of its own' }, '·'),
@@ -270,13 +270,18 @@ export class Studio {
 		for (const r of childrenOf(this.rig, null)) row(r, 0);
 	}
 
-	private renameInline(el: HTMLElement, b: BoneData): void {
+	private renameInline(b: BoneData): void {
+		const el = [...this.elTree.querySelectorAll<HTMLElement>('.fusa-node')].find((n) => n.dataset.id === b.id);
+		const label = el?.querySelector('.label');
+		if (!label) return;
 		const input = h('input', { class: 'fusa-rename', value: b.name });
-		const label = el.querySelector('.label')!;
 		label.replaceWith(input);
 		input.focus();
 		input.select();
+		let finished = false;
 		const done = (ok: boolean) => {
+			if (finished) return;
+			finished = true;
 			if (ok && input.value.trim() && input.value.trim() !== b.name) {
 				updateBone(this.rig!, b.id, { name: input.value });
 				const part = this.partOf(b.id);
@@ -608,8 +613,9 @@ export class Studio {
 	}
 
 	select(id: string | null): void {
+		if (id === this.selected) return;
 		this.selected = id;
-		this.renderTree();
+		for (const n of this.elTree.querySelectorAll<HTMLElement>('.fusa-node')) n.classList.toggle('selected', n.dataset.id === id);
 		this.renderInspector();
 	}
 
@@ -1027,6 +1033,7 @@ export class Studio {
 											class: 'fusa-rig-item',
 											onclick: async () => {
 												close();
+												if (this.hasUnsavedChanges && !(await this.host.confirm('Unsaved changes', `Open "${r.name}"? Unsaved changes to this rig will be lost.`))) return;
 												try {
 													await this.loadRigDocument(await this.host.loadRig(r.id));
 												} catch (e) {
