@@ -3,6 +3,11 @@ import { hashString, rng, smoothstep } from './math';
 import type { Skeleton } from './skeleton';
 import type { ClipDocument, Facing, PhaseTiming } from './types';
 
+/** The angle equivalent to a (± whole turns) closest to ref. */
+export function nearestTurn(a: number, ref: number): number {
+	return a - 360 * Math.round((a - ref) / 360);
+}
+
 export interface PlayOptions {
 	/** 0 = base loop (idle), 1+ = actions layered on top. Default: 0 for looping clips, 1 otherwise. */
 	track?: number;
@@ -248,7 +253,9 @@ export class AnimationPlayer {
 					s.mask[b] = 1;
 					for (let c = 0; c < STRIDE; c++) {
 						const j = b * STRIDE + c;
-						s.delta[j] = sd[j]! + (s.delta[j]! - sd[j]!) * fadeK;
+						// rotations blend the short way round (r and r ± 360 look the same)
+						const to = c === 0 ? nearestTurn(s.delta[j]!, sd[j]!) : s.delta[j]!;
+						s.delta[j] = sd[j]! + (to - sd[j]!) * fadeK;
 					}
 				}
 			}
@@ -261,7 +268,11 @@ export class AnimationPlayer {
 				resMask[b] = 1;
 				for (let c = 0; c < STRIDE; c++) {
 					const j = b * STRIDE + c;
-					res[j] = s.clip.additive ? res[j]! + s.delta[j]! * w : res[j]! + (s.delta[j]! - res[j]!) * w;
+					if (s.clip.additive) res[j] = res[j]! + s.delta[j]! * w;
+					else {
+						const to = c === 0 ? nearestTurn(s.delta[j]!, res[j]!) : s.delta[j]!;
+						res[j] = res[j]! + (to - res[j]!) * w;
+					}
 				}
 			}
 		}
