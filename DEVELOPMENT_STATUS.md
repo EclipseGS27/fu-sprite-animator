@@ -62,6 +62,9 @@ docs/TESTING.md is run in a real Foundry v13 world.
 - Animated tokens' hit-testing uses the still image's shape.
 - fu-animations' element outlines fall back to a capsule shape on animated tokens.
 - A token whose image differs in shape from the rig's sprite is not animated.
+- On big-headed (chibi) sprites the raised front hand overlaps the face for a few frames of the
+  slash wind-up: parts keep one draw order. Draw-order keys (the arm passing behind the head) are
+  planned with the Phase 4 keyframe editor.
 - The heavy slash raises both arms; shield bearers will want a one-handed variant (Phase 5).
 - Bucket fill and right-click-to-parent are covered by unit tests of the underlying functions,
   not by the UI test.

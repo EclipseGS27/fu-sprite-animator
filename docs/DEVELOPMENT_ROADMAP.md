@@ -35,7 +35,7 @@ self-test passes on the GM's Foundry v13 world (we cannot run Foundry in CI).
 ## Phase 4 — Animation editor
 - Keyframe editing on the timeline (per role/bone, rotate/translate/scale), easing picker, curve view.
 - Clip library management (duplicate built-in → world clip), variations, per-phase timing editor.
-- Two-bone IK for posing; onion skin.
+- Two-bone IK for posing; onion skin; draw-order keys (a raised arm passes behind the head).
 - Export/import clips; Spine 4.2 JSON export for interop with Rigby2D/other tools.
 - **Deliverable**: a usable animation authoring environment.
 
