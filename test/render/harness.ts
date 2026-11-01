@@ -102,7 +102,7 @@ async function gpuVsCpu(name: string, clipId: string, frames = 12) {
 	canvas.width = W * frames;
 	canvas.height = H;
 	const ctx = canvas.getContext('2d')!;
-	strip.forEach((px, f) => ctx.putImageData(new ImageData(new Uint8ClampedArray(px.buffer.slice(0)), W, H), f * W, 0));
+	strip.forEach((px, f) => ctx.putImageData(new ImageData(Uint8ClampedArray.from(px), W, H), f * W, 0));
 	view.destroy();
 	return { name, clipId, worstFrameDiff: worst, png: canvas.toDataURL('image/png') };
 }
