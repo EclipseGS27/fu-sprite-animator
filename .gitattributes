@@ -1,0 +1,3 @@
+# The owner's own sprites are for testing only: keep them out of the zip Foundry installs
+# (GitHub's branch and release archives skip export-ignore paths).
+test/sprites/user/ export-ignore

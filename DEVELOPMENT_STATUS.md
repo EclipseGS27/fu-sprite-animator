@@ -136,6 +136,10 @@ docs/TESTING.md is run in a real Foundry v13 world.
   automatically by token movement yet.
 - Creatures: near and far legs that overlap in a side view share one place; curled tails that
   touch a leg are placed by proportion; serpents, spirits and blobs are placed by proportion.
-  Tested on generated creatures shaped like the user's examples, not on the user's files.
+- **On the owner's real sprites** (test/sprites/user, first run 2026-11-02): all import losslessly
+  with exact rest poses, but the automatic rig needs more hand-fitting than on the generated
+  fixtures: no weapon is detected on 3/4-view party sprites, so they are all proposed facing right
+  (most face left); ground shadows go to the legs; the beast detector finds no legs on the real
+  dragon and wolf (proportions are used). See test/sprites/user/README.md.
 - Bucket fill and right-click-to-parent are covered by unit tests of the underlying functions,
   not by the UI test.
