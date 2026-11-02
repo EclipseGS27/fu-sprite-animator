@@ -7,6 +7,7 @@ import { getClip } from '../../src/presets';
 import { buildRig } from '../../src/rig/build';
 import { createRig } from '../../src/rig/document';
 import { rasterize } from '../../src/render/cpu';
+import { drawOrder } from '../../src/core/skin';
 import { RigAsset, RigView, loadImageData, pixi, trimmedTexture, clippedTexture } from '../../src/render/pixi';
 import type { TemplateId } from '../../src/core/types';
 
@@ -85,7 +86,7 @@ async function gpuVsCpu(name: string, clipId: string, frames = 12) {
 		view.render(renderer());
 		const gpu = readRT(view);
 		strip.push(gpu);
-		const cpu = rasterize(build, cpuSk, { snap: rig.render.snap }).data;
+		const cpu = rasterize(build, cpuSk, { snap: rig.render.snap, order: drawOrder(build.geometries, cpuPlayer.layerOverrides) }).data;
 		let differ = 0;
 		let px = 0;
 		for (let i = 0; i < gpu.length; i += 4) {

@@ -9,13 +9,14 @@ import type { ImageDataLike } from '../sprite/image';
  * centres, like the GPU path in pixel mode. Used by tests (fidelity checks without WebGL) and
  * for thumbnails. Straight (non-premultiplied) alpha, "over" compositing, parts in draw order.
  */
-export function rasterize(build: RigBuild, skeleton: Skeleton, o: { snap?: boolean } = {}): ImageDataLike {
+export function rasterize(build: RigBuild, skeleton: Skeleton, o: { snap?: boolean; order?: number[] } = {}): ImageDataLike {
 	const W = build.outWidth;
 	const H = build.outHeight;
 	const out = new Uint8ClampedArray(W * H * 4);
 	const skins: Affine[] = o.snap ? snapSkins(skeleton.skin, []) : skeleton.skin;
 	const tex = build.atlas;
-	for (const g of build.geometries) {
+	for (const gi of o.order ?? build.geometries.map((_, i) => i)) {
+		const g = build.geometries[gi]!;
 		deformPart(g, skins, build.pad, build.pad);
 		const v = g.out;
 		const uv = g.uvs;

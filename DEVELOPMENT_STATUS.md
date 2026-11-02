@@ -4,7 +4,7 @@ Statuses: **Not Started**, **In Progress**, **Implemented** (code exists, not ye
 test), **Tested** (an automated or recorded manual test passed — the "Evidence" column says
 which), **Blocked**.
 
-Last updated: 2026-11-01 (Phase 3). Environment for automated tests: Node 22, Chromium (SwiftShader
+Last updated: 2026-11-01 (Phase 4). Environment for automated tests: Node 22, Chromium (SwiftShader
 WebGL), PixiJS 7.4.3. **No Foundry VTT instance was available**: every Foundry-dependent feature
 below is at most *Implemented* (exercised only against a Foundry mock) until the checklist in
 docs/TESTING.md is run in a real Foundry v13 world.
@@ -61,10 +61,23 @@ docs/TESTING.md is run in a real Foundry v13 world.
 | Web Worker for analysis | Not Started (not needed) | measured: 300 ms auto-rig for 576×480, 47 ms for 96 px; runs once per import |
 | Clone-from-source hidden-region tool | Not Started | the hint brush + automatic fill cover the need so far |
 
+## Phase 4 — Animation editor
+| Feature | Status | Evidence |
+| --- | --- | --- |
+| Keyframe editing: pose a bone to key it (turn/position), key rows on the timeline, select, retime, delete, easing per key | Tested (test page) | e2e: editor-e2e.mjs |
+| Pose → key inverse of evaluation (relative and screen-angle keys, both facings) | Tested | unit: phase4.test.ts round trip |
+| Clip properties (name, category, length, loop), events, phases | Tested | unit + e2e |
+| Draw-order (layer) keys in clips, player, GPU and CPU renderers | Tested | unit (order + switching); slash wind-up now passes the arm behind the head (filmstrip reviewed) |
+| Two-bone IK (Pose mode and key editing) | Tested | unit (reaches targets, keeps bend) + e2e |
+| Onion skin (ghost frames) | Tested (test page) | e2e |
+| Clip undo/redo while editing | Tested | e2e |
+| World clip library: duplicate, delete (own only), import (never overrides), export; built-ins read-only | Tested (test page) | e2e; Foundry world setting only in mock |
+| Spine 4.2 JSON export | Not Started | not needed so far; clips export as JSON in our format |
+| Curve (graph) editor | Not Started | easing presets + Bézier values in files cover it for now |
+
 ## Later phases
 | Feature | Status |
 | --- | --- |
-| Phase 4: keyframe editing, clip library management, IK, onion skin, Spine JSON export | Not Started |
 | Phase 5: ability → clip mapping database, combat triggers from Project FU chat cards, fu-animations sync | Not Started (design in .claude/skills/fu-ability-mapping) |
 | Phase 5: presets — movement, defence (block, dodge, parry, counter, guard), remaining attacks and magic, defeat | Not Started |
 | Phase 6: quadruped, winged, serpentine, blob templates and creature clips | Not Started (custom rigs work today) |
@@ -79,9 +92,6 @@ docs/TESTING.md is run in a real Foundry v13 world.
 - Animated tokens' hit-testing uses the still image's shape.
 - fu-animations' element outlines fall back to a capsule shape on animated tokens.
 - A token whose image differs in shape from the rig's sprite is not animated.
-- On big-headed (chibi) sprites the raised front hand overlaps the face for a few frames of the
-  slash wind-up: parts keep one draw order. Draw-order keys (the arm passing behind the head) are
-  planned with the Phase 4 keyframe editor.
 - The heavy slash raises both arms; shield bearers will want a one-handed variant (Phase 5).
 - Bucket fill and right-click-to-parent are covered by unit tests of the underlying functions,
   not by the UI test.

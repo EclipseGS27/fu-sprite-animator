@@ -73,6 +73,10 @@ export class AnimationPlayer {
 	private readonly angles: Float64Array;
 	private opts: PlayerOptions;
 	private playCount = 0;
+	/** Bone index → draw this bone's parts behind/in front of another bone's (from layer keys). */
+	readonly layerOverrides = new Map<number, { behind?: number; front?: number }>();
+	/** Changes whenever layerOverrides changes. */
+	layerKey = '';
 
 	constructor(skeleton: Skeleton, opts: PlayerOptions) {
 		this.skeleton = skeleton;
@@ -276,6 +280,7 @@ export class AnimationPlayer {
 				}
 			}
 		}
+		this.updateLayers();
 		for (let b = 0; b < n; b++) {
 			const setup = sk.setup[b]!;
 			const l = sk.local[b]!;
@@ -287,5 +292,30 @@ export class AnimationPlayer {
 			l.sy = setup.sy * (1 + res[o + 4]!);
 		}
 		sk.update();
+	}
+
+	/** Draw-order overrides from the layer keys of the playing tracks (higher tracks win). */
+	private updateLayers(): void {
+		const sk = this.skeleton;
+		const ov = this.layerOverrides;
+		ov.clear();
+		for (const s of this.tracks) {
+			if (!s || s.weight < 0.5) continue;
+			const t = s.warp.toClip(s.time);
+			for (const [role, track] of Object.entries(s.clip.tracks)) {
+				if (!track.layer?.length) continue;
+				const bone = sk.roles.get(role);
+				if (bone === undefined) continue;
+				let key: (typeof track.layer)[number] | undefined;
+				for (const k of track.layer) if (k.t <= t + 1e-9) key = k;
+				const target = key?.behind ?? key?.front;
+				const ti = target ? sk.roles.get(target) : undefined;
+				if (key && ti !== undefined) ov.set(bone, key.behind ? { behind: ti } : { front: ti });
+				else ov.delete(bone);
+			}
+		}
+		let k = '';
+		for (const [b, o] of ov) k += `${b}:${o.behind ?? ''}/${o.front ?? ''};`;
+		this.layerKey = k;
 	}
 }

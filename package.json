@@ -12,7 +12,7 @@
     "test:render": "node test/render/run.mjs",
     "check": "npm run typecheck && npm test && npm run build && npm run test:render && npm run test:ui && node test/render/integration.mjs",
     "film": "vitest run -c vitest.tools.config.ts",
-    "test:ui": "node test/render/studio-e2e.mjs",
+    "test:ui": "node test/render/studio-e2e.mjs && node test/render/editor-e2e.mjs",
     "test:integration": "npm run build && node test/render/integration.mjs",
     "screenshots": "node test/render/shoot.mjs"
   },

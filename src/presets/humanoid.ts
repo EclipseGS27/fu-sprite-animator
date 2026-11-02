@@ -89,15 +89,18 @@ export const SWORD_SLASH = base({
 		'arm.upper.front': {
 			space: 'world',
 			rotate: [k(0, 100, 'outCubic'), k(0.28, 168), k(0.32, 174, SNAP), k(0.44, 40, 'outBack'), k(0.52, 46, SETTLE), k(0.9, 82)],
+			layer: [{ t: 0.05, behind: 'head' }, { t: 0.37 }],
 		},
 		'arm.lower.front': {
 			space: 'world',
 			rotate: [k(0, 70, 'outCubic'), k(0.3, -112), k(0.33, -116, SNAP), k(0.45, 38, 'outBack'), k(0.53, 44, SETTLE), k(0.9, 50)],
+			layer: [{ t: 0.05, behind: 'head' }, { t: 0.37 }],
 		},
-		'hand.front': { rotate: [k(0, 0, 'outCubic'), k(0.3, 10), k(0.34, 10, SNAP), k(0.45, -8, 'outQuad'), k(0.9, 0, SETTLE)] },
+		'hand.front': { rotate: [k(0, 0, 'outCubic'), k(0.3, 10), k(0.34, 10, SNAP), k(0.45, -8, 'outQuad'), k(0.9, 0, SETTLE)], layer: [{ t: 0.05, behind: 'head' }, { t: 0.37 }] },
 		weapon: {
 			space: 'world',
 			rotate: [k(0, -60, 'outCubic'), k(0.3, -196), k(0.33, -200, SNAP), k(0.45, 42, 'outBack'), k(0.54, 50, SETTLE), k(0.9, -50)],
+			layer: [{ t: 0.05, behind: 'head' }, { t: 0.37 }],
 		},
 		'arm.upper.back': { rotate: [k(0, 0, 'outCubic'), k(0.3, -22), k(0.34, -22, SNAP), k(0.46, 34, 'outQuad'), k(0.64, 24, SETTLE), k(0.9, 0)] },
 		'arm.lower.back': { rotate: [k(0, 0, 'outCubic'), k(0.3, -25), k(0.46, 10, 'outQuad'), k(0.9, 0, SETTLE)] },
@@ -137,15 +140,18 @@ export const HEAVY_SLASH = base({
 		'arm.upper.front': {
 			space: 'world',
 			rotate: [k(0, 100, 'outCubic'), k(0.5, -78), k(0.62, -84, SNAP), k(0.74, 62, 'outBack'), k(0.86, 66, SETTLE), k(1.35, 85)],
+			layer: [{ t: 0.12, behind: 'head' }, { t: 0.68 }],
 		},
 		'arm.lower.front': {
 			space: 'world',
 			rotate: [k(0, 70, 'outCubic'), k(0.5, -150), k(0.62, -156, SNAP), k(0.75, 62, 'outBack'), k(0.86, 64, SETTLE), k(1.35, 55)],
+			layer: [{ t: 0.12, behind: 'head' }, { t: 0.68 }],
 		},
-		'hand.front': { rotate: [k(0, 0, 'outCubic'), k(0.55, 8), k(0.62, 8, SNAP), k(0.75, -6, 'outQuad'), k(1.35, 0, SETTLE)] },
+		'hand.front': { rotate: [k(0, 0, 'outCubic'), k(0.55, 8), k(0.62, 8, SNAP), k(0.75, -6, 'outQuad'), k(1.35, 0, SETTLE)], layer: [{ t: 0.12, behind: 'head' }, { t: 0.68 }] },
 		weapon: {
 			space: 'world',
 			rotate: [k(0, -60, 'outCubic'), k(0.5, -175), k(0.62, -182, SNAP), k(0.75, 70, 'outBack'), k(0.88, 74, SETTLE), k(1.35, -45)],
+			layer: [{ t: 0.12, behind: 'head' }, { t: 0.68 }],
 		},
 		'arm.upper.back': {
 			space: 'world',

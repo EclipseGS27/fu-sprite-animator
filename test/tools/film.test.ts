@@ -5,6 +5,7 @@ import { Skeleton } from '../../src/core/skeleton';
 import { buildRig } from '../../src/rig/build';
 import { createRig } from '../../src/rig/document';
 import { rasterize } from '../../src/render/cpu';
+import { drawOrder } from '../../src/core/skin';
 import { getClip } from '../../src/presets';
 import { encodeRle } from '../../src/sprite/rle';
 import { groundTruthRoles } from '../unit/groundtruth';
@@ -32,7 +33,7 @@ it('film', () => {
 	const sheet = new Uint8ClampedArray(W * frames * H * 4);
 	for (let f = 0; f < frames; f++) {
 		p.update(f === 0 ? 0 : dur / frames);
-		const img = rasterize(build, sk, { snap: true });
+		const img = rasterize(build, sk, { snap: true, order: drawOrder(build.geometries, p.layerOverrides) });
 		for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
 			const s = (y * W + x) * 4, d = (y * W * frames + f * W + x) * 4;
 			const bg = (x === 0 || y === 0) ? [90, 90, 120, 255] : [36, 40, 56, 255];

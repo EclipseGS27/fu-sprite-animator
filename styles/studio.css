@@ -168,3 +168,18 @@
 .fusa-banner-text small { flex-basis: 100%; color: var(--ink3); }
 .fusa-banner-actions { display: flex; gap: 6px; }
 .fusa-toolrow .tool-auto { color: var(--blue); }
+
+/* animation editing */
+.fusa-lib-head { display: flex; align-items: center; justify-content: space-between; padding-right: 8px; }
+.fusa-lib-actions { display: flex; gap: 2px; }
+.fusa-lib-actions .fusa-ibtn { width: 26px; height: 26px; color: var(--ink3); }
+.fusa-transport .grow { flex: 1; }
+.fusa-btn.on { border-color: var(--blue); background: rgba(90, 169, 255, 0.25); }
+.fusa-row { display: flex; gap: 6px; align-items: center; }
+.fusa-row input[type='number'], .fusa-row input[type='text'] { width: 100%; min-width: 0; height: 26px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg1); color: var(--ink); }
+.fusa-field input[type='number'] { height: 28px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg1); color: var(--ink); min-width: 0; }
+.fusa-event-row { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 6px; font-size: 12px; color: var(--ink2); }
+.fusa-event-row .fusa-ibtn { width: 22px; height: 22px; }
+.fusa-studio[data-mode='animate'] .fusa-timeline { min-height: 96px; }
+.fusa-studio.editing { grid-template-rows: 54px minmax(0, 1fr) 268px; }
+.fusa-studio.editing .fusa-timeline { min-height: 112px; }

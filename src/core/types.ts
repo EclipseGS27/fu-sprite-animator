@@ -143,6 +143,13 @@ export interface Key2 {
 	e?: Ease;
 }
 
+/** Draw-order change from time t (held until the next key): draw this role's parts just behind or in front of another role's. A key with neither restores the normal order. */
+export interface LayerKey {
+	t: number;
+	behind?: RoleId;
+	front?: RoleId;
+}
+
 export interface RoleTrack {
 	/**
 	 * offset (default): degrees added to the setup rotation.
@@ -155,6 +162,8 @@ export interface RoleTrack {
 	translate?: Key2[];
 	/** Multipliers of the setup scale. */
 	scale?: Key2[];
+	/** Draw-order changes (e.g. the sword arm passes behind the head during a wind-up). */
+	layer?: LayerKey[];
 }
 
 export type ClipCategory = 'idle' | 'movement' | 'attack' | 'magic' | 'defence' | 'reaction' | 'other';

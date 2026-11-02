@@ -32,7 +32,7 @@ self-test passes on the GM's Foundry v13 world (we cannot run Foundry in CI).
 - Web Worker for analysis of large images.
 - **Deliverable**: one-click rig proposal with manual correction, never auto-committed.
 
-## Phase 4 — Animation editor
+## Phase 4 — Animation editor ✅ (Spine export and a curve editor deferred)
 - Keyframe editing on the timeline (per role/bone, rotate/translate/scale), easing picker, curve view.
 - Clip library management (duplicate built-in → world clip), variations, per-phase timing editor.
 - Two-bone IK for posing; onion skin; draw-order keys (a raised arm passes behind the head).

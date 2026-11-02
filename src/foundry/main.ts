@@ -2,6 +2,8 @@ import { MODULE_ID, SOCKET, STUDIO_TITLE } from './constants';
 import { createApi, onSocket } from './api';
 import { StudioApp } from './studio-app';
 import { registerTokenHooks, tokenAnimators } from './tokens';
+import { worldClips } from './storage';
+import { registerClip, unregisterClip } from '../presets';
 
 /**
  * Fabula Ultima Sprite Animator — entry point (Foundry v13).
@@ -11,6 +13,7 @@ import { registerTokenHooks, tokenAnimators } from './tokens';
 Hooks.once('init', () => {
 	const reg = (key: string, data: Record<string, unknown>) => game.settings.register(MODULE_ID, key, { config: true, ...data });
 	game.settings.register(MODULE_ID, 'rigs', { scope: 'world', config: false, type: Object, default: {} });
+	game.settings.register(MODULE_ID, 'clips', { scope: 'world', config: false, type: Object, default: {}, onChange: () => syncWorldClips() });
 	reg('animateTokens', {
 		name: 'Animate tokens',
 		hint: 'Tokens of actors with a sprite animation idle and act on the map. Turn off to see their still images (for you only).',
@@ -52,7 +55,24 @@ Hooks.once('init', () => {
 	registerTokenHooks();
 });
 
+/** Register the world's own clips (and drop ones that were deleted) on this client. */
+const worldClipIds = new Set<string>();
+function syncWorldClips(): void {
+	const clips = worldClips();
+	for (const id of worldClipIds) if (!clips[id]) unregisterClip(id);
+	worldClipIds.clear();
+	for (const [id, clip] of Object.entries(clips)) {
+		try {
+			registerClip(clip);
+			worldClipIds.add(id);
+		} catch (e) {
+			console.warn(`${MODULE_ID} | world animation "${id}" is invalid`, e);
+		}
+	}
+}
+
 Hooks.once('ready', () => {
+	syncWorldClips();
 	game.socket?.on(SOCKET, onSocket);
 	Hooks.callAll(`${MODULE_ID}.ready`, game.modules.get(MODULE_ID)?.api);
 });

@@ -53,6 +53,9 @@ function makeHost(app: StudioApp): StudioHost {
 		notify: (m, t = 'info') => ui.notifications?.[t === 'warn' ? 'warn' : t === 'error' ? 'error' : 'info'](m),
 		confirm: confirmDialog,
 		assignToActor: (rig) => assignRigToActor(rig, app.actorId ?? undefined),
+		listClips: async () => Object.values(storage.worldClips()),
+		saveClip: (clip) => storage.saveClip(clip),
+		deleteClip: (id) => storage.deleteClip(id),
 	};
 }
 

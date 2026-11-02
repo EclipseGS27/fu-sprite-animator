@@ -2,7 +2,7 @@ import type * as PIXINS from 'pixi.js';
 import type { Affine } from '../core/math';
 import { AnimationPlayer } from '../core/player';
 import { Skeleton } from '../core/skeleton';
-import { deformPart, snapSkins } from '../core/skin';
+import { deformPart, drawOrder, snapSkins } from '../core/skin';
 import type { RigBuild } from '../rig/build';
 
 /**
@@ -91,6 +91,7 @@ export class RigView {
 	private readonly meshes: PIXINS.SimpleMesh[] = [];
 	private readonly skins: Affine[] = [];
 	private destroyed = false;
+	private orderKey = '';
 	/** Set when the pose changed since the last render. */
 	dirty = true;
 
@@ -147,6 +148,12 @@ export class RigView {
 	render(renderer: PIXINS.IRenderer): void {
 		if (this.destroyed) return;
 		this.syncMeshes();
+		if (this.player.layerKey !== this.orderKey) {
+			// a clip moved parts in the draw order (e.g. an arm behind the head)
+			this.orderKey = this.player.layerKey;
+			const order = drawOrder(this.asset.build.geometries, this.player.layerOverrides);
+			order.forEach((gi, z) => this.container.setChildIndex(this.meshes[gi]!, z));
+		}
 		renderer.render(this.container, { renderTexture: this.renderTexture, clear: true });
 		this.dirty = false;
 	}

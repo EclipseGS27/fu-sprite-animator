@@ -238,3 +238,29 @@ export function deformPart(g: PartGeometry, skins: Affine[], offsetX = 0, offset
 		out[v * 2 + 1] = oy + offsetY;
 	}
 }
+
+/**
+ * Draw order of part geometries with layer overrides applied: each overridden bone's parts move
+ * just behind (or just in front of) the target bone's parts. Overrides apply in base order, so a
+ * whole arm chain moved behind the head keeps its own internal order.
+ */
+export function drawOrder(geoms: { boneIndex: number }[], overrides: Map<number, { behind?: number; front?: number }>): number[] {
+	let order = geoms.map((_, i) => i);
+	if (!overrides.size) return order;
+	const firstOf = (bone: number) => geoms.findIndex((g) => g.boneIndex === bone);
+	const moves = [...overrides.entries()].filter(([b]) => firstOf(b) >= 0).sort((a, b) => firstOf(a[0]) - firstOf(b[0]));
+	for (const [bone, o] of moves) {
+		const movers = order.filter((i) => geoms[i]!.boneIndex === bone);
+		const rest = order.filter((i) => geoms[i]!.boneIndex !== bone);
+		let at: number;
+		if (o.behind !== undefined) at = rest.findIndex((i) => geoms[i]!.boneIndex === o.behind);
+		else {
+			const last = rest.map((i) => geoms[i]!.boneIndex).lastIndexOf(o.front!);
+			at = last < 0 ? -1 : last + 1;
+		}
+		if (at < 0) continue;
+		rest.splice(at, 0, ...movers);
+		order = rest;
+	}
+	return order;
+}

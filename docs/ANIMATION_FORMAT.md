@@ -95,6 +95,11 @@ character faces the other way. Creature templates (Phase 6) add their own roles
 - **translate**: offsets in **body heights** (`metrics.bodyHeight`) in the parent's space.
 - **scale**: multipliers of the setup scale.
 - **phases** let the GM retime anticipation/action/recovery independently (piecewise time warp).
+- **layer** keys change the draw order from their time until the next layer key:
+  `{ "t": 0.05, "behind": "head" }` draws this role's parts just behind the head's,
+  `{ "t": 0.2, "front": "torso" }` just in front of the torso's, `{ "t": 0.37 }` restores the
+  rig's own order. The sword slash uses them so the sword arm passes behind the head while
+  winding up.
 - **events** fire once as the play head passes them; tokens forward them to
   `Hooks.callAll('fu-sprite-animator.event', { token, clip, event })`.
 - **additive** clips add their offsets on top of lower tracks instead of overriding.
@@ -115,6 +120,12 @@ A token flag overrides its actor's.
 { "format": "fusa-bundle", "version": 1, "rig": { …rig… }, "image": "data:image/png;base64,…" }
 ```
 Importing stores the image in the world folder and points the rig at it.
+
+## World clips
+Animations made or changed in the Studio (and imported ones) are stored in the world setting
+`fu-sprite-animator.clips` (`{ id: clip }`) and registered on every client at start-up and
+whenever the setting changes. Built-in clips are never modified: editing one makes a copy
+(`sword-slash-custom`); importing a file whose id exists gives it a new id.
 
 ## Storage in a world
 - `worlds/<world>/fu-sprite-animator/rigs/<rig id>.json` — rig documents.

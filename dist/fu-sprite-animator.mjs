@@ -87,16 +87,19 @@ var SWORD_SLASH = base({
     head: { rotate: [k(0, 0, "outCubic"), k(0.34, -7), k(0.48, 8, "outQuad"), k(0.66, 5, SETTLE), k(0.9, 0)] },
     "arm.upper.front": {
       space: "world",
-      rotate: [k(0, 100, "outCubic"), k(0.28, 168), k(0.32, 174, SNAP), k(0.44, 40, "outBack"), k(0.52, 46, SETTLE), k(0.9, 82)]
+      rotate: [k(0, 100, "outCubic"), k(0.28, 168), k(0.32, 174, SNAP), k(0.44, 40, "outBack"), k(0.52, 46, SETTLE), k(0.9, 82)],
+      layer: [{ t: 0.05, behind: "head" }, { t: 0.37 }]
     },
     "arm.lower.front": {
       space: "world",
-      rotate: [k(0, 70, "outCubic"), k(0.3, -112), k(0.33, -116, SNAP), k(0.45, 38, "outBack"), k(0.53, 44, SETTLE), k(0.9, 50)]
+      rotate: [k(0, 70, "outCubic"), k(0.3, -112), k(0.33, -116, SNAP), k(0.45, 38, "outBack"), k(0.53, 44, SETTLE), k(0.9, 50)],
+      layer: [{ t: 0.05, behind: "head" }, { t: 0.37 }]
     },
-    "hand.front": { rotate: [k(0, 0, "outCubic"), k(0.3, 10), k(0.34, 10, SNAP), k(0.45, -8, "outQuad"), k(0.9, 0, SETTLE)] },
+    "hand.front": { rotate: [k(0, 0, "outCubic"), k(0.3, 10), k(0.34, 10, SNAP), k(0.45, -8, "outQuad"), k(0.9, 0, SETTLE)], layer: [{ t: 0.05, behind: "head" }, { t: 0.37 }] },
     weapon: {
       space: "world",
-      rotate: [k(0, -60, "outCubic"), k(0.3, -196), k(0.33, -200, SNAP), k(0.45, 42, "outBack"), k(0.54, 50, SETTLE), k(0.9, -50)]
+      rotate: [k(0, -60, "outCubic"), k(0.3, -196), k(0.33, -200, SNAP), k(0.45, 42, "outBack"), k(0.54, 50, SETTLE), k(0.9, -50)],
+      layer: [{ t: 0.05, behind: "head" }, { t: 0.37 }]
     },
     "arm.upper.back": { rotate: [k(0, 0, "outCubic"), k(0.3, -22), k(0.34, -22, SNAP), k(0.46, 34, "outQuad"), k(0.64, 24, SETTLE), k(0.9, 0)] },
     "arm.lower.back": { rotate: [k(0, 0, "outCubic"), k(0.3, -25), k(0.46, 10, "outQuad"), k(0.9, 0, SETTLE)] },
@@ -134,16 +137,19 @@ var HEAVY_SLASH = base({
     head: { rotate: [k(0, 0, "outCubic"), k(0.58, -10), k(0.78, 10, "outQuad"), k(1, 7, SETTLE), k(1.35, 0)] },
     "arm.upper.front": {
       space: "world",
-      rotate: [k(0, 100, "outCubic"), k(0.5, -78), k(0.62, -84, SNAP), k(0.74, 62, "outBack"), k(0.86, 66, SETTLE), k(1.35, 85)]
+      rotate: [k(0, 100, "outCubic"), k(0.5, -78), k(0.62, -84, SNAP), k(0.74, 62, "outBack"), k(0.86, 66, SETTLE), k(1.35, 85)],
+      layer: [{ t: 0.12, behind: "head" }, { t: 0.68 }]
     },
     "arm.lower.front": {
       space: "world",
-      rotate: [k(0, 70, "outCubic"), k(0.5, -150), k(0.62, -156, SNAP), k(0.75, 62, "outBack"), k(0.86, 64, SETTLE), k(1.35, 55)]
+      rotate: [k(0, 70, "outCubic"), k(0.5, -150), k(0.62, -156, SNAP), k(0.75, 62, "outBack"), k(0.86, 64, SETTLE), k(1.35, 55)],
+      layer: [{ t: 0.12, behind: "head" }, { t: 0.68 }]
     },
-    "hand.front": { rotate: [k(0, 0, "outCubic"), k(0.55, 8), k(0.62, 8, SNAP), k(0.75, -6, "outQuad"), k(1.35, 0, SETTLE)] },
+    "hand.front": { rotate: [k(0, 0, "outCubic"), k(0.55, 8), k(0.62, 8, SNAP), k(0.75, -6, "outQuad"), k(1.35, 0, SETTLE)], layer: [{ t: 0.12, behind: "head" }, { t: 0.68 }] },
     weapon: {
       space: "world",
-      rotate: [k(0, -60, "outCubic"), k(0.5, -175), k(0.62, -182, SNAP), k(0.75, 70, "outBack"), k(0.88, 74, SETTLE), k(1.35, -45)]
+      rotate: [k(0, -60, "outCubic"), k(0.5, -175), k(0.62, -182, SNAP), k(0.75, 70, "outBack"), k(0.88, 74, SETTLE), k(1.35, -45)],
+      layer: [{ t: 0.12, behind: "head" }, { t: 0.68 }]
     },
     "arm.upper.back": {
       space: "world",
@@ -263,12 +269,15 @@ function listClips() {
   for (const [id, c] of registered) all.set(id, c);
   return [...all.values()];
 }
+function isBuiltIn(id) {
+  return builtIn.has(id) && !registered.has(id);
+}
 function registerClip(clip) {
   if (!clip || clip.format !== "fusa-clip") throw new Error('Not a clip (format must be "fusa-clip").');
   if (!clip.id || typeof clip.id !== "string") throw new Error("A clip needs an id.");
   if (!(clip.duration > 0)) throw new Error(`Clip "${clip.id}" needs a positive duration.`);
-  for (const [role, track] of Object.entries(clip.tracks ?? {})) {
-    for (const keys of [track.rotate, track.translate, track.scale]) {
+  for (const [role, track2] of Object.entries(clip.tracks ?? {})) {
+    for (const keys of [track2.rotate, track2.translate, track2.scale]) {
       if (!keys) continue;
       for (let i = 1; i < keys.length; i++) {
         if (!(keys[i].t >= keys[i - 1].t)) throw new Error(`Clip "${clip.id}", role "${role}": keys must be in time order.`);
@@ -276,6 +285,9 @@ function registerClip(clip) {
     }
   }
   registered.set(clip.id, clip);
+}
+function unregisterClip(id) {
+  return registered.delete(id);
 }
 
 // src/sprite/image.ts
@@ -1992,6 +2004,26 @@ function deformPart(g, skins, offsetX = 0, offsetY = 0) {
     out[v * 2 + 1] = oy + offsetY;
   }
 }
+function drawOrder(geoms, overrides) {
+  let order = geoms.map((_, i) => i);
+  if (!overrides.size) return order;
+  const firstOf = (bone2) => geoms.findIndex((g) => g.boneIndex === bone2);
+  const moves = [...overrides.entries()].filter(([b]) => firstOf(b) >= 0).sort((a, b) => firstOf(a[0]) - firstOf(b[0]));
+  for (const [bone2, o] of moves) {
+    const movers = order.filter((i) => geoms[i].boneIndex === bone2);
+    const rest = order.filter((i) => geoms[i].boneIndex !== bone2);
+    let at;
+    if (o.behind !== void 0) at = rest.findIndex((i) => geoms[i].boneIndex === o.behind);
+    else {
+      const last = rest.map((i) => geoms[i].boneIndex).lastIndexOf(o.front);
+      at = last < 0 ? -1 : last + 1;
+    }
+    if (at < 0) continue;
+    rest.splice(at, 0, ...movers);
+    order = rest;
+  }
+  return order;
+}
 
 // src/sprite/atlas.ts
 var GUTTER = 2;
@@ -2389,34 +2421,34 @@ function evaluateClip(clip, t, ctx, out, mask, angles) {
   for (let i = 0; i < n; i++) {
     const bone2 = sk.bones[i];
     const role = bone2.role;
-    const track = role ? clip.tracks[role] : void 0;
+    const track2 = role ? clip.tracks[role] : void 0;
     const s = sk.setup[i];
     const o = i * STRIDE;
     const p = sk.parent[i];
     const inherits = p >= 0 && bone2.inheritRotation !== false;
     const parentAngle = inherits ? angles[p] : 0;
-    if (track && sk.roles.get(role) === i) {
+    if (track2 && sk.roles.get(role) === i) {
       const k3 = ctx.intensity * (ctx.amp ? ctx.amp(role) : 1);
       mask[i] = 1;
-      if (track.translate) {
-        const [x, y] = sampleKeys2(track.translate, t);
+      if (track2.translate) {
+        const [x, y] = sampleKeys2(track2.translate, t);
         out[o + 1] = x * H * k3 * sign;
         out[o + 2] = y * H * k3;
       }
-      if (track.scale) {
-        const [x, y] = sampleKeys2(track.scale, t, 1, 1);
+      if (track2.scale) {
+        const [x, y] = sampleKeys2(track2.scale, t, 1, 1);
         out[o + 3] = (x - 1) * k3;
         out[o + 4] = (y - 1) * k3;
       }
-      if (track.rotate && track.rotate.length) {
-        if (track.space === "world") {
+      if (track2.rotate && track2.rotate.length) {
+        if (track2.space === "world") {
           const parentSetup = inherits ? sk.setupAngle[p] : 0;
-          const first = mirrorAngle(track.rotate[0].v) - parentSetup - s.rot;
+          const first = mirrorAngle(track2.rotate[0].v) - parentSetup - s.rot;
           const turns = wrapDeg(first) - first;
-          const d = mirrorAngle(sampleKeys(track.rotate, t)) - parentAngle - s.rot + turns;
+          const d = mirrorAngle(sampleKeys(track2.rotate, t)) - parentAngle - s.rot + turns;
           out[o] = d * k3;
         } else {
-          out[o] = sampleKeys(track.rotate, t) * k3 * sign;
+          out[o] = sampleKeys(track2.rotate, t) * k3 * sign;
         }
       }
     }
@@ -2436,6 +2468,10 @@ var AnimationPlayer = class {
   angles;
   opts;
   playCount = 0;
+  /** Bone index → draw this bone's parts behind/in front of another bone's (from layer keys). */
+  layerOverrides = /* @__PURE__ */ new Map();
+  /** Changes whenever layerOverrides changes. */
+  layerKey = "";
   constructor(skeleton, opts) {
     this.skeleton = skeleton;
     this.opts = opts;
@@ -2447,8 +2483,8 @@ var AnimationPlayer = class {
     this.opts = { ...this.opts, ...opts };
   }
   play(clip, o = {}) {
-    const track = o.track ?? (clip.loop ? 0 : 1);
-    const prev = this.tracks[track] ?? null;
+    const track2 = o.track ?? (clip.loop ? 0 : 1);
+    const prev = this.tracks[track2] ?? null;
     const variation = o.variation ?? 0;
     const seed = o.seed ?? hashString(clip.id) + this.playCount++;
     const rand = rng(seed);
@@ -2468,7 +2504,7 @@ var AnimationPlayer = class {
       speed: o.speed ?? 1,
       intensity: o.intensity ?? 1,
       amp,
-      mixIn: o.mixIn ?? clip.defaults?.mixIn ?? (track === 0 ? 0.25 : 0.08),
+      mixIn: o.mixIn ?? clip.defaults?.mixIn ?? (track2 === 0 ? 0.25 : 0.08),
       mixOut: o.mixOut ?? clip.defaults?.mixOut ?? 0.2,
       startWeight: 0,
       snapshot: null,
@@ -2484,19 +2520,19 @@ var AnimationPlayer = class {
     if (prev) {
       state.snapshot = { delta: prev.delta.slice(), mask: prev.mask.slice() };
       state.startWeight = prev.weight;
-    } else if (track === 0 && !this.tracks.some(Boolean)) {
+    } else if (track2 === 0 && !this.tracks.some(Boolean)) {
       state.startWeight = 1;
       state.mixIn = 0;
     }
-    this.tracks[track] = state;
+    this.tracks[track2] = state;
   }
   /** Fade a track out. */
-  stop(track, mixOut) {
-    const s = this.tracks[track];
+  stop(track2, mixOut) {
+    const s = this.tracks[track2];
     if (!s) return;
     if (mixOut !== void 0) s.mixOut = mixOut;
     if (s.mixOut <= 0) {
-      this.tracks[track] = null;
+      this.tracks[track2] = null;
       return;
     }
     s.ended = true;
@@ -2509,14 +2545,14 @@ var AnimationPlayer = class {
   get busy() {
     return this.tracks.some((t, i) => i > 0 && !!t);
   }
-  trackInfo(track) {
-    const s = this.tracks[track];
+  trackInfo(track2) {
+    const s = this.tracks[track2];
     if (!s) return null;
     return { clip: s.clip, time: s.time, duration: s.warp.duration, clipTime: s.warp.toClip(s.time) };
   }
   /** Jump a track to a play time (Studio scrubbing). Events are not fired. */
-  seek(track, time) {
-    const s = this.tracks[track];
+  seek(track2, time) {
+    const s = this.tracks[track2];
     if (!s) return;
     s.time = Math.max(0, Math.min(time, s.warp.duration));
     s.elapsed = Math.max(s.elapsed, s.mixIn);
@@ -2623,6 +2659,7 @@ var AnimationPlayer = class {
         }
       }
     }
+    this.updateLayers();
     for (let b = 0; b < n; b++) {
       const setup = sk.setup[b];
       const l = sk.local[b];
@@ -2634,6 +2671,30 @@ var AnimationPlayer = class {
       l.sy = setup.sy * (1 + res[o + 4]);
     }
     sk.update();
+  }
+  /** Draw-order overrides from the layer keys of the playing tracks (higher tracks win). */
+  updateLayers() {
+    const sk = this.skeleton;
+    const ov = this.layerOverrides;
+    ov.clear();
+    for (const s of this.tracks) {
+      if (!s || s.weight < 0.5) continue;
+      const t = s.warp.toClip(s.time);
+      for (const [role, track2] of Object.entries(s.clip.tracks)) {
+        if (!track2.layer?.length) continue;
+        const bone2 = sk.roles.get(role);
+        if (bone2 === void 0) continue;
+        let key;
+        for (const k4 of track2.layer) if (k4.t <= t + 1e-9) key = k4;
+        const target = key?.behind ?? key?.front;
+        const ti = target ? sk.roles.get(target) : void 0;
+        if (key && ti !== void 0) ov.set(bone2, key.behind ? { behind: ti } : { front: ti });
+        else ov.delete(bone2);
+      }
+    }
+    let k3 = "";
+    for (const [b, o] of ov) k3 += `${b}:${o.behind ?? ""}/${o.front ?? ""};`;
+    this.layerKey = k3;
   }
 };
 
@@ -2695,6 +2756,7 @@ var RigView = class {
   meshes = [];
   skins = [];
   destroyed = false;
+  orderKey = "";
   /** Set when the pose changed since the last render. */
   dirty = true;
   constructor(asset, o = {}) {
@@ -2746,6 +2808,11 @@ var RigView = class {
   render(renderer) {
     if (this.destroyed) return;
     this.syncMeshes();
+    if (this.player.layerKey !== this.orderKey) {
+      this.orderKey = this.player.layerKey;
+      const order = drawOrder(this.asset.build.geometries, this.player.layerOverrides);
+      order.forEach((gi, z) => this.container.setChildIndex(this.meshes[gi], z));
+    }
     renderer.render(this.container, { renderTexture: this.renderTexture, clear: true });
     this.dirty = false;
   }
@@ -2971,6 +3038,18 @@ function download(filename, text) {
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1e3);
+}
+function worldClips() {
+  return setting("clips") ?? {};
+}
+async function saveClip(clip) {
+  if (!canSave()) throw new Error("Only the GM can save animations.");
+  await game.settings.set(MODULE_ID, "clips", { ...worldClips(), [clip.id]: clip });
+}
+async function deleteClip(id) {
+  const next = { ...worldClips() };
+  delete next[id];
+  await game.settings.set(MODULE_ID, "clips", next);
 }
 
 // src/foundry/tokens.ts
@@ -3292,6 +3371,171 @@ function report(out) {
   ui.notifications?.[bad.length ? "warn" : "info"](msg);
   globalThis[`${MODULE_ID}-selftest`] = out;
   return out;
+}
+
+// src/presets/edit.ts
+var CHANNELS = ["rotate", "translate", "scale", "layer"];
+var EPS = 1e-3;
+function cloneClip(clip, id, name) {
+  const c = JSON.parse(JSON.stringify(clip));
+  c.id = id;
+  c.name = name;
+  return c;
+}
+function track(clip, role) {
+  return clip.tracks[role] ??= {};
+}
+function upsert(keys, key) {
+  const i = keys.findIndex((k3) => Math.abs(k3.t - key.t) < EPS);
+  if (i >= 0) {
+    keys[i] = { ...keys[i], ...key };
+    return i;
+  }
+  keys.push(key);
+  keys.sort((a, b) => a.t - b.t);
+  return keys.indexOf(key);
+}
+var clampT = (clip, t) => Math.max(0, Math.min(clip.duration, Math.round(t * 1e3) / 1e3));
+function setRotateKey(clip, role, t, v, ease) {
+  const tr = track(clip, role);
+  tr.rotate ??= [];
+  const k3 = { t: clampT(clip, t), v: Math.round(v * 100) / 100 };
+  if (ease) k3.e = ease;
+  return upsert(tr.rotate, k3);
+}
+function setVectorKey(clip, role, channel, t, x, y, ease) {
+  const tr = track(clip, role);
+  const keys = tr[channel] ??= [];
+  const k3 = { t: clampT(clip, t), x: Math.round(x * 1e4) / 1e4, y: Math.round(y * 1e4) / 1e4 };
+  if (ease) k3.e = ease;
+  return upsert(keys, k3);
+}
+function setLayerKey(clip, role, t, behind, front) {
+  const tr = track(clip, role);
+  tr.layer ??= [];
+  const k3 = { t: clampT(clip, t) };
+  if (behind) k3.behind = behind;
+  else if (front) k3.front = front;
+  const i = tr.layer.findIndex((x) => Math.abs(x.t - k3.t) < EPS);
+  if (i >= 0) {
+    tr.layer[i] = k3;
+    return i;
+  }
+  tr.layer.push(k3);
+  tr.layer.sort((a, b) => a.t - b.t);
+  return tr.layer.indexOf(k3);
+}
+function keysOf(clip, role, channel) {
+  return clip.tracks[role]?.[channel];
+}
+function removeKey(clip, role, channel, index2) {
+  const keys = keysOf(clip, role, channel);
+  if (!keys || index2 < 0 || index2 >= keys.length) return;
+  keys.splice(index2, 1);
+  const tr = clip.tracks[role];
+  if (!keys.length) delete tr[channel];
+  if (!tr.rotate && !tr.translate && !tr.scale && !tr.layer) delete clip.tracks[role];
+}
+function moveKey(clip, role, channel, index2, t) {
+  const keys = keysOf(clip, role, channel);
+  if (!keys?.[index2]) return index2;
+  const k3 = keys[index2];
+  k3.t = clampT(clip, t);
+  keys.sort((a, b) => a.t - b.t);
+  return keys.indexOf(k3);
+}
+function setKeyEase(clip, role, channel, index2, ease) {
+  const k3 = keysOf(clip, role, channel)?.[index2];
+  if (!k3) return;
+  if (ease && ease !== "linear") k3.e = ease;
+  else delete k3.e;
+}
+function addEvent(clip, t, name) {
+  clip.events ??= [];
+  clip.events.push({ t: clampT(clip, t), name: name.trim() || "event" });
+  clip.events.sort((a, b) => a.t - b.t);
+}
+function removeEvent(clip, index2) {
+  clip.events?.splice(index2, 1);
+}
+function setDuration(clip, duration) {
+  clip.duration = Math.max(0.05, Math.round(duration * 1e3) / 1e3);
+  for (const tr of Object.values(clip.tracks)) for (const ch of CHANNELS) for (const k3 of tr[ch] ?? []) k3.t = Math.min(k3.t, clip.duration);
+  for (const e of clip.events ?? []) e.t = Math.min(e.t, clip.duration);
+  const ph = clip.phases;
+  if (ph) {
+    for (const key of ["anticipation", "action", "recovery"]) {
+      const r = ph[key];
+      if (r) ph[key] = [Math.min(r[0], clip.duration), Math.min(r[1], clip.duration)];
+    }
+    if (ph.impact !== void 0) ph.impact = Math.min(ph.impact, clip.duration);
+  }
+}
+function keyFromPose(clip, role, sk, t, facing, bodyHeight) {
+  const i = sk.roles.get(role);
+  if (i === void 0) return null;
+  const mirror = facing === "left";
+  const local = sk.local[i];
+  const setup = sk.setup[i];
+  const tr = clip.tracks[role];
+  let rotate;
+  if (tr?.space === "world") {
+    let angle = 0;
+    const chain = [];
+    for (let b = i; b >= 0; b = sk.parent[b]) {
+      chain.push(b);
+      if (sk.bones[b].inheritRotation === false) break;
+    }
+    for (const b of chain) angle += sk.local[b].rot;
+    let v = mirror ? 180 - angle : angle;
+    const current = tr.rotate?.length ? sampleKeys(tr.rotate, t) : v;
+    v = nearestTurn(v, current);
+    rotate = v;
+  } else rotate = (local.rot - setup.rot) * (mirror ? -1 : 1);
+  const sign = mirror ? -1 : 1;
+  const translate = [(local.x - setup.x) / bodyHeight * sign, (local.y - setup.y) / bodyHeight];
+  const scale = [setup.sx ? local.sx / setup.sx : 1, setup.sy ? local.sy / setup.sy : 1];
+  return { rotate, translate, scale };
+}
+function uniqueClipId(base2, taken) {
+  const stem = base2.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "clip";
+  if (!taken(stem)) return stem;
+  for (let n = 2; ; n++) if (!taken(`${stem}-${n}`)) return `${stem}-${n}`;
+}
+
+// src/core/ik.ts
+function solveTwoBone(sk, child, tx, ty) {
+  const parent = sk.parent[child];
+  if (parent < 0) return false;
+  sk.update();
+  const seg = (i) => sk.segment(i);
+  const a = seg(parent);
+  const b = seg(child);
+  const A = [a.ax, a.ay];
+  const B = [b.ax, b.ay];
+  const C2 = [b.bx, b.by];
+  const l1 = Math.hypot(B[0] - A[0], B[1] - A[1]);
+  const l2 = Math.hypot(C2[0] - B[0], C2[1] - B[1]);
+  if (l1 < 1e-6 || l2 < 1e-6) return false;
+  const dx = tx - A[0];
+  const dy = ty - A[1];
+  const d = Math.max(Math.abs(l1 - l2) + 1e-4, Math.min(l1 + l2 - 1e-4, Math.hypot(dx, dy)));
+  const cosA = Math.max(-1, Math.min(1, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d)));
+  const alpha = Math.acos(cosA);
+  const bend = Math.sign((B[0] - A[0]) * (C2[1] - B[1]) - (B[1] - A[1]) * (C2[0] - B[0])) || 1;
+  const toT = Math.atan2(dy, dx);
+  const newAB = toT - bend * alpha;
+  const oldAB = Math.atan2(B[1] - A[1], B[0] - A[0]);
+  sk.local[parent].rot += (newAB - oldAB) / DEG;
+  sk.update();
+  const b2 = seg(child);
+  const oldBC = Math.atan2(b2.by - b2.ay, b2.bx - b2.ax);
+  const newBC = Math.atan2(ty - b2.ay, tx - b2.ax);
+  let delta = (newBC - oldBC) / DEG;
+  delta -= 360 * Math.round(delta / 360);
+  sk.local[child].rot += delta;
+  sk.update();
+  return true;
 }
 
 // src/rig/edit.ts
@@ -3627,20 +3871,21 @@ function slider(label, value, min, max, step, onInput, fmt = (v) => String(v)) {
 
 // src/ui/timeline.ts
 var PHASE_COLOURS = { anticipation: "rgba(90,169,255,0.28)", action: "rgba(242,196,90,0.38)", recovery: "rgba(122,208,143,0.24)" };
+var RULER = 18;
+var BAND = 12;
+var ROW = 15;
+var PAD_L = 66;
+var PAD_R = 12;
 var Timeline = class {
-  constructor(onSeek) {
-    this.onSeek = onSeek;
+  constructor(on) {
+    this.on = on;
     this.el = document.createElement("div");
     this.el.className = "fusa-timeline";
     this.canvas = document.createElement("canvas");
     this.el.append(this.canvas);
-    this.canvas.addEventListener("pointerdown", (e) => {
-      this.dragging = true;
-      this.canvas.setPointerCapture(e.pointerId);
-      this.seekAt(e);
-    });
-    this.canvas.addEventListener("pointermove", (e) => this.dragging && this.seekAt(e));
-    this.canvas.addEventListener("pointerup", () => this.dragging = false);
+    this.canvas.addEventListener("pointerdown", (e) => this.down(e));
+    this.canvas.addEventListener("pointermove", (e) => this.move(e));
+    this.canvas.addEventListener("pointerup", (e) => this.up(e));
     this.ro = new ResizeObserver(() => this.draw());
     this.ro.observe(this.el);
   }
@@ -3649,22 +3894,78 @@ var Timeline = class {
   clip = null;
   warp = null;
   time = 0;
-  dragging = false;
+  rows = [];
+  drag = null;
   ro;
   get duration() {
     return this.warp?.duration ?? this.clip?.duration ?? 1;
   }
-  set(clip, warp, time) {
-    const changed = clip !== this.clip || warp !== this.warp || Math.abs(time - this.time) > 1e-4;
+  set(clip, warp, time, rows = this.rows) {
+    const rowsKey = JSON.stringify(rows);
+    const changed = clip !== this.clip || warp !== this.warp || Math.abs(time - this.time) > 1e-4 || rowsKey !== JSON.stringify(this.rows);
     this.clip = clip;
     this.warp = warp;
     this.time = time;
+    this.rows = rows;
     if (changed) this.draw();
   }
-  seekAt(e) {
+  geom() {
     const r = this.canvas.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (e.clientX - r.left - 12) / Math.max(1, r.width - 24)));
-    this.onSeek(x * this.duration);
+    const x0 = this.rows.length ? PAD_L : 12;
+    return { r, x0, x1: r.width - PAD_R };
+  }
+  timeAt(e) {
+    const { r, x0, x1 } = this.geom();
+    return Math.max(0, Math.min(1, (e.clientX - r.left - x0) / Math.max(1, x1 - x0))) * this.duration;
+  }
+  toPlay(c) {
+    return this.warp ? this.warp.toPlay(c) : c;
+  }
+  toClip(p) {
+    return this.warp ? this.warp.toClip(p) : p;
+  }
+  hitKey(e) {
+    const { r, x0, x1 } = this.geom();
+    const y = e.clientY - r.top;
+    const row = Math.floor((y - RULER - BAND - 4) / ROW);
+    if (row < 0 || row >= this.rows.length) return null;
+    const keys = this.rows[row].keys;
+    let best = -1;
+    let bestD = 7;
+    keys.forEach((t, i) => {
+      const x = x0 + this.toPlay(t) / this.duration * (x1 - x0);
+      const d = Math.abs(e.clientX - r.left - x);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    return best >= 0 ? { row, index: best } : null;
+  }
+  down(e) {
+    this.canvas.setPointerCapture(e.pointerId);
+    const hit = this.hitKey(e);
+    if (hit && this.on.selectKey) {
+      this.on.selectKey(hit.row, hit.index);
+      this.drag = { kind: "key", ...hit, moved: false };
+      return;
+    }
+    this.drag = { kind: "scrub" };
+    this.on.seek(this.timeAt(e));
+  }
+  move(e) {
+    const d = this.drag;
+    if (!d) return;
+    if (d.kind === "scrub") this.on.seek(this.timeAt(e));
+    else {
+      d.moved = true;
+      this.on.moveKey?.(d.row, d.index, this.toClip(this.timeAt(e)), false);
+    }
+  }
+  up(e) {
+    const d = this.drag;
+    this.drag = null;
+    if (d?.kind === "key" && d.moved) this.on.moveKey?.(d.row, d.index, this.toClip(this.timeAt(e)), true);
   }
   draw() {
     const r = this.el.getBoundingClientRect();
@@ -3680,22 +3981,23 @@ var Timeline = class {
     const g = this.canvas.getContext("2d");
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
-    const x0 = 12;
-    const x1 = W - 12;
+    const x0 = this.rows.length ? PAD_L : 12;
+    const x1 = W - PAD_R;
     const dur = this.duration;
     const X = (t) => x0 + t / dur * (x1 - x0);
-    const toPlay = (c) => this.warp ? this.warp.toPlay(c) : c;
+    const editing = this.rows.length > 0;
+    const bandBottom = editing ? RULER + BAND : H - 8;
     g.fillStyle = "rgba(255,255,255,0.03)";
-    g.fillRect(x0, 18, x1 - x0, H - 26);
+    g.fillRect(x0, RULER, x1 - x0, bandBottom - RULER);
     const ph = this.clip?.phases;
     if (ph) {
       for (const [name, range] of [["anticipation", ph.anticipation], ["action", ph.action], ["recovery", ph.recovery]]) {
         if (!range) continue;
         g.fillStyle = PHASE_COLOURS[name];
-        const a = X(toPlay(range[0]));
-        const b = X(toPlay(range[1]));
-        g.fillRect(a, 18, Math.max(1, b - a), H - 26);
-        if (b - a > 60) {
+        const a = X(this.toPlay(range[0]));
+        const b = X(this.toPlay(range[1]));
+        g.fillRect(a, RULER, Math.max(1, b - a), bandBottom - RULER);
+        if (b - a > 60 && !editing) {
           g.fillStyle = "rgba(238,243,255,0.7)";
           g.font = "600 10px sans-serif";
           g.fillText(name === "anticipation" ? "WIND-UP" : name === "action" ? "STRIKE" : "RECOVERY", a + 5, H - 12);
@@ -3705,8 +4007,8 @@ var Timeline = class {
         g.strokeStyle = "#ff6b6b";
         g.lineWidth = 2;
         g.beginPath();
-        g.moveTo(X(toPlay(ph.impact)), 18);
-        g.lineTo(X(toPlay(ph.impact)), H - 8);
+        g.moveTo(X(this.toPlay(ph.impact)), RULER);
+        g.lineTo(X(this.toPlay(ph.impact)), editing ? H - 2 : H - 8);
         g.stroke();
       }
     }
@@ -3719,28 +4021,51 @@ var Timeline = class {
       const x = Math.round(X(t)) + 0.5;
       const major = Math.abs(t / (step * 5) - Math.round(t / (step * 5))) < 1e-6;
       g.beginPath();
-      g.moveTo(x, 18);
+      g.moveTo(x, RULER);
       g.lineTo(x, major ? 8 : 13);
       g.stroke();
       if (major) g.fillText(`${t.toFixed(1)}s`, x + 3, 10);
     }
     for (const ev of this.clip?.events ?? []) {
-      const x = X(toPlay(ev.t));
+      const x = X(this.toPlay(ev.t));
       g.fillStyle = ev.name === "contact" ? "#ff6b6b" : "#f2c45a";
       g.beginPath();
-      g.moveTo(x, 20);
-      g.lineTo(x + 4, 24);
-      g.lineTo(x, 28);
-      g.lineTo(x - 4, 24);
+      g.moveTo(x, RULER + 1);
+      g.lineTo(x + 4, RULER + 5);
+      g.lineTo(x, RULER + 9);
+      g.lineTo(x - 4, RULER + 5);
       g.closePath();
       g.fill();
     }
+    this.rows.forEach((row, ri) => {
+      const y = RULER + BAND + 4 + ri * ROW;
+      g.fillStyle = ri % 2 ? "rgba(255,255,255,0.025)" : "rgba(255,255,255,0.05)";
+      g.fillRect(0, y, W, ROW);
+      g.fillStyle = "rgba(238,243,255,0.65)";
+      g.font = "10px sans-serif";
+      g.fillText(row.label, 6, y + 11);
+      row.keys.forEach((t, i) => {
+        const x = X(this.toPlay(t));
+        const sel = row.selected === i;
+        g.fillStyle = sel ? "#ffffff" : row.colour ?? "#5aa9ff";
+        g.strokeStyle = sel ? "#f2c45a" : "#0b1220";
+        g.lineWidth = sel ? 2 : 1;
+        g.beginPath();
+        g.moveTo(x, y + 2);
+        g.lineTo(x + 5, y + 7.5);
+        g.lineTo(x, y + 13);
+        g.lineTo(x - 5, y + 7.5);
+        g.closePath();
+        g.fill();
+        g.stroke();
+      });
+    });
     const px = X(Math.min(this.time, dur));
     g.strokeStyle = "#ffffff";
     g.lineWidth = 2;
     g.beginPath();
     g.moveTo(px, 4);
-    g.lineTo(px, H - 4);
+    g.lineTo(px, H - 2);
     g.stroke();
     g.fillStyle = "#ffffff";
     g.beginPath();
@@ -3796,6 +4121,7 @@ var Viewport = class {
   regions;
   overlay;
   frameGfx;
+  ghostSprites = [];
   regionCanvas = null;
   regionTexture = null;
   view = null;
@@ -3861,6 +4187,32 @@ var Viewport = class {
     }
     ctx.putImageData(img, 0, 0);
     this.regionTexture.baseTexture.update();
+  }
+  /** Onion-skin frames drawn faintly behind the main output. */
+  setGhosts(list) {
+    const P = pixi();
+    while (this.ghostSprites.length > list.length) {
+      const g = this.ghostSprites.pop();
+      g.texture.destroy(false);
+      g.destroy();
+    }
+    list.forEach((item, i) => {
+      let g = this.ghostSprites[i];
+      if (!g) {
+        g = new P.Sprite(P.Texture.EMPTY);
+        this.ghostSprites.push(g);
+        this.world.addChildAt(g, 0);
+      }
+      if (g.texture.baseTexture !== item.view.renderTexture.baseTexture) {
+        const old = g.texture;
+        g.texture = new P.Texture(item.view.renderTexture.baseTexture);
+        if (old !== P.Texture.EMPTY) old.destroy(false);
+      }
+      g.tint = item.tint;
+      g.alpha = item.alpha;
+      g.scale.set(1 / item.view.resolution);
+      g.position.set(-item.view.build.pad, -item.view.build.pad);
+    });
   }
   setRegionAlpha(a) {
     this.regions.alpha = a;
@@ -4026,6 +4378,7 @@ var Viewport = class {
 };
 
 // src/ui/studio.ts
+var CHANNEL_LABEL = { rotate: "Turn", translate: "Move", scale: "Scale", layer: "Layer" };
 var MODES = [
   { id: "rig", label: "Rig", hint: 'Drag a joint to move it, a bone tip to aim and lengthen it. Shift-drag moves a bone with its children. "Add bone": drag from the joint to the tip.' },
   { id: "paint", label: "Paint", hint: "Paint pixels onto the selected bone. Right-click paints them back to its parent. Bucket: fill a whole connected region." },
@@ -4077,6 +4430,14 @@ var Studio = class {
   actionTime = 0;
   destroyed = false;
   lastEvent = "";
+  /** Animate mode: editing the keys of the current clip. */
+  editing = false;
+  selectedKey = null;
+  clipHistory = new History();
+  clipSaveTimer = 0;
+  /** Onion skin: faint frames just before and after the play head. */
+  onion = false;
+  ghosts = [];
   // DOM parts
   elHeader;
   elTree;
@@ -4095,6 +4456,21 @@ var Studio = class {
     this.layout();
     this.root.addEventListener("keydown", this.onKey);
     this.renderAll();
+    void this.loadWorldClips();
+  }
+  async loadWorldClips() {
+    try {
+      for (const c of await this.host.listClips?.() ?? []) {
+        try {
+          registerClip(c);
+        } catch (e) {
+          console.warn("fu-sprite-animator | a saved clip could not be loaded", c?.id, e);
+        }
+      }
+      if (!this.destroyed) this.renderLibrary();
+    } catch (e) {
+      console.warn("fu-sprite-animator | could not list world clips", e);
+    }
   }
   /* ------------------------------------------------------------------ */
   /*  Layout                                                             */
@@ -4135,8 +4511,16 @@ var Studio = class {
     center.insertBefore(this.viewport.el, this.elStatus);
     this.elLibrary = h("div", { class: "fusa-library" });
     this.elTransport = h("div", { class: "fusa-transport" });
-    this.timeline = new Timeline((t) => this.seek(t));
-    bottom.append(h("div", { class: "fusa-bottom-left" }, h("div", { class: "fusa-panel-title" }, "Animation library"), this.elLibrary), h("div", { class: "fusa-bottom-right" }, this.elTransport, this.timeline.el));
+    this.timeline = new Timeline({ seek: (t) => this.seek(t), selectKey: (r, i) => this.selectKeyAt(r, i), moveKey: (r, i, t, done) => this.moveKeyAt(r, i, t, done) });
+    const libActions = h(
+      "div",
+      { class: "fusa-lib-actions" },
+      ibtn("add", "Duplicate the selected animation (to edit your own version)", () => void this.duplicateClip()),
+      ibtn("trash", "Delete the selected animation (your own animations only)", () => void this.deleteClip()),
+      ibtn("import", "Import an animation (.json)", () => void this.importClip()),
+      ibtn("export", "Export the selected animation (.json)", () => this.exportClip())
+    );
+    bottom.append(h("div", { class: "fusa-bottom-left" }, h("div", { class: "fusa-panel-title fusa-lib-head" }, h("span", null, "Animation library"), libActions), this.elLibrary), h("div", { class: "fusa-bottom-right" }, this.elTransport, this.timeline.el));
     this.root.append(this.elHeader, left, center, right, bottom);
   }
   toolRow() {
@@ -4162,6 +4546,7 @@ var Studio = class {
   renderAll() {
     this.root.dataset.mode = this.mode;
     this.root.classList.toggle("has-rig", !!this.rig);
+    this.root.classList.toggle("editing", this.editing && this.mode === "animate");
     this.renderHeader();
     this.renderTree();
     this.renderInspector();
@@ -4307,6 +4692,7 @@ var Studio = class {
       e.append(h("p", { class: "fusa-muted" }, "No rig yet."));
       return;
     }
+    if (this.mode === "animate" && this.editing) return this.renderClipInspector(e, rig);
     const b = this.boneOf(this.selected);
     if (!b) {
       this.renderRigSettings(e, rig);
@@ -4422,7 +4808,7 @@ var Studio = class {
             ...clips.map((c) => {
               const isBase = IDLE_IDS.includes(c.id) && c.loop;
               const active = isBase ? this.baseId === c.id : this.clipId === c.id;
-              return h("button", { type: "button", class: `fusa-card ${active ? "active" : ""} ${isBase ? "base" : ""}`, title: c.description ?? c.name, disabled: !this.rig, onclick: () => this.chooseClip(c) }, h("b", null, c.name), h("small", null, isBase ? "Idle loop" : `${c.duration.toFixed(2)}s`));
+              return h("button", { type: "button", class: `fusa-card ${active ? "active" : ""} ${isBase ? "base" : ""}`, title: c.description ?? c.name, disabled: !this.rig, dataset: { clip: c.id }, onclick: () => this.chooseClip(c) }, h("b", null, c.name), h("small", null, isBase ? "Idle loop" : `${c.duration.toFixed(2)}s${isBuiltIn(c.id) ? "" : " \xB7 yours"}`));
             })
           )
         )
@@ -4437,14 +4823,17 @@ var Studio = class {
       ibtn(this.playing ? "pause" : "play", this.playing ? "Pause (Space)" : "Play (Space)", () => this.togglePlay(), { class: "big", disabled }),
       ibtn("stop", "Back to the start", () => this.restart(), { disabled }),
       ibtn("loop", "Loop the animation", () => (this.loop = !this.loop, this.renderTransport()), { class: this.loop ? "on" : "", disabled }),
-      h("div", { class: "fusa-clipname" }, h("small", null, `Over ${getClip(this.baseId)?.name ?? "nothing"}`), h("b", null, getClip(this.clipId)?.name ?? "")),
+      h("div", { class: "fusa-clipname" }, h("small", null, this.editing ? "Editing (alone, at its own timing)" : `Over ${getClip(this.baseId)?.name ?? "nothing"}`), h("b", null, getClip(this.clipId)?.name ?? "")),
       slider("Speed", this.speed, 0.25, 2, 0.05, (v) => this.speed = v, (v) => `${v.toFixed(2)}\xD7`),
       slider("Intensity", this.intensity, 0, 1.5, 0.05, (v) => (this.intensity = v, this.replayIfPaused()), (v) => `${Math.round(v * 100)}%`),
       slider("Wind-up", this.timing.anticipation, 0.5, 2, 0.05, (v) => (this.timing.anticipation = v, this.retime()), (v) => `${v.toFixed(2)}\xD7`),
       slider("Strike", this.timing.action, 0.5, 2, 0.05, (v) => (this.timing.action = v, this.retime()), (v) => `${v.toFixed(2)}\xD7`),
       slider("Recovery", this.timing.recovery, 0.5, 2, 0.05, (v) => (this.timing.recovery = v, this.retime()), (v) => `${v.toFixed(2)}\xD7`),
       h("label", { class: "fusa-check", title: "Each play varies a little (amplitude and speed), so repeated attacks do not look identical." }, h("input", { type: "checkbox", checked: this.variation > 0, onchange: (ev) => (this.variation = ev.target.checked ? 1 : 0, this.restart()) }), "Vary"),
-      ibtn("dice", "Another variation", () => (this.seed++, this.variation ||= 1, this.restart()), { disabled })
+      ibtn("dice", "Another variation", () => (this.seed++, this.variation ||= 1, this.restart()), { disabled }),
+      h("span", { class: "grow" }),
+      h("button", { type: "button", class: `fusa-btn small ${this.onion ? "on" : ""}`, title: "Show faint frames just before and after the play head", disabled, onclick: () => this.setOnion(!this.onion) }, icon("eye"), "Ghosts"),
+      h("button", { type: "button", class: `fusa-btn small ${this.editing ? "primary" : ""}`, title: "Edit the keys of this animation: pose bones at the play head (Ctrl-drag: IK), drag keys on the timeline", disabled, onclick: () => this.setEditing(!this.editing) }, icon("brush"), this.editing ? "Editing keys" : "Edit keys")
     );
   }
   renderToolbar() {
@@ -4480,7 +4869,8 @@ var Studio = class {
     if (!this.rig) return;
     const m = MODES.find((x) => x.id === this.mode);
     const z = this.viewport.zoom;
-    const parts = [h("span", { class: "hint" }, this.tool === "add" && this.mode === "rig" ? "Drag from where the new bone starts to where it ends. It joins the selected bone." : m.hint), h("span", { class: "grow" }), this.cursor ? h("span", null, `${Math.floor(this.cursor.x)}, ${Math.floor(this.cursor.y)}`) : null, h("span", null, `${Math.round(z * 100)}%`), this.lastEvent && this.mode === "animate" ? h("span", { class: "event" }, this.lastEvent) : null];
+    const hint = this.tool === "add" && this.mode === "rig" ? "Drag from where the new bone starts to where it ends. It joins the selected bone." : this.mode === "animate" && this.editing ? "Drag a bone to key its turn, Shift-drag to key its position, Ctrl-drag a hand or foot for IK. K: key turn, \u2190/\u2192: step, Del: delete key, Ctrl+Z: undo." : m.hint;
+    const parts = [h("span", { class: "hint" }, hint), h("span", { class: "grow" }), this.cursor ? h("span", null, `${Math.floor(this.cursor.x)}, ${Math.floor(this.cursor.y)}`) : null, h("span", null, `${Math.round(z * 100)}%`), this.lastEvent && this.mode === "animate" ? h("span", { class: "event" }, this.lastEvent) : null];
     for (const p of parts) if (p) e.append(p);
   }
   /* ------------------------------------------------------------------ */
@@ -4615,6 +5005,8 @@ var Studio = class {
   /* ------------------------------------------------------------------ */
   setMode(mode) {
     if (!this.rig) return;
+    if (mode !== "animate" && this.editing) this.editing = false;
+    if (mode !== "animate" && this.onion) this.setOnion(false);
     this.mode = mode;
     this.tool = mode === "paint" ? "brush" : "select";
     this.playing = mode === "animate";
@@ -4728,6 +5120,19 @@ var Studio = class {
       this.paintAt(x, y, target);
       return;
     }
+    if (this.mode === "animate" && this.editing && this.view) {
+      const hit = this.viewport.pick(this.gizmos(), x, y, this.selected);
+      if (!hit) return;
+      this.select(hit.id);
+      const b = this.boneOf(hit.id);
+      if (!b?.role) return this.host.notify("This bone has no role; set one in Rig mode to animate it.", "info");
+      const sk = this.view.skeleton;
+      const i = sk.index.get(hit.id);
+      const w = sk.world[i];
+      const kind = e.ctrlKey || e.metaKey ? "key-ik" : e.shiftKey ? "key-move" : "key-rotate";
+      this.drag = { kind, id: hit.id, lastX: x, lastY: y, startAngle: Math.atan2(y - w.ty, x - w.tx), startRot: sk.local[i].rot, startX: sk.local[i].x - x, startY: sk.local[i].y - y };
+      return;
+    }
     if (this.mode === "pose" && this.view) {
       const hit = this.viewport.pick(this.gizmos(), x, y, this.selected);
       if (!hit) return this.select(null);
@@ -4740,7 +5145,8 @@ var Studio = class {
       else this.drag = { kind: "rotate", id: hit.id, lastX: x, lastY: y, startAngle: Math.atan2(y - w.ty, x - w.tx), startRot: p.rot };
     }
   }
-  onMove(x, y, e) {
+  onMove(x, y, _e) {
+    const e = _e;
     this.cursor = { x, y };
     if (!this.rig) return;
     if (this.addPreview) {
@@ -4773,10 +5179,55 @@ var Studio = class {
       d.lastY = y;
       return;
     }
+    if (this.mode === "animate" && this.editing && this.view && d.kind.startsWith("key-")) {
+      const c = this.editClip();
+      const rig = this.rig;
+      const sk = this.view.skeleton;
+      const i = sk.index.get(d.id);
+      const keyRole = (bi, channel) => {
+        const role = sk.bones[bi].role;
+        if (!c || !role) return;
+        const k3 = keyFromPose(c, role, sk, this.actionTime, rig.facing, rig.metrics.bodyHeight);
+        if (!k3) return;
+        if (channel === "rotate") setRotateKey(c, role, this.actionTime, k3.rotate);
+        else setVectorKey(c, role, "translate", this.actionTime, k3.translate[0], k3.translate[1]);
+      };
+      if (d.kind === "key-rotate") {
+        const w = sk.world[i];
+        const a = Math.atan2(y - w.ty, x - w.tx);
+        const flip = Math.sign(w.a * w.d - w.b * w.c) || 1;
+        sk.local[i].rot = d.startRot + wrapDeg((a - d.startAngle) * 180 / Math.PI) * flip;
+        d.startRot = sk.local[i].rot;
+        d.startAngle = a;
+        sk.update();
+        keyRole(i, "rotate");
+      } else if (d.kind === "key-move") {
+        sk.local[i].x = d.startX + x;
+        sk.local[i].y = d.startY + y;
+        sk.update();
+        keyRole(i, "translate");
+      } else if (solveTwoBone(sk, i, x, y)) {
+        keyRole(sk.parent[i], "rotate");
+        keyRole(i, "rotate");
+      }
+      this.startClips(this.actionTime);
+      return;
+    }
     if (this.mode === "pose" && this.view) {
       const sk = this.view.skeleton;
       const i = sk.index.get(d.id);
       const p = this.pose.get(i) ?? { rot: 0, x: 0, y: 0 };
+      if (d.kind === "rotate" && (_e.ctrlKey || _e.metaKey) && sk.parent[i] >= 0) {
+        if (solveTwoBone(sk, i, x, y)) {
+          for (const bi of [sk.parent[i], i]) {
+            const q = this.pose.get(bi) ?? { rot: 0, x: 0, y: 0 };
+            q.rot = sk.local[bi].rot - sk.setup[bi].rot;
+            this.pose.set(bi, q);
+          }
+          this.poseDirty = true;
+        }
+        return;
+      }
       if (d.kind === "rotate") {
         const w = sk.world[i];
         const a = Math.atan2(y - w.ty, x - w.tx);
@@ -4810,6 +5261,10 @@ var Studio = class {
     const d = this.drag;
     this.drag = null;
     if (!d) return;
+    if (d.kind.startsWith("key-")) {
+      this.clipChanged();
+      return;
+    }
     if (this.mode === "rig") {
       this.history.end(this.snapshot());
       this.needsBuild = true;
@@ -4900,15 +5355,16 @@ var Studio = class {
     v.skeleton.resetPose();
     const base2 = getClip(this.baseId);
     const clip = getClip(this.clipId);
-    if (base2) v.player.play(base2, { track: 0, mixIn: 0 });
+    const plain = this.editing;
+    if (base2 && !plain) v.player.play(base2, { track: 0, mixIn: 0 });
     if (clip) {
       v.player.play(clip, {
         track: 1,
-        mixIn: clip.loop ? 0.2 : 0.08,
-        speed: this.speed,
-        intensity: this.intensity,
-        timing: this.timing,
-        variation: this.variation,
+        mixIn: plain ? 0 : clip.loop ? 0.2 : 0.08,
+        speed: plain ? 1 : this.speed,
+        intensity: plain ? 1 : this.intensity,
+        timing: plain ? void 0 : this.timing,
+        variation: plain ? 0 : this.variation,
         seed: this.seed,
         loop: clip.loop,
         onEvent: (name) => {
@@ -4916,7 +5372,7 @@ var Studio = class {
           this.renderStatusSoon();
         }
       });
-      this.warp = new TimeWarp(clip, this.timing);
+      this.warp = new TimeWarp(clip, plain ? {} : this.timing);
     }
     this.actionTime = 0;
     if (at > 0) this.seek(at);
@@ -4930,7 +5386,16 @@ var Studio = class {
     v.player.seek(1, t);
     v.player.update(0);
     v.dirty = true;
-    this.timeline.set(getClip(this.clipId) ?? null, this.warp, t);
+    this.timeline.set(getClip(this.clipId) ?? null, this.warp, t, this.keyRows().rows);
+    if (this.editing) this.renderInspectorSoon();
+  }
+  inspTimer = 0;
+  renderInspectorSoon() {
+    if (this.inspTimer) return;
+    this.inspTimer = window.setTimeout(() => {
+      this.inspTimer = 0;
+      if (!this.destroyed) this.renderInspector();
+    }, 120);
   }
   togglePlay() {
     if (!this.rig) return;
@@ -4954,6 +5419,263 @@ var Studio = class {
     if (!this.playing) this.startClips(this.actionTime);
   }
   /* ------------------------------------------------------------------ */
+  /*  Editing clips                                                      */
+  /* ------------------------------------------------------------------ */
+  editClip() {
+    const c = getClip(this.clipId);
+    return c && !isBuiltIn(c.id) ? c : null;
+  }
+  setEditing(on) {
+    if (!this.rig) return;
+    if (on) {
+      let c = getClip(this.clipId);
+      if (!c) return;
+      if (isBuiltIn(c.id)) {
+        const copy = cloneClip(c, uniqueClipId(`${c.id}-custom`, (id) => !!getClip(id)), `${c.name} (custom)`);
+        registerClip(copy);
+        this.clipId = copy.id;
+        this.persistClip(copy, true);
+        this.host.notify(`Editing your own copy: "${copy.name}".`);
+        c = copy;
+      }
+      this.clipHistory.reset(JSON.stringify(c));
+      if (this.mode !== "animate") this.mode = "animate";
+    }
+    this.editing = on;
+    this.selectedKey = null;
+    this.playing = !on;
+    this.startClips(on ? this.actionTime : 0);
+    this.renderAll();
+  }
+  persistClip(clip, now = false) {
+    clearTimeout(this.clipSaveTimer);
+    const save = () => void this.host.saveClip?.(JSON.parse(JSON.stringify(clip))).catch((err) => this.host.notify(`Could not save the animation: ${err.message}`, "error"));
+    if (now) save();
+    else this.clipSaveTimer = window.setTimeout(save, 1200);
+  }
+  /** After any change to the clip being edited: record undo, save, re-pose. */
+  clipChanged(record = true) {
+    const c = this.editClip();
+    if (!c) return;
+    if (record) this.clipHistory.record(JSON.stringify(c));
+    this.persistClip(c);
+    this.startClips(this.actionTime);
+    this.renderInspector();
+    this.renderLibrary();
+  }
+  restoreClip(snap) {
+    if (!snap) return;
+    const c = JSON.parse(snap);
+    registerClip(c);
+    this.clipId = c.id;
+    this.persistClip(c);
+    this.selectedKey = null;
+    this.startClips(this.actionTime);
+    this.renderAll();
+  }
+  keyRows() {
+    const c = getClip(this.clipId);
+    const role = this.boneOf(this.selected)?.role ?? null;
+    if (!this.editing || !c || !role) return { role, rows: [] };
+    const tr = c.tracks[role];
+    const colours = { rotate: "#5aa9ff", translate: "#7ad08f", scale: "#c9a7ff", layer: "#f2c45a" };
+    return {
+      role,
+      rows: CHANNELS.map((ch) => ({
+        label: CHANNEL_LABEL[ch],
+        keys: (tr?.[ch] ?? []).map((k3) => k3.t),
+        selected: this.selectedKey && this.selectedKey.role === role && this.selectedKey.channel === ch ? this.selectedKey.index : void 0,
+        colour: colours[ch]
+      }))
+    };
+  }
+  selectKeyAt(row, index2) {
+    const { role } = this.keyRows();
+    const c = getClip(this.clipId);
+    if (!role || !c) return;
+    const ch = CHANNELS[row];
+    const key = c.tracks[role]?.[ch]?.[index2];
+    if (!key) return;
+    this.selectedKey = { role, channel: ch, index: index2 };
+    this.seek(key.t);
+    this.renderInspector();
+  }
+  moveKeyAt(row, index2, t, done) {
+    const c = this.editClip();
+    const { role } = this.keyRows();
+    if (!c || !role) return;
+    const ch = CHANNELS[row];
+    const ni = moveKey(c, role, ch, this.selectedKey?.index ?? index2, t);
+    this.selectedKey = { role, channel: ch, index: ni };
+    this.actionTime = Math.max(0, Math.min(c.duration, t));
+    if (done) this.clipChanged();
+    else this.startClips(this.actionTime);
+  }
+  /** Key the selected bone's current value at the play head. */
+  keyCurrent(channel) {
+    const c = this.editClip();
+    const b = this.boneOf(this.selected);
+    if (!c || !b?.role || !this.view || !this.rig) return;
+    const k3 = keyFromPose(c, b.role, this.view.skeleton, this.actionTime, this.rig.facing, this.rig.metrics.bodyHeight);
+    if (!k3) return;
+    if (channel === "rotate") setRotateKey(c, b.role, this.actionTime, k3.rotate);
+    else setVectorKey(c, b.role, "translate", this.actionTime, k3.translate[0], k3.translate[1]);
+    this.clipChanged();
+  }
+  deleteSelectedKey() {
+    const c = this.editClip();
+    const k3 = this.selectedKey;
+    if (!c || !k3) return;
+    removeKey(c, k3.role, k3.channel, k3.index);
+    this.selectedKey = null;
+    this.clipChanged();
+  }
+  renderClipInspector(e, rig) {
+    const c = this.editClip();
+    if (!c) {
+      e.append(h("p", { class: "fusa-muted" }, "Pick an animation to edit."));
+      return;
+    }
+    const name = h("input", { type: "text", value: c.name });
+    name.addEventListener("change", () => (c.name = name.value.trim() || c.name, this.clipChanged()));
+    const cats = h("select", null, ...Object.keys(CATEGORY_LABELS).map((k3) => h("option", { value: k3, selected: k3 === c.category }, CATEGORY_LABELS[k3])));
+    cats.addEventListener("change", () => (c.category = cats.value, this.clipChanged()));
+    const dur = h("input", { type: "number", min: "0.05", max: "10", step: "0.05", value: String(c.duration) });
+    dur.addEventListener("change", () => (setDuration(c, Number(dur.value) || c.duration), this.clipChanged()));
+    const loop = h("input", { type: "checkbox", checked: c.loop });
+    loop.addEventListener("change", () => (c.loop = loop.checked, this.clipChanged()));
+    e.append(h("div", { class: "fusa-insp-title" }, "Animation"), this.field("Name", name), this.field("Category", cats), this.field("Length (s)", dur), h("label", { class: "fusa-check" }, loop, "Loops"));
+    const b = this.boneOf(this.selected);
+    e.append(h("div", { class: "fusa-insp-title" }, "Bone at ", h("b", null, `${this.actionTime.toFixed(2)}s`)));
+    if (!b) e.append(h("p", { class: "fusa-muted" }, "Select a bone (list or view). Drag it in the view to set a key; Ctrl-drag a hand or foot to bend the limb (IK). K keys it, Shift+K keys its position."));
+    else if (!b.role) e.append(h("p", { class: "fusa-muted" }, `${b.name} has no role; animations move bones by role. Set one in Rig mode.`));
+    else {
+      const role = b.role;
+      const tr = c.tracks[role];
+      const space = h("div", { class: "fusa-seg" }, ...["offset", "world"].map((sp) => h("button", { type: "button", class: (tr?.space ?? "offset") === sp ? "active" : "", disabled: !!tr?.rotate?.length, title: sp === "offset" ? "Turn relative to the rig\u2019s own pose" : "Point at an on-screen direction, whatever the rig\u2019s pose (strikes). Only before the first turn key.", onclick: () => ((c.tracks[role] ??= {}).space = sp, this.clipChanged()) }, sp === "offset" ? "Relative" : "Screen angle")));
+      const roles = [...new Set(rig.bones.map((x) => x.role).filter((r) => !!r && r !== role))];
+      const curLayer = [...tr?.layer ?? []].filter((k3) => k3.t <= this.actionTime + 1e-6).pop();
+      const layer = h("select", null, h("option", { value: "" }, "normal order"), ...roles.map((r) => h("option", { value: `behind:${r}`, selected: curLayer?.behind === r }, `behind ${r}`)), ...roles.map((r) => h("option", { value: `front:${r}`, selected: curLayer?.front === r }, `in front of ${r}`)));
+      layer.addEventListener("change", () => {
+        const [kind, target] = layer.value.split(":");
+        setLayerKey(c, role, this.actionTime, kind === "behind" ? target : void 0, kind === "front" ? target : void 0);
+        this.clipChanged();
+      });
+      e.append(
+        h("div", { class: "fusa-readout" }, `${b.name} \xB7 ${role}`),
+        this.field("Turn keys", space),
+        h("div", { class: "fusa-row" }, h("button", { type: "button", class: "fusa-btn small", onclick: () => this.keyCurrent("rotate") }, "\u25C6 Key turn"), h("button", { type: "button", class: "fusa-btn small", onclick: () => this.keyCurrent("translate") }, "\u25C6 Key position")),
+        this.field("Draw from here", layer)
+      );
+    }
+    const sk = this.selectedKey;
+    const key = sk ? c.tracks[sk.role]?.[sk.channel]?.[sk.index] : void 0;
+    if (sk && key) {
+      const t = h("input", { type: "number", min: "0", max: String(c.duration), step: "0.01", value: String(key.t) });
+      t.addEventListener("change", () => {
+        const ni = moveKey(c, sk.role, sk.channel, sk.index, Number(t.value));
+        this.selectedKey = { ...sk, index: ni };
+        this.actionTime = Math.min(c.duration, Number(t.value));
+        this.clipChanged();
+      });
+      const ease = h("select", null, ...EASE_NAMES.map((n) => h("option", { value: n, selected: (typeof key.e === "string" ? key.e : key.e ? "" : "linear") === n }, n)), Array.isArray(key.e) ? h("option", { value: "", selected: true }, `curve ${key.e.join(", ")}`) : null);
+      ease.addEventListener("change", () => (ease.value && setKeyEase(c, sk.role, sk.channel, sk.index, ease.value), this.clipChanged()));
+      const value = "v" in key ? `${key.v.toFixed(1)}\xB0` : "x" in key ? `${key.x.toFixed(3)}, ${key.y.toFixed(3)}` : "behind" in key || "front" in key ? JSON.stringify(key) : "normal order";
+      e.append(h("div", { class: "fusa-insp-title" }, `Key \xB7 ${CHANNEL_LABEL[sk.channel]} \xB7 ${sk.role}`), this.field("Time (s)", t), h("div", { class: "fusa-readout" }, `Value ${value}`));
+      if (sk.channel !== "layer") e.append(this.field("Easing to next", ease));
+      e.append(h("button", { type: "button", class: "fusa-btn subtle small", onclick: () => this.deleteSelectedKey() }, icon("trash"), "Delete key (Del)"));
+    }
+    const evName = h("input", { type: "text", placeholder: "contact", value: "" });
+    e.append(
+      h("div", { class: "fusa-insp-title" }, "Events"),
+      ...(c.events ?? []).map((ev, i) => h("div", { class: "fusa-event-row" }, h("span", null, `${ev.t.toFixed(2)}s`), h("b", null, ev.name), ibtn("trash", "Remove", () => (removeEvent(c, i), this.clipChanged())))),
+      h("div", { class: "fusa-row" }, evName, h("button", { type: "button", class: "fusa-btn small", onclick: () => (addEvent(c, this.actionTime, evName.value || "contact"), this.clipChanged()) }, "Add at play head"))
+    );
+    const ph = c.phases ??= {};
+    const num2 = (v, set) => {
+      const i = h("input", { type: "number", min: "0", max: String(c.duration), step: "0.01", value: v === void 0 ? "" : String(v) });
+      i.addEventListener("change", () => (set(Math.max(0, Math.min(c.duration, Number(i.value) || 0))), this.clipChanged()));
+      return i;
+    };
+    const pair = (key2) => h("div", { class: "fusa-row" }, num2(ph[key2]?.[0], (n) => ph[key2] = [n, ph[key2]?.[1] ?? n]), num2(ph[key2]?.[1], (n) => ph[key2] = [ph[key2]?.[0] ?? 0, n]));
+    e.append(h("div", { class: "fusa-insp-title" }, "Phases (s)"), this.field("Wind-up", pair("anticipation")), this.field("Strike", pair("action")), this.field("Impact", num2(ph.impact, (n) => ph.impact = n)), this.field("Recovery", pair("recovery")));
+  }
+  async duplicateClip() {
+    const c = getClip(this.clipId);
+    if (!c) return;
+    const copy = cloneClip(c, uniqueClipId(`${c.id}-copy`, (id) => !!getClip(id)), `${c.name} (copy)`);
+    registerClip(copy);
+    this.clipId = copy.id;
+    this.persistClip(copy, true);
+    this.startClips(0);
+    this.renderAll();
+  }
+  async deleteClip() {
+    const c = getClip(this.clipId);
+    if (!c) return;
+    if (isBuiltIn(c.id)) return this.host.notify("Built-in animations cannot be deleted. Duplicate one to make your own.", "info");
+    if (!await this.host.confirm("Delete animation", `Delete "${c.name}" from this world?`)) return;
+    unregisterClip(c.id);
+    await this.host.deleteClip?.(c.id);
+    if (!getClip(this.clipId)) this.clipId = "sword-slash";
+    this.editing = false;
+    this.startClips(0);
+    this.renderAll();
+  }
+  exportClip() {
+    const c = getClip(this.clipId);
+    if (c) this.host.download(`${c.id}.fusa-clip.json`, JSON.stringify(c, null, 1));
+  }
+  async importClip() {
+    const text = await this.host.pickTextFile(".json,application/json");
+    if (!text) return;
+    try {
+      const c = JSON.parse(text);
+      if (getClip(c.id)) {
+        c.id = uniqueClipId(c.id, (id) => !!getClip(id));
+        c.name = `${c.name} (imported)`;
+      }
+      registerClip(c);
+      this.persistClip(c, true);
+      this.clipId = c.loop && IDLE_IDS.includes(c.id) ? this.clipId : c.id;
+      this.startClips(0);
+      this.renderAll();
+      this.host.notify(`Imported the animation "${c.name}".`);
+    } catch (e) {
+      this.host.notify(`Could not import: ${e.message}`, "error");
+    }
+  }
+  setOnion(on) {
+    this.onion = on;
+    if (!on) {
+      for (const g of this.ghosts) g.destroy();
+      this.ghosts = [];
+      this.viewport.setGhosts([]);
+    }
+    this.renderTransport();
+  }
+  renderGhosts() {
+    const v = this.view;
+    if (!v || !this.asset) return;
+    if (this.ghosts.length !== 2 || this.ghosts[0].asset !== this.asset) {
+      for (const g of this.ghosts) g.destroy();
+      this.ghosts = [new RigView(this.asset), new RigView(this.asset)];
+    }
+    const clip = getClip(this.clipId);
+    const base2 = getClip(this.baseId);
+    const offsets = [-0.1, 0.1];
+    this.ghosts.forEach((g, i) => {
+      g.player.clear();
+      g.skeleton.resetPose();
+      if (base2 && !this.editing) g.player.play(base2, { track: 0, mixIn: 0 });
+      if (clip) g.player.play(clip, { track: 1, mixIn: 0, intensity: this.editing ? 1 : this.intensity, timing: this.editing ? void 0 : this.timing, variation: 0 });
+      g.player.seek(1, Math.max(0, this.actionTime + offsets[i]));
+      g.player.update(0);
+      g.render(this.viewport.app.renderer);
+    });
+    this.viewport.setGhosts(this.ghosts.map((g, i) => ({ view: g, tint: i ? 16747146 : 9094399, alpha: 0.35 })));
+  }
+  /* ------------------------------------------------------------------ */
   /*  Frame loop                                                         */
   /* ------------------------------------------------------------------ */
   frame(dt) {
@@ -4962,7 +5684,7 @@ var Studio = class {
     const v = this.view;
     if (!v) return;
     if (this.mode === "animate") {
-      if (this.playing) {
+      if (this.playing && !this.editing) {
         v.update(dt * this.speed);
         const info = v.player.trackInfo(1);
         if (info) this.actionTime = info.time;
@@ -4971,7 +5693,8 @@ var Studio = class {
           this.actionTime = this.timeline.duration;
         }
       }
-      this.timeline.set(getClip(this.clipId) ?? null, this.warp, this.actionTime);
+      this.timeline.set(getClip(this.clipId) ?? null, this.warp, this.actionTime, this.keyRows().rows);
+      if (this.onion) this.renderGhosts();
     } else if (this.mode === "pose") {
       if (this.poseDirty) {
         v.player.clear();
@@ -5118,7 +5841,12 @@ var Studio = class {
     if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
     const mod = e.ctrlKey || e.metaKey;
     let handled = true;
-    if (mod && e.key.toLowerCase() === "z") e.shiftKey ? this.redo() : this.undo();
+    if (this.editing && this.mode === "animate" && mod && e.key.toLowerCase() === "z") this.restoreClip(e.shiftKey ? this.clipHistory.redo() : this.clipHistory.undo());
+    else if (this.editing && this.mode === "animate" && mod && e.key.toLowerCase() === "y") this.restoreClip(this.clipHistory.redo());
+    else if (this.editing && this.mode === "animate" && (e.key === "Delete" || e.key === "Backspace")) this.deleteSelectedKey();
+    else if (this.editing && this.mode === "animate" && (e.key === "k" || e.key === "K")) this.keyCurrent(e.shiftKey ? "translate" : "rotate");
+    else if (this.mode === "animate" && !this.playing && (e.key === "ArrowLeft" || e.key === "ArrowRight")) this.seek(Math.max(0, Math.min(this.timeline.duration, this.actionTime + (e.key === "ArrowLeft" ? -1 : 1) / 30)));
+    else if (mod && e.key.toLowerCase() === "z") e.shiftKey ? this.redo() : this.undo();
     else if (mod && e.key.toLowerCase() === "y") this.redo();
     else if (mod && e.key.toLowerCase() === "s") void this.save();
     else if (e.key === "Delete" || e.key === "Backspace") this.mode === "rig" ? this.deleteSelected() : handled = false;
@@ -5141,6 +5869,10 @@ var Studio = class {
     if (this.destroyed) return;
     this.destroyed = true;
     clearTimeout(this.statusTimer);
+    clearTimeout(this.clipSaveTimer);
+    clearTimeout(this.inspTimer);
+    for (const g of this.ghosts) g.destroy();
+    this.ghosts = [];
     this.view?.destroy();
     this.view = null;
     this.timeline.destroy();
@@ -5195,7 +5927,10 @@ function makeHost(app) {
     storeImage: (name, data) => storeImage(name, data),
     notify: (m, t = "info") => ui.notifications?.[t === "warn" ? "warn" : t === "error" ? "error" : "info"](m),
     confirm: confirmDialog,
-    assignToActor: (rig) => assignRigToActor(rig, app.actorId ?? void 0)
+    assignToActor: (rig) => assignRigToActor(rig, app.actorId ?? void 0),
+    listClips: async () => Object.values(worldClips()),
+    saveClip: (clip) => saveClip(clip),
+    deleteClip: (id) => deleteClip(id)
   };
 }
 var { ApplicationV2 } = foundry.applications.api;
@@ -5347,6 +6082,7 @@ function createApi() {
 Hooks.once("init", () => {
   const reg = (key, data) => game.settings.register(MODULE_ID, key, { config: true, ...data });
   game.settings.register(MODULE_ID, "rigs", { scope: "world", config: false, type: Object, default: {} });
+  game.settings.register(MODULE_ID, "clips", { scope: "world", config: false, type: Object, default: {}, onChange: () => syncWorldClips() });
   reg("animateTokens", {
     name: "Animate tokens",
     hint: "Tokens of actors with a sprite animation idle and act on the map. Turn off to see their still images (for you only).",
@@ -5387,7 +6123,22 @@ Hooks.once("init", () => {
   if (!("SpriteAnimator" in globalThis)) globalThis.SpriteAnimator = api;
   registerTokenHooks();
 });
+var worldClipIds = /* @__PURE__ */ new Set();
+function syncWorldClips() {
+  const clips = worldClips();
+  for (const id of worldClipIds) if (!clips[id]) unregisterClip(id);
+  worldClipIds.clear();
+  for (const [id, clip] of Object.entries(clips)) {
+    try {
+      registerClip(clip);
+      worldClipIds.add(id);
+    } catch (e) {
+      console.warn(`${MODULE_ID} | world animation "${id}" is invalid`, e);
+    }
+  }
+}
 Hooks.once("ready", () => {
+  syncWorldClips();
   game.socket?.on(SOCKET, onSocket);
   Hooks.callAll(`${MODULE_ID}.ready`, game.modules.get(MODULE_ID)?.api);
 });

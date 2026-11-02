@@ -1,7 +1,10 @@
 import { TimeWarp } from '../core/clip';
 import { wrapDeg } from '../core/math';
-import type { BoneData, ClipDocument, PartData, PhaseTiming, RigDocument, TemplateId } from '../core/types';
-import { CATEGORY_LABELS, getClip, listClips } from '../presets';
+import type { BoneData, ClipCategory, ClipDocument, Ease, PartData, PhaseTiming, RigDocument, TemplateId } from '../core/types';
+import { CATEGORY_LABELS, getClip, isBuiltIn, listClips, registerClip, unregisterClip } from '../presets';
+import { CHANNELS, addEvent, cloneClip, keyFromPose, moveKey as moveClipKey, removeEvent, removeKey, setDuration, setKeyEase, setLayerKey, setRotateKey, setVectorKey, uniqueClipId, type Channel } from '../presets/edit';
+import { EASE_NAMES } from '../core/easing';
+import { solveTwoBone } from '../core/ik';
 import { buildRig } from '../rig/build';
 import { assignPixels, cloneRig, createRig, lastReport, parseRig, proposeRig, rigHints, rigLabels, type RigReport } from '../rig/document';
 import { addBone, childrenOf, deleteBone, descendants, ensurePart, moveJoint, movePart, moveSubtree, moveTip, removePart, reparent, updateBone, updatePart } from '../rig/edit';
@@ -44,7 +47,13 @@ export interface StudioHost {
 	confirm(title: string, text: string): Promise<boolean>;
 	/** Optional: link a rig to an actor (Foundry). */
 	assignToActor?(rig: RigDocument): Promise<void>;
+	/** Optional: the world's own clips (edited or imported animations). */
+	listClips?(): Promise<ClipDocument[]>;
+	saveClip?(clip: ClipDocument): Promise<void>;
+	deleteClip?(id: string): Promise<void>;
 }
+
+const CHANNEL_LABEL: Record<Channel, string> = { rotate: 'Turn', translate: 'Move', scale: 'Scale', layer: 'Layer' };
 
 interface Bundle {
 	format: 'fusa-bundle';
@@ -114,6 +123,14 @@ export class Studio {
 	private actionTime = 0;
 	private destroyed = false;
 	private lastEvent = '';
+	/** Animate mode: editing the keys of the current clip. */
+	editing = false;
+	private selectedKey: { role: string; channel: Channel; index: number } | null = null;
+	private readonly clipHistory = new History();
+	private clipSaveTimer = 0;
+	/** Onion skin: faint frames just before and after the play head. */
+	onion = false;
+	private ghosts: RigView[] = [];
 
 	// DOM parts
 	private elHeader!: HTMLElement;
@@ -134,6 +151,22 @@ export class Studio {
 		this.layout();
 		this.root.addEventListener('keydown', this.onKey);
 		this.renderAll();
+		void this.loadWorldClips();
+	}
+
+	private async loadWorldClips(): Promise<void> {
+		try {
+			for (const c of (await this.host.listClips?.()) ?? []) {
+				try {
+					registerClip(c);
+				} catch (e) {
+					console.warn('fu-sprite-animator | a saved clip could not be loaded', c?.id, e);
+				}
+			}
+			if (!this.destroyed) this.renderLibrary();
+		} catch (e) {
+			console.warn('fu-sprite-animator | could not list world clips', e);
+		}
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -176,8 +209,16 @@ export class Studio {
 		center.insertBefore(this.viewport.el, this.elStatus);
 		this.elLibrary = h('div', { class: 'fusa-library' });
 		this.elTransport = h('div', { class: 'fusa-transport' });
-		this.timeline = new Timeline((t) => this.seek(t));
-		bottom.append(h('div', { class: 'fusa-bottom-left' }, h('div', { class: 'fusa-panel-title' }, 'Animation library'), this.elLibrary), h('div', { class: 'fusa-bottom-right' }, this.elTransport, this.timeline.el));
+		this.timeline = new Timeline({ seek: (t) => this.seek(t), selectKey: (r, i) => this.selectKeyAt(r, i), moveKey: (r, i, t, done) => this.moveKeyAt(r, i, t, done) });
+		const libActions = h(
+			'div',
+			{ class: 'fusa-lib-actions' },
+			ibtn('add', 'Duplicate the selected animation (to edit your own version)', () => void this.duplicateClip()),
+			ibtn('trash', 'Delete the selected animation (your own animations only)', () => void this.deleteClip()),
+			ibtn('import', 'Import an animation (.json)', () => void this.importClip()),
+			ibtn('export', 'Export the selected animation (.json)', () => this.exportClip()),
+		);
+		bottom.append(h('div', { class: 'fusa-bottom-left' }, h('div', { class: 'fusa-panel-title fusa-lib-head' }, h('span', null, 'Animation library'), libActions), this.elLibrary), h('div', { class: 'fusa-bottom-right' }, this.elTransport, this.timeline.el));
 		this.root.append(this.elHeader, left, center, right, bottom);
 	}
 
@@ -206,6 +247,7 @@ export class Studio {
 	private renderAll(): void {
 		this.root.dataset.mode = this.mode;
 		this.root.classList.toggle('has-rig', !!this.rig);
+		this.root.classList.toggle('editing', this.editing && this.mode === 'animate');
 		this.renderHeader();
 		this.renderTree();
 		this.renderInspector();
@@ -359,6 +401,7 @@ export class Studio {
 			e.append(h('p', { class: 'fusa-muted' }, 'No rig yet.'));
 			return;
 		}
+		if (this.mode === 'animate' && this.editing) return this.renderClipInspector(e, rig);
 		const b = this.boneOf(this.selected);
 		if (!b) {
 			this.renderRigSettings(e, rig);
@@ -477,7 +520,7 @@ export class Studio {
 					...clips.map((c) => {
 						const isBase = IDLE_IDS.includes(c.id) && c.loop;
 						const active = isBase ? this.baseId === c.id : this.clipId === c.id;
-						return h('button', { type: 'button', class: `fusa-card ${active ? 'active' : ''} ${isBase ? 'base' : ''}`, title: c.description ?? c.name, disabled: !this.rig, onclick: () => this.chooseClip(c) }, h('b', null, c.name), h('small', null, isBase ? 'Idle loop' : `${c.duration.toFixed(2)}s`));
+						return h('button', { type: 'button', class: `fusa-card ${active ? 'active' : ''} ${isBase ? 'base' : ''}`, title: c.description ?? c.name, disabled: !this.rig, dataset: { clip: c.id }, onclick: () => this.chooseClip(c) }, h('b', null, c.name), h('small', null, isBase ? 'Idle loop' : `${c.duration.toFixed(2)}s${isBuiltIn(c.id) ? '' : ' · yours'}`));
 						}),
 					),
 				),
@@ -493,7 +536,7 @@ export class Studio {
 			ibtn(this.playing ? 'pause' : 'play', this.playing ? 'Pause (Space)' : 'Play (Space)', () => this.togglePlay(), { class: 'big', disabled }),
 			ibtn('stop', 'Back to the start', () => this.restart(), { disabled }),
 			ibtn('loop', 'Loop the animation', () => ((this.loop = !this.loop), this.renderTransport()), { class: this.loop ? 'on' : '', disabled }),
-			h('div', { class: 'fusa-clipname' }, h('small', null, `Over ${getClip(this.baseId)?.name ?? 'nothing'}`), h('b', null, getClip(this.clipId)?.name ?? '')),
+			h('div', { class: 'fusa-clipname' }, h('small', null, this.editing ? 'Editing (alone, at its own timing)' : `Over ${getClip(this.baseId)?.name ?? 'nothing'}`), h('b', null, getClip(this.clipId)?.name ?? '')),
 			slider('Speed', this.speed, 0.25, 2, 0.05, (v) => (this.speed = v), (v) => `${v.toFixed(2)}×`),
 			slider('Intensity', this.intensity, 0, 1.5, 0.05, (v) => ((this.intensity = v), this.replayIfPaused()), (v) => `${Math.round(v * 100)}%`),
 			slider('Wind-up', this.timing.anticipation, 0.5, 2, 0.05, (v) => ((this.timing.anticipation = v), this.retime()), (v) => `${v.toFixed(2)}×`),
@@ -501,6 +544,9 @@ export class Studio {
 			slider('Recovery', this.timing.recovery, 0.5, 2, 0.05, (v) => ((this.timing.recovery = v), this.retime()), (v) => `${v.toFixed(2)}×`),
 			h('label', { class: 'fusa-check', title: 'Each play varies a little (amplitude and speed), so repeated attacks do not look identical.' }, h('input', { type: 'checkbox', checked: this.variation > 0, onchange: (ev: Event) => ((this.variation = (ev.target as HTMLInputElement).checked ? 1 : 0), this.restart()) }), 'Vary'),
 			ibtn('dice', 'Another variation', () => ((this.seed++, this.variation ||= 1), this.restart()), { disabled }),
+			h('span', { class: 'grow' }),
+			h('button', { type: 'button', class: `fusa-btn small ${this.onion ? 'on' : ''}`, title: 'Show faint frames just before and after the play head', disabled, onclick: () => this.setOnion(!this.onion) }, icon('eye'), 'Ghosts'),
+			h('button', { type: 'button', class: `fusa-btn small ${this.editing ? 'primary' : ''}`, title: 'Edit the keys of this animation: pose bones at the play head (Ctrl-drag: IK), drag keys on the timeline', disabled, onclick: () => this.setEditing(!this.editing) }, icon('brush'), this.editing ? 'Editing keys' : 'Edit keys'),
 		);
 	}
 
@@ -538,7 +584,8 @@ export class Studio {
 		if (!this.rig) return;
 		const m = MODES.find((x) => x.id === this.mode)!;
 		const z = this.viewport.zoom;
-		const parts: (HTMLElement | null)[] = [h('span', { class: 'hint' }, this.tool === 'add' && this.mode === 'rig' ? 'Drag from where the new bone starts to where it ends. It joins the selected bone.' : m.hint), h('span', { class: 'grow' }), this.cursor ? h('span', null, `${Math.floor(this.cursor.x)}, ${Math.floor(this.cursor.y)}`) : null, h('span', null, `${Math.round(z * 100)}%`), this.lastEvent && this.mode === 'animate' ? h('span', { class: 'event' }, this.lastEvent) : null];
+		const hint = this.tool === 'add' && this.mode === 'rig' ? 'Drag from where the new bone starts to where it ends. It joins the selected bone.' : this.mode === 'animate' && this.editing ? 'Drag a bone to key its turn, Shift-drag to key its position, Ctrl-drag a hand or foot for IK. K: key turn, ←/→: step, Del: delete key, Ctrl+Z: undo.' : m.hint;
+		const parts: (HTMLElement | null)[] = [h('span', { class: 'hint' }, hint), h('span', { class: 'grow' }), this.cursor ? h('span', null, `${Math.floor(this.cursor.x)}, ${Math.floor(this.cursor.y)}`) : null, h('span', null, `${Math.round(z * 100)}%`), this.lastEvent && this.mode === 'animate' ? h('span', { class: 'event' }, this.lastEvent) : null];
 		for (const p of parts) if (p) e.append(p);
 	}
 
@@ -686,6 +733,8 @@ export class Studio {
 
 	setMode(mode: Mode): void {
 		if (!this.rig) return;
+		if (mode !== 'animate' && this.editing) this.editing = false;
+		if (mode !== 'animate' && this.onion) this.setOnion(false);
 		this.mode = mode;
 		this.tool = mode === 'paint' ? 'brush' : 'select';
 		this.playing = mode === 'animate';
@@ -808,6 +857,19 @@ export class Studio {
 			this.paintAt(x, y, target);
 			return;
 		}
+		if (this.mode === 'animate' && this.editing && this.view) {
+			const hit = this.viewport.pick(this.gizmos(), x, y, this.selected);
+			if (!hit) return;
+			this.select(hit.id);
+			const b = this.boneOf(hit.id);
+			if (!b?.role) return this.host.notify('This bone has no role; set one in Rig mode to animate it.', 'info');
+			const sk = this.view.skeleton;
+			const i = sk.index.get(hit.id)!;
+			const w = sk.world[i]!;
+			const kind = e.ctrlKey || e.metaKey ? 'key-ik' : e.shiftKey ? 'key-move' : 'key-rotate';
+			this.drag = { kind, id: hit.id, lastX: x, lastY: y, startAngle: Math.atan2(y - w.ty, x - w.tx), startRot: sk.local[i]!.rot, startX: sk.local[i]!.x - x, startY: sk.local[i]!.y - y };
+			return;
+		}
 		if (this.mode === 'pose' && this.view) {
 			const hit = this.viewport.pick(this.gizmos(), x, y, this.selected);
 			if (!hit) return this.select(null);
@@ -821,7 +883,8 @@ export class Studio {
 		}
 	}
 
-	private onMove(x: number, y: number, e: PointerEvent): void {
+	private onMove(x: number, y: number, _e: PointerEvent): void {
+		const e = _e;
 		this.cursor = { x, y };
 		if (!this.rig) return;
 		if (this.addPreview) {
@@ -855,10 +918,56 @@ export class Studio {
 			d.lastY = y;
 			return;
 		}
+		if (this.mode === 'animate' && this.editing && this.view && d.kind.startsWith('key-')) {
+			const c = this.editClip();
+			const rig = this.rig;
+			const sk = this.view.skeleton;
+			const i = sk.index.get(d.id)!;
+			const keyRole = (bi: number, channel: 'rotate' | 'translate') => {
+				const role = sk.bones[bi]!.role;
+				if (!c || !role) return;
+				const k = keyFromPose(c, role, sk, this.actionTime, rig.facing, rig.metrics.bodyHeight);
+				if (!k) return;
+				if (channel === 'rotate') setRotateKey(c, role, this.actionTime, k.rotate);
+				else setVectorKey(c, role, 'translate', this.actionTime, k.translate[0], k.translate[1]);
+			};
+			if (d.kind === 'key-rotate') {
+				const w = sk.world[i]!;
+				const a = Math.atan2(y - w.ty, x - w.tx);
+				const flip = Math.sign(w.a * w.d - w.b * w.c) || 1;
+				sk.local[i]!.rot = d.startRot! + wrapDeg(((a - d.startAngle!) * 180) / Math.PI) * flip;
+				d.startRot = sk.local[i]!.rot;
+				d.startAngle = a;
+				sk.update();
+				keyRole(i, 'rotate');
+			} else if (d.kind === 'key-move') {
+				sk.local[i]!.x = d.startX! + x;
+				sk.local[i]!.y = d.startY! + y;
+				sk.update();
+				keyRole(i, 'translate');
+			} else if (solveTwoBone(sk, i, x, y)) {
+				keyRole(sk.parent[i]!, 'rotate');
+				keyRole(i, 'rotate');
+			}
+			this.startClips(this.actionTime);
+			return;
+		}
 		if (this.mode === 'pose' && this.view) {
 			const sk = this.view.skeleton;
 			const i = sk.index.get(d.id)!;
 			const p = this.pose.get(i) ?? { rot: 0, x: 0, y: 0 };
+			if (d.kind === 'rotate' && (_e.ctrlKey || _e.metaKey) && sk.parent[i]! >= 0) {
+				// IK: bend the parent and this bone so its tip follows the pointer
+				if (solveTwoBone(sk, i, x, y)) {
+					for (const bi of [sk.parent[i]!, i]) {
+						const q = this.pose.get(bi) ?? { rot: 0, x: 0, y: 0 };
+						q.rot = sk.local[bi]!.rot - sk.setup[bi]!.rot;
+						this.pose.set(bi, q);
+					}
+					this.poseDirty = true;
+				}
+				return;
+			}
 			if (d.kind === 'rotate') {
 				const w = sk.world[i]!;
 				const a = Math.atan2(y - w.ty, x - w.tx);
@@ -893,6 +1002,10 @@ export class Studio {
 		const d = this.drag;
 		this.drag = null;
 		if (!d) return;
+		if (d.kind.startsWith('key-')) {
+			this.clipChanged();
+			return;
+		}
 		if (this.mode === 'rig') {
 			this.history.end(this.snapshot());
 			this.needsBuild = true;
@@ -991,15 +1104,16 @@ export class Studio {
 		v.skeleton.resetPose();
 		const base = getClip(this.baseId);
 		const clip = getClip(this.clipId);
-		if (base) v.player.play(base, { track: 0, mixIn: 0 });
+		const plain = this.editing; // keys are edited on the clip alone, at its own timing
+		if (base && !plain) v.player.play(base, { track: 0, mixIn: 0 });
 		if (clip) {
 			v.player.play(clip, {
 				track: 1,
-				mixIn: clip.loop ? 0.2 : 0.08,
-				speed: this.speed,
-				intensity: this.intensity,
-				timing: this.timing,
-				variation: this.variation,
+				mixIn: plain ? 0 : clip.loop ? 0.2 : 0.08,
+				speed: plain ? 1 : this.speed,
+				intensity: plain ? 1 : this.intensity,
+				timing: plain ? undefined : this.timing,
+				variation: plain ? 0 : this.variation,
 				seed: this.seed,
 				loop: clip.loop,
 				onEvent: (name) => {
@@ -1007,7 +1121,7 @@ export class Studio {
 					this.renderStatusSoon();
 				},
 			});
-			this.warp = new TimeWarp(clip, this.timing);
+			this.warp = new TimeWarp(clip, plain ? {} : this.timing);
 		}
 		this.actionTime = 0;
 		if (at > 0) this.seek(at);
@@ -1022,7 +1136,17 @@ export class Studio {
 		v.player.seek(1, t);
 		v.player.update(0);
 		v.dirty = true;
-		this.timeline.set(getClip(this.clipId) ?? null, this.warp, t);
+		this.timeline.set(getClip(this.clipId) ?? null, this.warp, t, this.keyRows().rows);
+		if (this.editing) this.renderInspectorSoon();
+	}
+
+	private inspTimer = 0;
+	private renderInspectorSoon(): void {
+		if (this.inspTimer) return;
+		this.inspTimer = window.setTimeout(() => {
+			this.inspTimer = 0;
+			if (!this.destroyed) this.renderInspector();
+		}, 120);
 	}
 
 	togglePlay(): void {
@@ -1051,6 +1175,291 @@ export class Studio {
 	}
 
 	/* ------------------------------------------------------------------ */
+	/*  Editing clips                                                      */
+	/* ------------------------------------------------------------------ */
+
+	private editClip(): ClipDocument | null {
+		const c = getClip(this.clipId);
+		return c && !isBuiltIn(c.id) ? c : null;
+	}
+
+	setEditing(on: boolean): void {
+		if (!this.rig) return;
+		if (on) {
+			let c = getClip(this.clipId);
+			if (!c) return;
+			if (isBuiltIn(c.id)) {
+				// built-in animations stay as they are: edit a copy
+				const copy = cloneClip(c, uniqueClipId(`${c.id}-custom`, (id) => !!getClip(id)), `${c.name} (custom)`);
+				registerClip(copy);
+				this.clipId = copy.id;
+				this.persistClip(copy, true);
+				this.host.notify(`Editing your own copy: "${copy.name}".`);
+				c = copy;
+			}
+			this.clipHistory.reset(JSON.stringify(c));
+			if (this.mode !== 'animate') this.mode = 'animate';
+		}
+		this.editing = on;
+		this.selectedKey = null;
+		this.playing = !on;
+		this.startClips(on ? this.actionTime : 0);
+		this.renderAll();
+	}
+
+	private persistClip(clip: ClipDocument, now = false): void {
+		clearTimeout(this.clipSaveTimer);
+		const save = () => void this.host.saveClip?.(JSON.parse(JSON.stringify(clip))).catch((err) => this.host.notify(`Could not save the animation: ${(err as Error).message}`, 'error'));
+		if (now) save();
+		else this.clipSaveTimer = window.setTimeout(save, 1200);
+	}
+
+	/** After any change to the clip being edited: record undo, save, re-pose. */
+	private clipChanged(record = true): void {
+		const c = this.editClip();
+		if (!c) return;
+		if (record) this.clipHistory.record(JSON.stringify(c));
+		this.persistClip(c);
+		this.startClips(this.actionTime);
+		this.renderInspector();
+		this.renderLibrary();
+	}
+
+	private restoreClip(snap: string | null): void {
+		if (!snap) return;
+		const c = JSON.parse(snap) as ClipDocument;
+		registerClip(c);
+		this.clipId = c.id;
+		this.persistClip(c);
+		this.selectedKey = null;
+		this.startClips(this.actionTime);
+		this.renderAll();
+	}
+
+	private keyRows(): { role: string | null; rows: { label: string; keys: number[]; selected?: number; colour?: string }[] } {
+		const c = getClip(this.clipId);
+		const role = this.boneOf(this.selected)?.role ?? null;
+		if (!this.editing || !c || !role) return { role, rows: [] };
+		const tr = c.tracks[role];
+		const colours: Record<Channel, string> = { rotate: '#5aa9ff', translate: '#7ad08f', scale: '#c9a7ff', layer: '#f2c45a' };
+		return {
+			role,
+			rows: CHANNELS.map((ch) => ({
+				label: CHANNEL_LABEL[ch],
+				keys: ((tr?.[ch] as { t: number }[] | undefined) ?? []).map((k) => k.t),
+				selected: this.selectedKey && this.selectedKey.role === role && this.selectedKey.channel === ch ? this.selectedKey.index : undefined,
+				colour: colours[ch],
+			})),
+		};
+	}
+
+	private selectKeyAt(row: number, index: number): void {
+		const { role } = this.keyRows();
+		const c = getClip(this.clipId);
+		if (!role || !c) return;
+		const ch = CHANNELS[row]!;
+		const key = (c.tracks[role]?.[ch] as { t: number }[] | undefined)?.[index];
+		if (!key) return;
+		this.selectedKey = { role, channel: ch, index };
+		this.seek(key.t);
+		this.renderInspector();
+	}
+
+	private moveKeyAt(row: number, index: number, t: number, done: boolean): void {
+		const c = this.editClip();
+		const { role } = this.keyRows();
+		if (!c || !role) return;
+		const ch = CHANNELS[row]!;
+		const ni = moveClipKey(c, role, ch, this.selectedKey?.index ?? index, t);
+		this.selectedKey = { role, channel: ch, index: ni };
+		this.actionTime = Math.max(0, Math.min(c.duration, t));
+		if (done) this.clipChanged();
+		else this.startClips(this.actionTime);
+	}
+
+	/** Key the selected bone's current value at the play head. */
+	private keyCurrent(channel: 'rotate' | 'translate'): void {
+		const c = this.editClip();
+		const b = this.boneOf(this.selected);
+		if (!c || !b?.role || !this.view || !this.rig) return;
+		const k = keyFromPose(c, b.role, this.view.skeleton, this.actionTime, this.rig.facing, this.rig.metrics.bodyHeight);
+		if (!k) return;
+		if (channel === 'rotate') setRotateKey(c, b.role, this.actionTime, k.rotate);
+		else setVectorKey(c, b.role, 'translate', this.actionTime, k.translate[0], k.translate[1]);
+		this.clipChanged();
+	}
+
+	private deleteSelectedKey(): void {
+		const c = this.editClip();
+		const k = this.selectedKey;
+		if (!c || !k) return;
+		removeKey(c, k.role, k.channel, k.index);
+		this.selectedKey = null;
+		this.clipChanged();
+	}
+
+	private renderClipInspector(e: HTMLElement, rig: RigDocument): void {
+		const c = this.editClip();
+		if (!c) {
+			e.append(h('p', { class: 'fusa-muted' }, 'Pick an animation to edit.'));
+			return;
+		}
+		const name = h('input', { type: 'text', value: c.name });
+		name.addEventListener('change', () => ((c.name = name.value.trim() || c.name), this.clipChanged()));
+		const cats = h('select', null, ...(Object.keys(CATEGORY_LABELS) as ClipCategory[]).map((k) => h('option', { value: k, selected: k === c.category }, CATEGORY_LABELS[k])));
+		cats.addEventListener('change', () => ((c.category = cats.value as ClipCategory), this.clipChanged()));
+		const dur = h('input', { type: 'number', min: '0.05', max: '10', step: '0.05', value: String(c.duration) });
+		dur.addEventListener('change', () => (setDuration(c, Number(dur.value) || c.duration), this.clipChanged()));
+		const loop = h('input', { type: 'checkbox', checked: c.loop });
+		loop.addEventListener('change', () => ((c.loop = loop.checked), this.clipChanged()));
+		e.append(h('div', { class: 'fusa-insp-title' }, 'Animation'), this.field('Name', name), this.field('Category', cats), this.field('Length (s)', dur), h('label', { class: 'fusa-check' }, loop, 'Loops'));
+
+		// the selected bone
+		const b = this.boneOf(this.selected);
+		e.append(h('div', { class: 'fusa-insp-title' }, 'Bone at ', h('b', null, `${this.actionTime.toFixed(2)}s`)));
+		if (!b) e.append(h('p', { class: 'fusa-muted' }, 'Select a bone (list or view). Drag it in the view to set a key; Ctrl-drag a hand or foot to bend the limb (IK). K keys it, Shift+K keys its position.'));
+		else if (!b.role) e.append(h('p', { class: 'fusa-muted' }, `${b.name} has no role; animations move bones by role. Set one in Rig mode.`));
+		else {
+			const role = b.role;
+			const tr = c.tracks[role];
+			const space = h('div', { class: 'fusa-seg' }, ...(['offset', 'world'] as const).map((sp) => h('button', { type: 'button', class: (tr?.space ?? 'offset') === sp ? 'active' : '', disabled: !!tr?.rotate?.length, title: sp === 'offset' ? 'Turn relative to the rig’s own pose' : 'Point at an on-screen direction, whatever the rig’s pose (strikes). Only before the first turn key.', onclick: () => ((c.tracks[role] ??= {}).space = sp, this.clipChanged()) }, sp === 'offset' ? 'Relative' : 'Screen angle')));
+			const roles = [...new Set(rig.bones.map((x) => x.role).filter((r): r is string => !!r && r !== role))];
+			const curLayer = [...(tr?.layer ?? [])].filter((k) => k.t <= this.actionTime + 1e-6).pop();
+			const layer = h('select', null, h('option', { value: '' }, 'normal order'), ...roles.map((r) => h('option', { value: `behind:${r}`, selected: curLayer?.behind === r }, `behind ${r}`)), ...roles.map((r) => h('option', { value: `front:${r}`, selected: curLayer?.front === r }, `in front of ${r}`)));
+			layer.addEventListener('change', () => {
+				const [kind, target] = layer.value.split(':');
+				setLayerKey(c, role, this.actionTime, kind === 'behind' ? target : undefined, kind === 'front' ? target : undefined);
+				this.clipChanged();
+			});
+			e.append(
+				h('div', { class: 'fusa-readout' }, `${b.name} · ${role}`),
+				this.field('Turn keys', space),
+				h('div', { class: 'fusa-row' }, h('button', { type: 'button', class: 'fusa-btn small', onclick: () => this.keyCurrent('rotate') }, '◆ Key turn'), h('button', { type: 'button', class: 'fusa-btn small', onclick: () => this.keyCurrent('translate') }, '◆ Key position')),
+				this.field('Draw from here', layer),
+			);
+		}
+
+		// the selected key
+		const sk = this.selectedKey;
+		const key = sk ? (c.tracks[sk.role]?.[sk.channel] as { t: number; e?: Ease }[] | undefined)?.[sk.index] : undefined;
+		if (sk && key) {
+			const t = h('input', { type: 'number', min: '0', max: String(c.duration), step: '0.01', value: String(key.t) });
+			t.addEventListener('change', () => {
+				const ni = moveClipKey(c, sk.role, sk.channel, sk.index, Number(t.value));
+				this.selectedKey = { ...sk, index: ni };
+				this.actionTime = Math.min(c.duration, Number(t.value));
+				this.clipChanged();
+			});
+			const ease = h('select', null, ...EASE_NAMES.map((n) => h('option', { value: n, selected: (typeof key.e === 'string' ? key.e : key.e ? '' : 'linear') === n }, n)), Array.isArray(key.e) ? h('option', { value: '', selected: true }, `curve ${key.e.join(', ')}`) : null);
+			ease.addEventListener('change', () => (ease.value && setKeyEase(c, sk.role, sk.channel, sk.index, ease.value as Ease), this.clipChanged()));
+			const value = 'v' in key ? `${(key as { v: number }).v.toFixed(1)}°` : 'x' in key ? `${(key as { x: number }).x.toFixed(3)}, ${(key as unknown as { y: number }).y.toFixed(3)}` : 'behind' in key || 'front' in key ? JSON.stringify(key) : 'normal order';
+			e.append(h('div', { class: 'fusa-insp-title' }, `Key · ${CHANNEL_LABEL[sk.channel]} · ${sk.role}`), this.field('Time (s)', t), h('div', { class: 'fusa-readout' }, `Value ${value}`));
+			if (sk.channel !== 'layer') e.append(this.field('Easing to next', ease));
+			e.append(h('button', { type: 'button', class: 'fusa-btn subtle small', onclick: () => this.deleteSelectedKey() }, icon('trash'), 'Delete key (Del)'));
+		}
+
+		// events
+		const evName = h('input', { type: 'text', placeholder: 'contact', value: '' });
+		e.append(
+			h('div', { class: 'fusa-insp-title' }, 'Events'),
+			...(c.events ?? []).map((ev, i) => h('div', { class: 'fusa-event-row' }, h('span', null, `${ev.t.toFixed(2)}s`), h('b', null, ev.name), ibtn('trash', 'Remove', () => (removeEvent(c, i), this.clipChanged())))),
+			h('div', { class: 'fusa-row' }, evName, h('button', { type: 'button', class: 'fusa-btn small', onclick: () => (addEvent(c, this.actionTime, evName.value || 'contact'), this.clipChanged()) }, 'Add at play head')),
+		);
+
+		// phases
+		const ph = (c.phases ??= {});
+		const num = (v: number | undefined, set: (n: number) => void) => {
+			const i = h('input', { type: 'number', min: '0', max: String(c.duration), step: '0.01', value: v === undefined ? '' : String(v) });
+			i.addEventListener('change', () => (set(Math.max(0, Math.min(c.duration, Number(i.value) || 0))), this.clipChanged()));
+			return i;
+		};
+		const pair = (key: 'anticipation' | 'action' | 'recovery') => h('div', { class: 'fusa-row' }, num(ph[key]?.[0], (n) => (ph[key] = [n, ph[key]?.[1] ?? n])), num(ph[key]?.[1], (n) => (ph[key] = [ph[key]?.[0] ?? 0, n])));
+		e.append(h('div', { class: 'fusa-insp-title' }, 'Phases (s)'), this.field('Wind-up', pair('anticipation')), this.field('Strike', pair('action')), this.field('Impact', num(ph.impact, (n) => (ph.impact = n))), this.field('Recovery', pair('recovery')));
+	}
+
+	private async duplicateClip(): Promise<void> {
+		const c = getClip(this.clipId);
+		if (!c) return;
+		const copy = cloneClip(c, uniqueClipId(`${c.id}-copy`, (id) => !!getClip(id)), `${c.name} (copy)`);
+		registerClip(copy);
+		this.clipId = copy.id;
+		this.persistClip(copy, true);
+		this.startClips(0);
+		this.renderAll();
+	}
+
+	private async deleteClip(): Promise<void> {
+		const c = getClip(this.clipId);
+		if (!c) return;
+		if (isBuiltIn(c.id)) return this.host.notify('Built-in animations cannot be deleted. Duplicate one to make your own.', 'info');
+		if (!(await this.host.confirm('Delete animation', `Delete "${c.name}" from this world?`))) return;
+		unregisterClip(c.id);
+		await this.host.deleteClip?.(c.id);
+		if (!getClip(this.clipId)) this.clipId = 'sword-slash';
+		this.editing = false;
+		this.startClips(0);
+		this.renderAll();
+	}
+
+	private exportClip(): void {
+		const c = getClip(this.clipId);
+		if (c) this.host.download(`${c.id}.fusa-clip.json`, JSON.stringify(c, null, 1));
+	}
+
+	private async importClip(): Promise<void> {
+		const text = await this.host.pickTextFile('.json,application/json');
+		if (!text) return;
+		try {
+			const c = JSON.parse(text) as ClipDocument;
+			if (getClip(c.id)) {
+				// never replace an existing animation silently
+				c.id = uniqueClipId(c.id, (id) => !!getClip(id));
+				c.name = `${c.name} (imported)`;
+			}
+			registerClip(c);
+			this.persistClip(c, true);
+			this.clipId = c.loop && IDLE_IDS.includes(c.id) ? this.clipId : c.id;
+			this.startClips(0);
+			this.renderAll();
+			this.host.notify(`Imported the animation "${c.name}".`);
+		} catch (e) {
+			this.host.notify(`Could not import: ${(e as Error).message}`, 'error');
+		}
+	}
+
+	private setOnion(on: boolean): void {
+		this.onion = on;
+		if (!on) {
+			for (const g of this.ghosts) g.destroy();
+			this.ghosts = [];
+			this.viewport.setGhosts([]);
+		}
+		this.renderTransport();
+	}
+
+	private renderGhosts(): void {
+		const v = this.view;
+		if (!v || !this.asset) return;
+		if (this.ghosts.length !== 2 || this.ghosts[0]!.asset !== this.asset) {
+			for (const g of this.ghosts) g.destroy();
+			this.ghosts = [new RigView(this.asset), new RigView(this.asset)];
+		}
+		const clip = getClip(this.clipId);
+		const base = getClip(this.baseId);
+		const offsets = [-0.1, 0.1];
+		this.ghosts.forEach((g, i) => {
+			g.player.clear();
+			g.skeleton.resetPose();
+			if (base && !this.editing) g.player.play(base, { track: 0, mixIn: 0 });
+			if (clip) g.player.play(clip, { track: 1, mixIn: 0, intensity: this.editing ? 1 : this.intensity, timing: this.editing ? undefined : this.timing, variation: 0 });
+			g.player.seek(1, Math.max(0, this.actionTime + offsets[i]!));
+			g.player.update(0);
+			g.render(this.viewport.app.renderer);
+		});
+		this.viewport.setGhosts(this.ghosts.map((g, i) => ({ view: g, tint: i ? 0xff8a8a : 0x8ac4ff, alpha: 0.35 })));
+	}
+
+	/* ------------------------------------------------------------------ */
 	/*  Frame loop                                                         */
 	/* ------------------------------------------------------------------ */
 
@@ -1060,7 +1469,7 @@ export class Studio {
 		const v = this.view;
 		if (!v) return;
 		if (this.mode === 'animate') {
-			if (this.playing) {
+			if (this.playing && !this.editing) {
 				v.update(dt * this.speed);
 				const info = v.player.trackInfo(1);
 				if (info) this.actionTime = info.time;
@@ -1070,7 +1479,8 @@ export class Studio {
 					this.actionTime = this.timeline.duration;
 				}
 			}
-			this.timeline.set(getClip(this.clipId) ?? null, this.warp, this.actionTime);
+			this.timeline.set(getClip(this.clipId) ?? null, this.warp, this.actionTime, this.keyRows().rows);
+			if (this.onion) this.renderGhosts();
 		} else if (this.mode === 'pose') {
 			if (this.poseDirty) {
 				v.player.clear();
@@ -1230,7 +1640,12 @@ export class Studio {
 		if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
 		const mod = e.ctrlKey || e.metaKey;
 		let handled = true;
-		if (mod && e.key.toLowerCase() === 'z') e.shiftKey ? this.redo() : this.undo();
+		if (this.editing && this.mode === 'animate' && mod && e.key.toLowerCase() === 'z') this.restoreClip(e.shiftKey ? this.clipHistory.redo() : this.clipHistory.undo());
+		else if (this.editing && this.mode === 'animate' && mod && e.key.toLowerCase() === 'y') this.restoreClip(this.clipHistory.redo());
+		else if (this.editing && this.mode === 'animate' && (e.key === 'Delete' || e.key === 'Backspace')) this.deleteSelectedKey();
+		else if (this.editing && this.mode === 'animate' && (e.key === 'k' || e.key === 'K')) this.keyCurrent(e.shiftKey ? 'translate' : 'rotate');
+		else if (this.mode === 'animate' && !this.playing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) this.seek(Math.max(0, Math.min(this.timeline.duration, this.actionTime + (e.key === 'ArrowLeft' ? -1 : 1) / 30)));
+		else if (mod && e.key.toLowerCase() === 'z') e.shiftKey ? this.redo() : this.undo();
 		else if (mod && e.key.toLowerCase() === 'y') this.redo();
 		else if (mod && e.key.toLowerCase() === 's') void this.save();
 		else if (e.key === 'Delete' || e.key === 'Backspace') this.mode === 'rig' ? this.deleteSelected() : (handled = false);
@@ -1256,6 +1671,10 @@ export class Studio {
 		if (this.destroyed) return;
 		this.destroyed = true;
 		clearTimeout(this.statusTimer);
+		clearTimeout(this.clipSaveTimer);
+		clearTimeout(this.inspTimer);
+		for (const g of this.ghosts) g.destroy();
+		this.ghosts = [];
 		this.view?.destroy();
 		this.view = null;
 		this.timeline.destroy();

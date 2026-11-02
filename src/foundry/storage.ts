@@ -1,4 +1,4 @@
-import type { RigDocument } from '../core/types';
+import type { ClipDocument, RigDocument } from '../core/types';
 import { parseRig } from '../rig/document';
 import type { RigSummary } from '../ui/studio';
 import { MODULE_ID, setting } from './constants';
@@ -151,4 +151,23 @@ export function download(filename: string, text: string): void {
 	a.download = filename;
 	a.click();
 	setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ------------------------------------------------------------------ */
+/*  World clips (edited, duplicated or imported animations)            */
+/* ------------------------------------------------------------------ */
+
+export function worldClips(): Record<string, ClipDocument> {
+	return setting<Record<string, ClipDocument>>('clips') ?? {};
+}
+
+export async function saveClip(clip: ClipDocument): Promise<void> {
+	if (!canSave()) throw new Error('Only the GM can save animations.');
+	await game.settings.set(MODULE_ID, 'clips', { ...worldClips(), [clip.id]: clip });
+}
+
+export async function deleteClip(id: string): Promise<void> {
+	const next = { ...worldClips() };
+	delete next[id];
+	await game.settings.set(MODULE_ID, 'clips', next);
 }

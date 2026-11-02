@@ -39,6 +39,7 @@ export class Viewport {
 	private readonly regions: PIXINS.Sprite;
 	private readonly overlay: PIXINS.Graphics;
 	private readonly frameGfx: PIXINS.Graphics;
+	private ghostSprites: PIXINS.Sprite[] = [];
 	private regionCanvas: HTMLCanvasElement | null = null;
 	private regionTexture: PIXINS.Texture | null = null;
 	view: RigView | null = null;
@@ -137,6 +138,33 @@ export class Viewport {
 		}
 		ctx.putImageData(img, 0, 0);
 		this.regionTexture!.baseTexture.update();
+	}
+
+	/** Onion-skin frames drawn faintly behind the main output. */
+	setGhosts(list: { view: RigView; tint: number; alpha: number }[]): void {
+		const P = pixi();
+		while (this.ghostSprites.length > list.length) {
+			const g = this.ghostSprites.pop()!;
+			g.texture.destroy(false);
+			g.destroy();
+		}
+		list.forEach((item, i) => {
+			let g = this.ghostSprites[i];
+			if (!g) {
+				g = new P.Sprite(P.Texture.EMPTY);
+				this.ghostSprites.push(g);
+				this.world.addChildAt(g, 0);
+			}
+			if (g.texture.baseTexture !== item.view.renderTexture.baseTexture) {
+				const old = g.texture;
+				g.texture = new P.Texture(item.view.renderTexture.baseTexture);
+				if (old !== P.Texture.EMPTY) old.destroy(false);
+			}
+			g.tint = item.tint;
+			g.alpha = item.alpha;
+			g.scale.set(1 / item.view.resolution);
+			g.position.set(-item.view.build.pad, -item.view.build.pad);
+		});
 	}
 
 	setRegionAlpha(a: number): void {

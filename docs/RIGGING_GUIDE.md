@@ -86,7 +86,27 @@ timeline to scrub. Adjust **Speed**, **Intensity** (how big the motion is), **Wi
 Recovery** timing, and **Vary** (each play differs slightly). The timeline shows the phases, the
 impact line and events.
 
-## 7. Save and use it
+## 7. Make your own animations (Animate mode → Edit keys)
+**Edit keys** turns the timeline into a keyframe editor. Editing a built-in animation edits your
+own copy (it appears in the library marked "yours"); the built-in one never changes.
+- Scrub to a moment, then **drag a bone** in the view: a *turn* key is set there for that bone's
+  role. **Shift-drag** sets a *position* key. **Ctrl-drag a hand or foot** bends the whole limb
+  (two-bone IK) and keys both bones.
+- The timeline shows the selected bone's keys in rows (Turn, Move, Scale, Layer). Click a
+  diamond to select it, drag it to retime it, **Del** deletes it, **K** keys the current turn.
+  **←/→** step a frame. **Ctrl+Z** undoes animation edits.
+- The Inspector shows the animation (name, category, length, loop), the selected key (time,
+  easing to the next key), **Draw from here** (put this bone behind or in front of another from
+  the play head on — e.g. a raised arm behind the head), events (add *contact* where the hit
+  lands) and the phases used by the Wind-up/Strike/Recovery sliders.
+- *Turn keys: Relative / Screen angle*: relative keys turn the bone from the rig's own pose;
+  screen-angle keys point it at a direction on screen whatever the sprite's pose (best for
+  strikes). Choose before the first turn key of that bone.
+- **Ghosts** shows faint frames just before (blue) and after (red) the play head.
+- Library buttons: duplicate, delete (yours only), import and export animations (`.json`).
+Your animations are saved in the world automatically and work on every rig with the same roles.
+
+## 8. Save and use it
 - **Save** (Ctrl+S) keeps the rig in this world. The rig check (right panel) must show no red
   problems for tokens to use it.
 - **Use this rig for an actor** (person button): pick the actor and its idle; optionally make

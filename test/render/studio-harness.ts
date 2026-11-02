@@ -6,6 +6,7 @@ import { Studio, type StudioHost, type RigSummary } from '../../src/ui/studio';
 import type { RigDocument } from '../../src/core/types';
 
 const store = new Map<string, RigDocument>();
+const clips = new Map<string, unknown>();
 const log: string[] = [];
 let nextImage = '../sprites/warrior.png';
 let confirmAnswer = true;
@@ -20,12 +21,16 @@ const host: StudioHost = {
 	storeImage: async (_name, dataUrl) => dataUrl,
 	notify: (m, t = 'info') => void log.push(`${t}: ${m}`),
 	confirm: async () => confirmAnswer,
+	listClips: async () => [...clips.values()] as never,
+	saveClip: async (c) => void clips.set(c.id, JSON.parse(JSON.stringify(c))),
+	deleteClip: async (id) => void clips.delete(id),
 };
 
 const studio = new Studio(document.getElementById('app')!, host);
 Object.assign(window, {
 	studio,
 	store,
+	clips,
 	log,
 	setNextImage: (src: string) => (nextImage = src),
 	setConfirm: (v: boolean) => (confirmAnswer = v),
