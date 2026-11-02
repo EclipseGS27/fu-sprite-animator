@@ -23,6 +23,7 @@ export function detectShadow(img: ImageDataLike): Uint8Array | null {
 	const H = bottom - top + 1;
 	const band = Math.max(3, Math.round(H * 0.15));
 	const dark = new Uint8Array(w * h);
+	const slate = new Uint8Array(w * h);
 	for (let y = bottom - band + 1; y <= bottom; y++) {
 		for (let x = 0; x < w; x++) {
 			const i = y * w + x;
@@ -35,6 +36,10 @@ export function detectShadow(img: ImageDataLike): Uint8Array | null {
 			const min = Math.min(r, g, b);
 			// near black and grey, or a dark translucent wash
 			if ((max <= 40 && max - min <= 20) || (a < 200 && max <= 90 && max - min <= 30)) dark[i] = 1;
+			else if (y >= bottom - Math.max(2, Math.round(H * 0.045)) && max <= 160 && b >= r && max - min <= 65) {
+				dark[i] = 1;
+				slate[i] = 1;
+			}
 		}
 	}
 	// the bottom rows must be mostly shadow
@@ -65,7 +70,12 @@ export function detectShadow(img: ImageDataLike): Uint8Array | null {
 			if (y < y0) y0 = y;
 			if (y > y1) y1 = y;
 		}
-		const wide = x1 - x0 + 1 >= 3 * (y1 - y0 + 1);
+		const width = x1 - x0 + 1, height = y1 - y0 + 1;
+		const wide = width >= 3 * height;
+		// The more permissive colour test needs much stronger floor geometry:
+		// blue feet or a dragon's underside are not a ground shadow.
+		const slatePixels = comp.reduce((sum, i) => sum + slate[i]!, 0);
+		if (slatePixels > 0 && (width < H * 0.6 || width < height * 6)) continue;
 		if (!wide || y1 < bottom - rows || comp.length < opaque * 0.015) continue;
 		// a solid patch, not an outline: most of it has shadow or nothing on every side
 		const inComp = new Set(comp);

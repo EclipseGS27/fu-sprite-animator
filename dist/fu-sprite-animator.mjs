@@ -3415,6 +3415,7 @@ function detectShadow(img) {
   const H = bottom - top + 1;
   const band = Math.max(3, Math.round(H * 0.15));
   const dark = new Uint8Array(w * h2);
+  const slate = new Uint8Array(w * h2);
   for (let y = bottom - band + 1; y <= bottom; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
@@ -3426,6 +3427,10 @@ function detectShadow(img) {
       const max = Math.max(r, g, b);
       const min = Math.min(r, g, b);
       if (max <= 40 && max - min <= 20 || a < 200 && max <= 90 && max - min <= 30) dark[i] = 1;
+      else if (y >= bottom - Math.max(2, Math.round(H * 0.045)) && max <= 160 && b >= r && max - min <= 65) {
+        dark[i] = 1;
+        slate[i] = 1;
+      }
     }
   }
   const rows = Math.max(2, Math.round(H * 0.03));
@@ -3455,7 +3460,10 @@ function detectShadow(img) {
       if (y < y0) y0 = y;
       if (y > y1) y1 = y;
     }
-    const wide = x1 - x0 + 1 >= 3 * (y1 - y0 + 1);
+    const width2 = x1 - x0 + 1, height = y1 - y0 + 1;
+    const wide = width2 >= 3 * height;
+    const slatePixels = comp.reduce((sum, i) => sum + slate[i], 0);
+    if (slatePixels > 0 && (width2 < H * 0.6 || width2 < height * 6)) continue;
     if (!wide || y1 < bottom - rows || comp.length < opaque * 0.015) continue;
     const inComp = new Set(comp);
     let solid = 0;
@@ -3491,6 +3499,26 @@ function rowRuns(mask, w, y, minLen = 1) {
     }
   }
   return out;
+}
+function traceLegs(mask, w, top, bottom, cx) {
+  const H = bottom - top + 1;
+  const minWidth = Math.max(1, Math.round(H * 0.025));
+  const start = Math.round(bottom - H * 0.07);
+  const runs = rowRuns(mask, w, start, minWidth).filter((r) => Math.abs((r.x0 + r.x1 + 1) / 2 - cx) < H * 0.5).sort((a, b) => b.x1 - b.x0 - (a.x1 - a.x0)).slice(0, 2).sort((a, b) => a.x0 - b.x0);
+  if (runs.length !== 2) return null;
+  const centre = (r) => (r.x0 + r.x1 + 1) / 2;
+  const tracks = [[[centre(runs[0]), start + 0.5]], [[centre(runs[1]), start + 0.5]]];
+  for (let y = start - 1; y >= top + H * 0.4; y--) {
+    const row = rowRuns(mask, w, y, minWidth);
+    const chosen = tracks.map((t) => {
+      const x = t[t.length - 1][0];
+      return row.filter((r) => x >= r.x0 - H * 0.035 && x <= r.x1 + H * 0.035).sort((a, b) => Math.abs(centre(a) - x) - Math.abs(centre(b) - x))[0];
+    });
+    if (!chosen[0] || !chosen[1] || chosen[0] === chosen[1] || chosen[0].x0 >= chosen[1].x0) break;
+    for (let k4 = 0; k4 < 2; k4++) tracks[k4].push([centre(chosen[k4]), y + 0.5]);
+  }
+  if (tracks[0].length < H * 0.12) return null;
+  return { left: tracks[0].reverse(), right: tracks[1].reverse() };
 }
 function skeletonBranches(skel, w, h2) {
   const at = (x, y) => x < 0 || y < 0 || x >= w || y >= h2 ? 0 : skel[y * w + x];
@@ -3792,6 +3820,7 @@ function detectWeapon(mask, w, h2, height, debug, rgba) {
         }
       }
       const thick2 = median(b.path.map((i) => dt[i]));
+      if (lenient && thick2 > b.length * 0.22) continue;
       const tx = tip % w + 0.5;
       const far = Math.hypot(tx - bodyCx, tipY + 0.5 - bodyCy) >= height * 0.4;
       if (!far) {
@@ -3802,12 +3831,19 @@ function detectWeapon(mask, w, h2, height, debug, rgba) {
         debug?.(`${at}: thick ${thick2.toFixed(1)} vs median ${medianThick.toFixed(1)}`);
         continue;
       }
-      if (lenient && thick2 > coreThick * 0.6) {
+      if (lenient && thick2 > coreThick * 0.6 && !(b.length >= height * 0.5 && thick2 < b.length * 0.18)) {
         debug?.(`${at}: as thick as the body (${thick2.toFixed(1)} vs core ${coreThick.toFixed(1)})`);
         continue;
       }
+      if (b.from > 0) {
+        const a = b.path[b.from];
+        const z = b.path[b.path.length - 1];
+        const L = Math.hypot(px(z) - px(a), py(z) - py(a)) || 1;
+        const dev = Math.abs((px(z) - px(a)) * (py(a) - py(tip)) - (px(a) - px(tip)) * (py(z) - py(a))) / L;
+        if (dev > Math.max(height * 0.025, thick2 * 1.2)) continue;
+      }
       const score = b.length * b.straightness;
-      debug?.(`${at}: candidate${lenient ? " (second pass)" : ""}, score ${score.toFixed(0)}`);
+      debug?.(`${at}: candidate${lenient ? " (second pass)" : ""}, score ${score.toFixed(0)}, thickness ${thick2.toFixed(1)}, core ${coreThick.toFixed(1)}, from ${b.from}`);
       if (score > bestScore) {
         bestScore = score;
         best = b;
@@ -3837,6 +3873,49 @@ function detectWeapon(mask, w, h2, height, debug, rgba) {
   }
   const tipI = best.path[0];
   const hiltI = best.path[best.path.length - 1];
+  if (thick > height * 0.055 && best.length >= height * 0.5) {
+    const axis = pca([...pixels], w);
+    const towardBase = (px(hiltI) - axis.cx) * axis.ux + (py(hiltI) - axis.cy) * axis.uy >= 0 ? 1 : -1;
+    const ux = axis.ux * towardBase, uy = axis.uy * towardBase;
+    const sections = [];
+    const window2 = Math.max(3, Math.round(height * 0.03));
+    let reference = 0;
+    let junction = false;
+    for (let t = 0; t < height * 0.8; t++) {
+      const x = axis.cx + ux * t, y = axis.cy + uy * t;
+      const slice = [];
+      for (const sign of [-1, 1]) for (let q = sign < 0 ? 1 : 0; q < height * 0.2; q++) {
+        const xx = Math.floor(x - uy * q * sign), yy = Math.floor(y + ux * q * sign);
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h2 || !mask[yy * w + xx]) break;
+        slice.push(yy * w + xx);
+      }
+      sections.push({ point: [x, y], pixels: slice, width: 0 });
+      const section = sections[sections.length - 1];
+      section.width = median(sections.slice(-window2).map((s) => s.pixels.length));
+      if (t === window2) reference = section.width;
+      if (t > height * 0.25 && (!slice.length || section.width > reference * 1.6)) {
+        junction = true;
+        break;
+      }
+    }
+    if (junction && reference > 0) {
+      const start = Math.max(window2, sections.length - Math.round(height * 0.16));
+      let gripIndex = start;
+      for (let i = sections.length - 2; i >= start; i--) {
+        if (sections[i].width < reference * 0.85) {
+          gripIndex = i;
+          break;
+        }
+      }
+      const gripSection = sections[gripIndex];
+      if (gripSection.pixels.length && gripSection.width < reference * 0.85 && gripIndex > height * 0.2) {
+        const grip = sections[Math.max(0, gripIndex - Math.floor(window2 / 2))].point;
+        for (const section of sections.slice(0, gripIndex)) for (const i of section.pixels) pixels.add(i);
+        debug?.(`Broad blade grip at ${grip.map((v) => v.toFixed(1)).join(",")}`);
+        return { pixels: [...pixels], tip: [px(tipI), py(tipI)], hilt: grip, broad: true, length: Math.hypot(px(tipI) - grip[0], py(tipI) - grip[1]) };
+      }
+    }
+  }
   return { pixels: [...pixels], tip: [tipI % w + 0.5, Math.floor(tipI / w) + 0.5], hilt: [hiltI % w + 0.5, Math.floor(hiltI / w) + 0.5], length: best.length };
 }
 function detectHumanoid(img, facingIn = "auto", fallback = "right") {
@@ -3851,6 +3930,10 @@ function detectHumanoid(img, facingIn = "auto", fallback = "right") {
     const shadow = detectShadow(img);
     if (shadow) {
       for (let i = 0; i < full.length; i++) if (shadow[i]) full[i] = 0;
+      const pieces = components2(full, w, h2).sort((a, b) => b.length - a.length);
+      const keep2 = new Uint8Array(full.length);
+      for (const c of pieces) if (c.length >= (pieces[0]?.length ?? 0) * 0.15) for (const i of c) keep2[i] = 1;
+      full.set(keep2);
     }
   }
   let anyPx = false;
@@ -4048,6 +4131,25 @@ function detectHumanoid(img, facingIn = "auto", fallback = "right") {
     ankleB = [kneeB[0], ankleY];
     legConf = 0.2;
   }
+  const tracked = traceLegs(mask, w, top, bottom, cx);
+  if (tracked) {
+    const backTrack = s > 0 ? tracked.left : tracked.right;
+    const frontTrack = s > 0 ? tracked.right : tracked.left;
+    const at = (track2, t) => track2[Math.round((track2.length - 1) * t)];
+    const first = frontTrack[0];
+    if (first[1] >= top + H * 0.5 && first[1] < top + H * 0.8) {
+      hipY = first[1] - H * 0.025;
+      hipF = [first[0], hipY];
+      hipB = [backTrack[0][0], hipY];
+      kneeF = at(frontTrack, 0.48);
+      kneeB = at(backTrack, 0.48);
+      ankleF = at(frontTrack, 1);
+      ankleB = at(backTrack, 1);
+      legConf = clamp01(frontTrack.length / (H * 0.3));
+      const fallbackNote = notes.indexOf("Legs not separated (robe or long coat): legs placed from proportions.");
+      if (fallbackNote >= 0) notes.splice(fallbackNote, 1);
+    }
+  }
   const toe = (ankle) => {
     let best = [ankle[0] + s * H * 0.06, bottom];
     let bestX = -Infinity;
@@ -4101,12 +4203,19 @@ function detectHumanoid(img, facingIn = "auto", fallback = "right") {
     return d <= H * 0.48 && hand[1] >= shoulder[1] - H * 0.04;
   };
   if (protrudeB < 1 || !plausible(handB, shoulderB)) {
+    armConf = Math.min(armConf, 0.25);
     if (protrudeB >= 1) notes.push("Back hand unclear: placed from proportions.");
     handB = [shoulderB[0] - s * wc * 0.4, hipY];
   }
   if (!weaponFound && (protrudeF < 1 || !plausible(handF, shoulderF))) {
+    armConf = Math.min(armConf, 0.25);
     if (protrudeF >= 1) notes.push("Front hand unclear: placed from proportions.");
     handF = [shoulderF[0] + s * wc * 0.4, hipY];
+  }
+  if (weaponFound?.broad && weaponFound.length > H * 0.6 && handF[1] >= pelvis[1] - H * 0.12 && Math.abs(handF[0] - pelvis[0]) < H * 0.28 && Math.hypot(handF[0] - shoulderB[0], handF[1] - shoulderB[1]) < H * 0.45) {
+    handB = [handF[0] - s * H * 0.04, handF[1]];
+    armConf = Math.min(armConf, 0.45);
+    notes.push("Possible two-handed grip: check both hands before animating.");
   }
   const handLen = H * 0.07;
   const wrist = (shoulder, hand) => {

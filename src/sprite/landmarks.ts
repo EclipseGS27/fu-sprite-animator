@@ -61,6 +61,33 @@ function rowRuns(mask: Uint8Array, w: number, y: number, minLen = 1): Run[] {
 	return out;
 }
 
+/** Follow two foot silhouettes upward. Unlike a fixed torso column, this permits a
+ * wide stance and bent shins. Stop where the runs merge; never split a robe in two. */
+function traceLegs(mask: Uint8Array, w: number, top: number, bottom: number, cx: number): { left: Pt[]; right: Pt[] } | null {
+	const H = bottom - top + 1;
+	const minWidth = Math.max(1, Math.round(H * 0.025));
+	const start = Math.round(bottom - H * 0.07);
+	const runs = rowRuns(mask, w, start, minWidth)
+		.filter(r => Math.abs((r.x0 + r.x1 + 1) / 2 - cx) < H * 0.5)
+		.sort((a, b) => (b.x1 - b.x0) - (a.x1 - a.x0)).slice(0, 2)
+		.sort((a, b) => a.x0 - b.x0);
+	if (runs.length !== 2) return null;
+	const centre = (r: Run) => (r.x0 + r.x1 + 1) / 2;
+	const tracks: [Pt[], Pt[]] = [[[centre(runs[0]!), start + 0.5]], [[centre(runs[1]!), start + 0.5]]];
+	for (let y = start - 1; y >= top + H * 0.4; y--) {
+		const row = rowRuns(mask, w, y, minWidth);
+		const chosen = tracks.map(t => {
+			const x = t[t.length - 1]![0];
+			return row.filter(r => x >= r.x0 - H * 0.035 && x <= r.x1 + H * 0.035)
+				.sort((a, b) => Math.abs(centre(a) - x) - Math.abs(centre(b) - x))[0];
+		});
+		if (!chosen[0] || !chosen[1] || chosen[0] === chosen[1] || chosen[0].x0 >= chosen[1].x0) break;
+		for (let k = 0; k < 2; k++) tracks[k]!.push([centre(chosen[k]!), y + 0.5]);
+	}
+	if (tracks[0].length < H * 0.12) return null;
+	return { left: tracks[0].reverse(), right: tracks[1].reverse() };
+}
+
 interface Branch {
 	/** Skeleton pixels from the free end inward. */
 	path: number[];
@@ -290,7 +317,7 @@ export function pruneSkeleton(skel: Uint8Array, w: number, h: number, minLen: nu
  * Found on the shape's skeleton (works for blades of any thickness), then the weapon's pixels
  * are the silhouette pixels around that branch that are no thicker than the branch itself.
  */
-export function detectWeapon(mask: Uint8Array, w: number, h: number, height: number, debug?: (msg: string) => void, rgba?: ArrayLike<number>): { pixels: number[]; hilt: Pt; tip: Pt; length: number } | null {
+export function detectWeapon(mask: Uint8Array, w: number, h: number, height: number, debug?: (msg: string) => void, rgba?: ArrayLike<number>): { pixels: number[]; hilt: Pt; tip: Pt; length: number; broad?: boolean } | null {
 	const skel = skeletonize(mask, w, h);
 	const dt = distanceTransform(mask, w, h);
 	let best: Branch | null = null;
@@ -409,6 +436,7 @@ export function detectWeapon(mask: Uint8Array, w: number, h: number, height: num
 				}
 			}
 			const thick = median(b.path.map((i) => dt[i]!));
+			if (lenient && thick > b.length * 0.22) continue;
 			const tx = (tip % w) + 0.5;
 			const far = Math.hypot(tx - bodyCx, tipY + 0.5 - bodyCy) >= height * 0.4;
 			if (!far) {
@@ -421,12 +449,21 @@ export function detectWeapon(mask: Uint8Array, w: number, h: number, height: num
 				continue;
 			}
 			// real art (second pass): a weapon is clearly thinner than the body's core
-			if (lenient && thick > coreThick * 0.6) {
+			if (lenient && thick > coreThick * 0.6 && !(b.length >= height * 0.5 && thick < b.length * 0.18)) {
 				debug?.(`${at}: as thick as the body (${thick.toFixed(1)} vs core ${coreThick.toFixed(1)})`);
 				continue;
 			}
+			// A long curved prefix is usually a fist, hair or cloth. Ornamented tips may
+			// deviate a little, but must still lie close to the proposed weapon axis.
+			if (b.from > 0) {
+				const a = b.path[b.from]!;
+				const z = b.path[b.path.length - 1]!;
+				const L = Math.hypot(px(z) - px(a), py(z) - py(a)) || 1;
+				const dev = Math.abs((px(z) - px(a)) * (py(a) - py(tip)) - (px(a) - px(tip)) * (py(z) - py(a))) / L;
+				if (dev > Math.max(height * 0.025, thick * 1.2)) continue;
+			}
 			const score = b.length * b.straightness;
-			debug?.(`${at}: candidate${lenient ? ' (second pass)' : ''}, score ${score.toFixed(0)}`);
+			debug?.(`${at}: candidate${lenient ? ' (second pass)' : ''}, score ${score.toFixed(0)}, thickness ${thick.toFixed(1)}, core ${coreThick.toFixed(1)}, from ${b.from}`);
 			if (score > bestScore) {
 				bestScore = score;
 				best = b;
@@ -457,6 +494,51 @@ export function detectWeapon(mask: Uint8Array, w: number, h: number, height: num
 	}
 	const tipI = best.path[0]!;
 	const hiltI = best.path[best.path.length - 1]!;
+	// Broad, tapered blades do not have a straight medial axis at their tips.
+	// Fit the visible blade area and follow cross-sections back to the narrow grip.
+	if (thick > height * 0.055 && best.length >= height * 0.5) {
+		const axis = pca([...pixels], w);
+		const towardBase = (px(hiltI) - axis.cx) * axis.ux + (py(hiltI) - axis.cy) * axis.uy >= 0 ? 1 : -1;
+		const ux = axis.ux * towardBase, uy = axis.uy * towardBase;
+		const sections: { point: Pt; pixels: number[]; width: number }[] = [];
+		const window = Math.max(3, Math.round(height * 0.03));
+		let reference = 0;
+		let junction = false;
+		for (let t = 0; t < height * 0.8; t++) {
+			const x = axis.cx + ux * t, y = axis.cy + uy * t;
+			const slice: number[] = [];
+			for (const sign of [-1, 1]) for (let q = sign < 0 ? 1 : 0; q < height * 0.2; q++) {
+				const xx = Math.floor(x - uy * q * sign), yy = Math.floor(y + ux * q * sign);
+				if (xx < 0 || yy < 0 || xx >= w || yy >= h || !mask[yy * w + xx]) break;
+				slice.push(yy * w + xx);
+			}
+			sections.push({ point: [x, y], pixels: slice, width: 0 });
+			const section = sections[sections.length - 1]!;
+			section.width = median(sections.slice(-window).map(s => s.pixels.length));
+			if (t === window) reference = section.width;
+			// Continue through holes/decorations in the blade. Look for a grip just
+			// before the large widening into a hand/body, not the first local dip.
+			if (t > height * 0.25 && (!slice.length || section.width > reference * 1.6)) {
+				junction = true;
+				break;
+			}
+		}
+		if (junction && reference > 0) {
+			const start = Math.max(window, sections.length - Math.round(height * 0.16));
+			let gripIndex = start;
+			for (let i = sections.length - 2; i >= start; i--) {
+				if (sections[i]!.width < reference * 0.85) { gripIndex = i; break; }
+			}
+			const gripSection = sections[gripIndex]!;
+			if (gripSection.pixels.length && gripSection.width < reference * 0.85 && gripIndex > height * 0.2) {
+				// The rolling median lags the geometry by half its window.
+				const grip = sections[Math.max(0, gripIndex - Math.floor(window / 2))]!.point;
+				for (const section of sections.slice(0, gripIndex)) for (const i of section.pixels) pixels.add(i);
+				debug?.(`Broad blade grip at ${grip.map(v => v.toFixed(1)).join(',')}`);
+				return { pixels: [...pixels], tip: [px(tipI), py(tipI)], hilt: grip, broad: true, length: Math.hypot(px(tipI) - grip[0], py(tipI) - grip[1]) };
+			}
+		}
+	}
 	return { pixels: [...pixels], tip: [(tipI % w) + 0.5, Math.floor(tipI / w) + 0.5], hilt: [(hiltI % w) + 0.5, Math.floor(hiltI / w) + 0.5], length: best.length };
 }
 
@@ -477,7 +559,15 @@ export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = '
 		full.set(keep);
 		// a ground shadow under the feet is not part of the body
 		const shadow = detectShadow(img);
-		if (shadow) for (let i = 0; i < full.length; i++) if (shadow[i]) full[i] = 0;
+		if (shadow) {
+			for (let i = 0; i < full.length; i++) if (shadow[i]) full[i] = 0;
+			// Clearing the floor can detach antialiased shadow fringes. They must not
+			// keep defining the feet or the character's width after the main pass.
+			const pieces = components(full, w, h).sort((a, b) => b.length - a.length);
+			const keep = new Uint8Array(full.length);
+			for (const c of pieces) if (c.length >= (pieces[0]?.length ?? 0) * 0.15) for (const i of c) keep[i] = 1;
+			full.set(keep);
+		}
 	}
 	let anyPx = false;
 	let fTop = h;
@@ -685,6 +775,27 @@ export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = '
 		ankleB = [kneeB[0], ankleY];
 		legConf = 0.2;
 	}
+	const tracked = traceLegs(mask, w, top, bottom, cx);
+	if (tracked) {
+		const backTrack = s > 0 ? tracked.left : tracked.right;
+		const frontTrack = s > 0 ? tracked.right : tracked.left;
+		const at = (track: Pt[], t: number): Pt => track[Math.round((track.length - 1) * t)]!;
+		const first = frontTrack[0]!;
+		// A split much lower than the pelvis is just the feet beneath a dress.
+		if (first[1] >= top + H * 0.5 && first[1] < top + H * 0.8) {
+			hipY = first[1] - H * 0.025;
+			hipF = [first[0], hipY];
+			hipB = [backTrack[0]![0], hipY];
+			kneeF = at(frontTrack, 0.48);
+			kneeB = at(backTrack, 0.48);
+			ankleF = at(frontTrack, 1);
+			ankleB = at(backTrack, 1);
+			legConf = clamp01(frontTrack.length / (H * 0.3));
+			const fallbackNote = notes.indexOf('Legs not separated (robe or long coat): legs placed from proportions.');
+			if (fallbackNote >= 0) notes.splice(fallbackNote, 1);
+		}
+	}
+
 	// toes: the furthest pixel forward in the bottom rows, near each ankle
 	const toe = (ankle: Pt): Pt => {
 		let best: Pt = [ankle[0] + s * H * 0.06, bottom];
@@ -742,12 +853,22 @@ export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = '
 		return d <= H * 0.48 && hand[1] >= shoulder[1] - H * 0.04;
 	};
 	if (protrudeB < 1 || !plausible(handB, shoulderB)) {
+		armConf = Math.min(armConf, 0.25);
 		if (protrudeB >= 1) notes.push('Back hand unclear: placed from proportions.');
 		handB = [shoulderB[0] - s * wc * 0.4, hipY];
 	}
 	if (!weaponFound && (protrudeF < 1 || !plausible(handF, shoulderF))) {
+		armConf = Math.min(armConf, 0.25);
 		if (protrudeF >= 1) notes.push('Front hand unclear: placed from proportions.');
 		handF = [shoulderF[0] + s * wc * 0.4, hipY];
+	}
+	if (weaponFound?.broad && weaponFound.length > H * 0.6 && handF[1] >= pelvis[1] - H * 0.12 &&
+		Math.abs(handF[0] - pelvis[0]) < H * 0.28 && Math.hypot(handF[0] - shoulderB[0], handF[1] - shoulderB[1]) < H * 0.45) {
+		// A low grip close to the body can be shared (battle-ready greatswords).
+		// This is a proposal, not evidence of a visible second hand.
+		handB = [handF[0] - s * H * 0.04, handF[1]];
+		armConf = Math.min(armConf, 0.45);
+		notes.push('Possible two-handed grip: check both hands before animating.');
 	}
 	const handLen = H * 0.07;
 	const wrist = (shoulder: Pt, hand: Pt): Pt => {

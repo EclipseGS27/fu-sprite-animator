@@ -2,3 +2,7 @@ node_modules/
 test/render/out/
 *.zip
 .DS_Store
+
+# Private uploaded detector-review inputs and local comparison image
+test/sprites/review/*.png
+docs/detector-before-after.png
