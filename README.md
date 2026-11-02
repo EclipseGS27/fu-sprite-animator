@@ -7,8 +7,8 @@ never resized, recoloured or repainted.
 
 ![The Studio animating a sword slash](docs/studio.png)
 
-**Status: Phases 2–6 built** (prototype, automatic rigging, animation editor, Fabula Ultima
-combat integration, creatures). Tested in Node and headless Chromium (WebGL, PixiJS 7.4.3) and against a
+**Status: Phases 2–7 built** (prototype, automatic rigging, animation editor, Fabula Ultima
+combat integration, creatures, automated testing and polish). Tested in Node and headless Chromium (WebGL, PixiJS 7.4.3) and against a
 Foundry mock; **not yet run in a real Foundry world** — see
 [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md) and the checklist in [docs/TESTING.md](docs/TESTING.md).
 
@@ -57,7 +57,8 @@ Full walkthrough: [docs/RIGGING_GUIDE.md](docs/RIGGING_GUIDE.md) · which animat
 - **Tokens**: animated in place through their texture only, so dashes, flashes and condition
   tints from other modules (fu-animations) keep working. Public API and socket sync.
 
-Not yet: release polish (Phase 7). See [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
+Still to do: the in-Foundry checklist (docs/TESTING.md) with fu-animations and the other UI
+modules, real-GPU measurements, and a license choice before public release. See [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
 
 ## Documentation
 [Project knowledge and research](docs/PROJECT_KNOWLEDGE.md) ·
@@ -70,6 +71,7 @@ Not yet: release polish (Phase 7). See [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELO
 [Testing](docs/TESTING.md) ·
 [Troubleshooting](docs/TROUBLESHOOTING.md) ·
 [Roadmap](docs/DEVELOPMENT_ROADMAP.md) ·
+[Changelog](CHANGELOG.md) ·
 [Licenses and dependencies](docs/LICENSES_AND_DEPENDENCIES.md)
 
 ## Development

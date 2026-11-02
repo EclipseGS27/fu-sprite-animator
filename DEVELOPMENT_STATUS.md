@@ -4,7 +4,7 @@ Statuses: **Not Started**, **In Progress**, **Implemented** (code exists, not ye
 test), **Tested** (an automated or recorded manual test passed — the "Evidence" column says
 which), **Blocked**.
 
-Last updated: 2026-11-02 (Phase 6). Environment for automated tests: Node 22, Chromium (SwiftShader
+Last updated: 2026-11-02 (Phase 7). Environment for automated tests: Node 22, Chromium (SwiftShader
 WebGL), PixiJS 7.4.3. **No Foundry VTT instance was available**: every Foundry-dependent feature
 below is at most *Implemented* (exercised only against a Foundry mock) until the checklist in
 docs/TESTING.md is run in a real Foundry v13 world.
@@ -43,7 +43,7 @@ docs/TESTING.md is run in a real Foundry v13 world.
 | Foundry: token animation (texture swap, size kept, idle fps, cap, cleanup) | Implemented | mock integration test + GPU trimmed-texture test with PIXI.Sprite; needs selfTest in Foundry (PrimarySpriteMesh) |
 | Public API, socket broadcast, event hooks | Implemented | mock integration test |
 | In-Foundry self-test | Implemented | passes in mock; awaits a Foundry run |
-| Performance: 25 animated views | Tested (headless) | 1.65 ms/frame on software GL; real GPU in Foundry not measured |
+| Performance: 25 animated views | Tested (headless) | 6.3 ms/frame on software GL (CPU rasterizing, waiting for the GPU; an earlier 1.65 ms figure did not wait and was wrong); real GPU in Foundry not measured — see Phase 7 |
 | Testing inside Foundry VTT | Blocked | no Foundry license/instance in the build environment — GM to run docs/TESTING.md checklist |
 
 ## Phase 3 — Automatic rigging
@@ -105,10 +105,19 @@ docs/TESTING.md is run in a real Foundry v13 world.
 | Studio: template menu, "What is it?" on the proposal banner, preview idle/action suited to the rig, library lists playable clips first | Tested (test page) | screenshots reviewed; mock integration; UI suites still pass |
 | Assign dialog offers the rig's own idles; tokens fall back to the template's idle | Implemented | mock integration (token idle); dialog form not exercised |
 
-## Later phases
-| Feature | Status |
-| --- | --- |
-| Phase 7: compatibility matrix, RotSprite option, profiling, release | Not Started |
+## Phase 7 — Testing and polish
+| Feature | Status | Evidence |
+| --- | --- | --- |
+| Mixed scene: 24 and 50 animated humanoids and creatures (6 different rigs), every GPU texture released afterwards | Tested (headless) | GPU suite: 10.5 ms and 16.9 ms per frame on SwiftShader **software** GL (no GPU in the container); GL textures back to 0 |
+| CPU cost of posing | Tested | 16 µs per character per frame (50 characters: 0.8 ms) in Node (`test/tools/perf.test.ts`) |
+| Large sprite (560×416) | Tested (headless) | auto-rig 234 ms, build 37 ms, rest pose exact on the GPU, 4.3 ms/frame animating on software GL |
+| Small sprites (32 px), illustrations, white backgrounds, floating effects, front views | Tested | existing fixtures (tiny, illustrated, swordsman_white, mage_front, ghost) |
+| Coexistence: changes other modules make to `token.mesh` (position, squash, rotation, alpha, tint, filters, anchor) survive animation; texture taken back after Foundry resets it | Tested (mock) | integration; **real fu-animations / Battle UI / Enhanced Interface not run together yet** |
+| Self-test extended: Project FU system, weapon data read, fu-animations API, ability list valid | Implemented | passes in the mock (12 checks); awaits a Foundry run |
+| Accessibility: icon buttons labelled, mode tabs, pressed state on library cards, live banner, keyboard shortcuts | Implemented | not audited with a screen reader |
+| RotSprite-style smoother rotation for pixel art | Not Started | rotations snap to the pixel grid (intended look); would need a per-part upscaled atlas; rest pose exactness must be kept |
+| Real-GPU performance and 20+ tokens inside Foundry | Blocked | needs the GM's Foundry run (TESTING.md 8) |
+| Public release: license | Blocked | the owner has to choose a license (LICENSES_AND_DEPENDENCIES.md) |
 
 ## Known limitations (Phase 2)
 - Automatic rigging is a starting point (42–84 % of pixels right on the fixtures; front-view

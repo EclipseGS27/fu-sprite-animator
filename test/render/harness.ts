@@ -148,12 +148,100 @@ async function stress(name: string, count: number, frames = 60) {
 			v.render(renderer());
 		}
 	}
-	(renderer() as unknown as { gl: WebGLRenderingContext }).gl.finish();
+	gpuSync();
 	const ms = (performance.now() - t0) / frames;
 	const usersBefore = asset.users;
 	views.forEach((v) => v.destroy());
 	return { count, msPerFrame: Math.round(ms * 100) / 100, usersBefore, usersAfter: asset.users, assetDestroyed: asset.destroyed };
 }
 
-Object.assign(window, { fidelity, gpuVsCpu, trimCheck, stress, pixiVersion: () => pixi().VERSION });
+/** Wait for the GPU: reading a pixel back cannot return before every earlier draw is done. */
+function gpuSync(): void {
+	const gl = (renderer() as unknown as { gl: WebGLRenderingContext }).gl;
+	gl.finish();
+	gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+}
+
+/** WebGL textures the renderer holds right now. */
+function glTextures(): number {
+	return ((renderer() as unknown as { texture: { managedTextures: unknown[] } }).texture.managedTextures ?? []).length;
+}
+
+/**
+ * A mixed scene: `count` views spread over humanoid and creature rigs, each with its own idle and
+ * an action, then everything destroyed. Reports time per frame and whether every GPU texture
+ * created for them was released.
+ */
+async function party(count: number, frames = 60) {
+	const kinds: [string, string, string][] = [
+		['warrior', 'combat-stance', 'sword-slash'],
+		['mage', 'magical-idle', 'magic-cast'],
+		['wolf', 'beast-idle', 'bite'],
+		['dragon', 'wing-idle', 'breath'],
+		['slime', 'blob-idle', 'blob-attack'],
+		['ghost', 'float-idle', 'light-hit'],
+	];
+	renderer().render(new (pixi().Container)()); // settle the renderer's own textures first
+	const before = glTextures();
+	const setups = await Promise.all(kinds.map(([n]) => setup(n)));
+	const views: RigView[] = [];
+	for (let i = 0; i < count; i++) {
+		const k = i % kinds.length;
+		const v = i < kinds.length ? setups[k]!.view : new RigView(setups[k]!.asset);
+		v.player.play(getClip(kinds[k]![1])!);
+		v.player.play(getClip(kinds[k]![2])!, { variation: 1, seed: i });
+		views.push(v);
+	}
+	const t0 = performance.now();
+	for (let f = 0; f < frames; f++) {
+		for (const v of views) {
+			v.update(1 / 60);
+			v.render(renderer());
+		}
+	}
+	gpuSync();
+	const ms = (performance.now() - t0) / frames;
+	const during = glTextures();
+	views.forEach((v) => v.destroy());
+	renderer().render(new (pixi().Container)());
+	const after = glTextures();
+	return { count, msPerFrame: Math.round(ms * 100) / 100, before, during, after, assetsDestroyed: setups.every((s) => s.asset.destroyed) };
+}
+
+/** A large sprite (the dragon at 4×, 560×416): rig time, build time, exact rest pose on the GPU. */
+async function large() {
+	const { data: src } = await loadImageData('../sprites/dragon.png');
+	const S = 4;
+	const w = src.width * S;
+	const h = src.height * S;
+	const big = new ImageData(w, h);
+	for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) big.data.set(src.data.subarray(((y / S | 0) * src.width + (x / S | 0)) * 4, ((y / S | 0) * src.width + (x / S | 0)) * 4 + 4), (y * w + x) * 4);
+	const t0 = performance.now();
+	const rig = createRig({ name: 'big', src: 'big.png', image: big, template: 'winged' });
+	const rigMs = performance.now() - t0;
+	const build = buildRig(rig, big);
+	const asset = new RigAsset(build);
+	const view = new RigView(asset);
+	view.render(renderer());
+	const px = readRT(view);
+	let diff = 0;
+	for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+		const a = (y * w + x) * 4;
+		const b = ((y + build.pad) * build.outWidth + (x + build.pad)) * 4;
+		if (big.data[a + 3] === 0 && px[b + 3] === 0) continue;
+		if ([0, 1, 2, 3].some((c) => big.data[a + c] !== px[b + c])) diff++;
+	}
+	view.player.play(getClip('wing-beat')!);
+	const t1 = performance.now();
+	for (let f = 0; f < 30; f++) {
+		view.update(1 / 30);
+		view.render(renderer());
+	}
+	gpuSync();
+	const frameMs = (performance.now() - t1) / 30;
+	view.destroy();
+	return { width: w, height: h, rigMs: Math.round(rigMs), buildMs: Math.round(build.ms), diff, frameMs: Math.round(frameMs * 100) / 100 };
+}
+
+Object.assign(window, { fidelity, gpuVsCpu, trimCheck, stress, party, large, pixiVersion: () => pixi().VERSION });
 (window as unknown as { harnessReady: boolean }).harnessReady = true;

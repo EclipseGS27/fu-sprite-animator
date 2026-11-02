@@ -2,6 +2,9 @@ import { createRig } from '../rig/document';
 import { buildRig } from '../rig/build';
 import { RigAsset, RigView, pixi, pixiMajor, trimmedTexture } from '../render/pixi';
 import { getClip } from '../presets';
+import { mappingTable } from './combat';
+import { NONE } from '../mapping';
+import { describeItem } from '../mapping/projectfu';
 import { MODULE_ID } from './constants';
 import { tokenAnimators } from './tokens';
 
@@ -103,7 +106,24 @@ export async function selfTest(): Promise<SelfTestResult[]> {
 	view.destroy();
 	add('Resources released', asset.destroyed && asset.users === 0, `atlas users ${asset.users}`);
 
-	// 5. live tokens
+	// 5. Fabula Ultima: the system, its data shape, fu-animations, the mapping table
+	add('Project FU system', game.system?.id === 'projectfu', `${game.system?.id ?? 'none'} ${game.system?.version ?? ''}`.trim());
+	try {
+		const weapon = [...(game.items ?? [])].find((i: { type: string }) => i.type === 'weapon') ?? [...(game.actors ?? [])].flatMap((a: { items?: Iterable<{ type: string }> }) => [...(a.items ?? [])]).find((i) => i.type === 'weapon');
+		if (weapon) {
+			const info = describeItem(weapon);
+			add('Project FU weapon data read', !!info.weaponCategory, `"${(weapon as { name?: string }).name}": category ${info.weaponCategory ?? 'not found'}, ${info.ranged ? 'ranged' : 'melee'}`);
+		} else add('Project FU weapon data read', true, 'no weapon in this world to check (skipped)');
+	} catch (e) {
+		add('Project FU weapon data read', false, String(e));
+	}
+	const fua = game.modules?.get?.('fu-animations');
+	add('fu-animations', !fua?.active || typeof fua.api?.resolve === 'function', fua?.active ? (typeof fua.api?.resolve === 'function' ? 'active; its classification and timing are used' : 'active but api.resolve is missing: update it') : 'not active (fine: our own rules are used)');
+	const table = mappingTable();
+	const missing = [...Object.values(table.rules), ...Object.values(table.abilities)].filter((c) => c !== NONE && !getClip(c));
+	add('Ability animations list', missing.length === 0, missing.length ? `chooses animations that no longer exist: ${[...new Set(missing)].join(', ')}` : `${Object.keys(table.rules).length + Object.keys(table.abilities).length} world choices, all valid`);
+
+	// 6. live tokens
 	const rigged = (canvas.tokens?.placeables ?? []).filter((t: { id: string }) => tokenAnimators.get(t.id));
 	const attached = rigged.filter((t: { id: string; mesh?: { texture?: unknown } }) => t.mesh?.texture && t.mesh.texture !== (t as { texture?: unknown }).texture);
 	add('Animated tokens on this scene', attached.length === rigged.length, `${rigged.length} animated, ${attached.length} showing their animation`);

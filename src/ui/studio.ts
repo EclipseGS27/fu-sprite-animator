@@ -198,7 +198,7 @@ export class Studio {
 			{ class: 'fusa-empty' },
 			h('div', { class: 'fusa-empty-card' }, icon('image'), h('b', null, 'Import a character sprite'), h('p', null, 'PNG or WebP with a transparent background. Pixel art and illustrations both work. The file is used exactly as it is: nothing is resized, recoloured or repainted.'), h('button', { type: 'button', class: 'fusa-btn primary', onclick: () => this.importImage() }, icon('image'), 'Choose sprite'), h('button', { type: 'button', class: 'fusa-btn', onclick: () => this.openDialog() }, icon('open'), 'Open a saved rig')),
 		);
-		this.elBanner = h('div', { class: 'fusa-banner' });
+		this.elBanner = h('div', { class: 'fusa-banner', role: 'status', 'aria-live': 'polite' });
 		center.append(this.elToolbar, this.elEmpty, this.elBanner, this.elStatus);
 		this.viewport = new Viewport(center, {
 			down: (x, y, e) => this.onDown(x, y, e),
@@ -531,7 +531,7 @@ export class Studio {
 						const active = isBase ? this.baseId === c.id : this.clipId === c.id;
 						const fits = !this.rig || this.canPlay(c);
 						const tip = fits ? (c.description ?? c.name) : `${c.description ?? c.name}\nThis rig lacks: ${(c.requires ?? []).filter((r) => !this.rig!.bones.some((b) => b.role === r)).join(', ')}`;
-						return h('button', { type: 'button', class: `fusa-card ${active ? 'active' : ''} ${isBase ? 'base' : ''} ${fits ? '' : 'unfit'}`, title: tip, disabled: !this.rig, dataset: { clip: c.id }, onclick: () => this.chooseClip(c) }, h('b', null, c.name), h('small', null, isBase ? 'Idle loop' : `${c.duration.toFixed(2)}s${isBuiltIn(c.id) ? '' : ' · yours'}`));
+						return h('button', { type: 'button', class: `fusa-card ${active ? 'active' : ''} ${isBase ? 'base' : ''} ${fits ? '' : 'unfit'}`, title: tip, 'aria-pressed': String(active), disabled: !this.rig, dataset: { clip: c.id }, onclick: () => this.chooseClip(c) }, h('b', null, c.name), h('small', null, isBase ? 'Idle loop' : `${c.duration.toFixed(2)}s${isBuiltIn(c.id) ? '' : ' · yours'}`));
 						}),
 					),
 				),

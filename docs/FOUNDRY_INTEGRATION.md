@@ -45,7 +45,7 @@ whose image has a different shape is left alone and a message is logged.
 ## Coexistence
 | Module | Interaction | Status |
 | --- | --- | --- |
-| **Fabula Ultima Battle Animations** (fu-animations) | It moves `token.mesh` for dashes, hover, knockback and dodges, squashes it for anticipation, rotates it for stagger, adds filters for hit flashes and tints for conditions. All of these apply on top of our texture, because we change nothing else. | Compatible by design; verify in Foundry |
+| **Fabula Ultima Battle Animations** (fu-animations) | It moves `token.mesh` for dashes, hover, knockback and dodges, squashes it for anticipation, rotates it for stagger, adds filters for hit flashes and tints for conditions. All of these apply on top of our texture, because we change nothing else. | Compatible by design; mock test confirms position, squash, rotation, alpha, tint, filters and anchor survive animation; verify in Foundry |
 | fu-animations afterimages | Ghosts are sprites of `mesh.texture` — they show the live animated pose rather than a frozen one. | Cosmetic |
 | fu-animations element outlines / feet detection | It reads pixels from `token.mesh.texture`'s image source; a render texture has none, so it falls back to its built-in capsule shape. Suggested one-line change there: read `token.texture` (the original image) instead. Not changed unasked. | Minor degradation |
 | Fabula Ultima Battle UI / Enhanced Interface | HUD/UI layers; they do not change `token.mesh.texture`. | Expected compatible; verify |

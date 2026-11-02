@@ -118,6 +118,8 @@
 	const actors = new Map();
 	window.game = {
 		world: { id: 'mock-world' },
+		system: { id: 'projectfu', version: '4.14.0 (mock)' },
+		items: [],
 		user: { id: 'user-1', isGM: true, can: () => true, targets: new Set() },
 		settings: {
 			register(mod, key, data) {

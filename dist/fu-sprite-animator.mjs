@@ -6111,6 +6111,21 @@ async function selfTest() {
   }
   view.destroy();
   add("Resources released", asset.destroyed && asset.users === 0, `atlas users ${asset.users}`);
+  add("Project FU system", game.system?.id === "projectfu", `${game.system?.id ?? "none"} ${game.system?.version ?? ""}`.trim());
+  try {
+    const weapon = [...game.items ?? []].find((i) => i.type === "weapon") ?? [...game.actors ?? []].flatMap((a) => [...a.items ?? []]).find((i) => i.type === "weapon");
+    if (weapon) {
+      const info = describeItem(weapon);
+      add("Project FU weapon data read", !!info.weaponCategory, `"${weapon.name}": category ${info.weaponCategory ?? "not found"}, ${info.ranged ? "ranged" : "melee"}`);
+    } else add("Project FU weapon data read", true, "no weapon in this world to check (skipped)");
+  } catch (e) {
+    add("Project FU weapon data read", false, String(e));
+  }
+  const fua = game.modules?.get?.("fu-animations");
+  add("fu-animations", !fua?.active || typeof fua.api?.resolve === "function", fua?.active ? typeof fua.api?.resolve === "function" ? "active; its classification and timing are used" : "active but api.resolve is missing: update it" : "not active (fine: our own rules are used)");
+  const table = mappingTable();
+  const missing = [...Object.values(table.rules), ...Object.values(table.abilities)].filter((c) => c !== NONE && !getClip(c));
+  add("Ability animations list", missing.length === 0, missing.length ? `chooses animations that no longer exist: ${[...new Set(missing)].join(", ")}` : `${Object.keys(table.rules).length + Object.keys(table.abilities).length} world choices, all valid`);
   const rigged = (canvas.tokens?.placeables ?? []).filter((t) => tokenAnimators.get(t.id));
   const attached = rigged.filter((t) => t.mesh?.texture && t.mesh.texture !== t.texture);
   add("Animated tokens on this scene", attached.length === rigged.length, `${rigged.length} animated, ${attached.length} showing their animation`);
@@ -7168,7 +7183,7 @@ var Studio = class {
       { class: "fusa-empty" },
       h("div", { class: "fusa-empty-card" }, icon("image"), h("b", null, "Import a character sprite"), h("p", null, "PNG or WebP with a transparent background. Pixel art and illustrations both work. The file is used exactly as it is: nothing is resized, recoloured or repainted."), h("button", { type: "button", class: "fusa-btn primary", onclick: () => this.importImage() }, icon("image"), "Choose sprite"), h("button", { type: "button", class: "fusa-btn", onclick: () => this.openDialog() }, icon("open"), "Open a saved rig"))
     );
-    this.elBanner = h("div", { class: "fusa-banner" });
+    this.elBanner = h("div", { class: "fusa-banner", role: "status", "aria-live": "polite" });
     center.append(this.elToolbar, this.elEmpty, this.elBanner, this.elStatus);
     this.viewport = new Viewport(center, {
       down: (x, y, e) => this.onDown(x, y, e),
@@ -7487,7 +7502,7 @@ var Studio = class {
               const fits = !this.rig || this.canPlay(c);
               const tip = fits ? c.description ?? c.name : `${c.description ?? c.name}
 This rig lacks: ${(c.requires ?? []).filter((r) => !this.rig.bones.some((b) => b.role === r)).join(", ")}`;
-              return h("button", { type: "button", class: `fusa-card ${active ? "active" : ""} ${isBase ? "base" : ""} ${fits ? "" : "unfit"}`, title: tip, disabled: !this.rig, dataset: { clip: c.id }, onclick: () => this.chooseClip(c) }, h("b", null, c.name), h("small", null, isBase ? "Idle loop" : `${c.duration.toFixed(2)}s${isBuiltIn(c.id) ? "" : " \xB7 yours"}`));
+              return h("button", { type: "button", class: `fusa-card ${active ? "active" : ""} ${isBase ? "base" : ""} ${fits ? "" : "unfit"}`, title: tip, "aria-pressed": String(active), disabled: !this.rig, dataset: { clip: c.id }, onclick: () => this.chooseClip(c) }, h("b", null, c.name), h("small", null, isBase ? "Idle loop" : `${c.duration.toFixed(2)}s${isBuiltIn(c.id) ? "" : " \xB7 yours"}`));
             })
           )
         )

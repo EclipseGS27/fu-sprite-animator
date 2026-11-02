@@ -58,9 +58,11 @@ self-test passes on the GM's Foundry v13 world (we cannot run Foundry in CI).
 - Not done: multi-limb bosses beyond these plans (use Custom and add bones), serpent landmarks.
 - **Deliverable**: wolves, dragons, slimes and bosses rig and animate.
 
-## Phase 7 — Testing and polish
-- Matrix: resolutions, pixel vs illustrated, proportions, unusual anatomy, 20+ simultaneous tokens,
-  reloads, resource disposal (texture counts), storage, compatibility with fu-animations, Battle UI,
-  Enhanced Interface, Automated Animations.
-- RotSprite-style rotation option for pixel art; performance profiling; accessibility.
+## Phase 7 — Testing and polish (automated part done; in-Foundry part pending)
+- Done: mixed 24/50-character scenes with texture-release checks, CPU posing cost, a large sprite,
+  coexistence with other modules' token changes (mock), extended self-test, accessibility labels,
+  changelog, troubleshooting.
+- Pending: the GM's run of docs/TESTING.md in Foundry v13 with fu-animations, Battle UI and
+  Enhanced Interface; real-GPU numbers; a license choice before public release.
+- Not started: RotSprite-style rotation for pixel art (optional).
 - **Deliverable**: release-ready module.

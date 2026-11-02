@@ -215,6 +215,30 @@ const c = await page.evaluate(async () => {
 	await wait(700);
 	out.wolfReaction = api.current(wolf)?.action;
 	await wait(1200);
+	// 12c. coexistence: what fu-animations and condition modules do to token.mesh stays as they set it
+	const heroToken = canvas.tokens.get('t2');
+	const m = heroToken.mesh;
+	m.x += 37;
+	m.scale.set(m.scale.x * 1.3, m.scale.y * 0.8);
+	m.angle = 12;
+	m.alpha = 0.6;
+	m.tint = 0xff8888;
+	const filter = new PIXI.ColorMatrixFilter();
+	m.filters = [filter];
+	const set = { x: m.x, y: m.y, sx: m.scale.x, sy: m.scale.y, angle: m.angle, alpha: m.alpha, tint: m.tint, visible: m.visible, anchor: [m.anchor.x, m.anchor.y] };
+	await api.play(hero, 'heavy-slash');
+	await wait(900);
+	out.coexist = { x: m.x === set.x && m.y === set.y, scale: m.scale.x === set.sx && m.scale.y === set.sy, angle: m.angle === set.angle, alpha: m.alpha === set.alpha, tint: m.tint === set.tint, filters: m.filters?.[0] === filter, visible: m.visible === set.visible, anchor: m.anchor.x === set.anchor[0] && m.anchor.y === set.anchor[1], ours: m.texture !== heroToken.texture };
+	// Foundry redraws the token with its own texture: the animation takes it back on the next refresh
+	m.texture = heroToken.texture;
+	Hooks.callAll('refreshToken', heroToken);
+	out.retaken = m.texture !== heroToken.texture;
+	m.x -= 37;
+	m.scale.set(set.sx / 1.3, set.sy / 0.8);
+	m.angle = 0;
+	m.alpha = 1;
+	m.tint = 0xffffff;
+	m.filters = null;
 	// 11. mapping editor window and the item header control
 	const app = api.mapping.open();
 	await wait(100);
@@ -280,6 +304,8 @@ check(c.fuaReaction >= 0.4 && c.fuaReaction < 0.7, 'with fu-animations: the targ
 check(c.wolfTemplate === 'quadruped' && c.wolfBase === 'beast-idle', 'Studio: a wolf rigged as a four-legged beast previews over its beast idle', `${c.wolfTemplate}, ${c.wolfBase}`);
 check(c.wolfIdle === 'beast-idle', 'a beast token idles like a beast', c.wolfIdle);
 check(c.wolfAttack === 'bite' && c.wolfReaction === 'beast-hit', 'a beast bites and flinches like a beast', `${c.wolfAttack} / ${c.wolfReaction}`);
+check(Object.values(c.coexist).every(Boolean), 'other modules’ changes to token.mesh (position, squash, rotation, alpha, tint, filters, anchor) survive an animation', JSON.stringify(c.coexist));
+check(c.retaken, 'when Foundry puts the token’s own texture back, the animation takes it again on refresh');
 check(c.editorRows > 30 && c.editorSaved === 'throw', 'mapping editor lists the rules and saves a change', `${c.editorRows} rows`);
 check(c.itemControl, '"Sprite animation" in item sheet headers');
 check(c.drawnDown?.base === 'defeat' && !c.drawnDown?.action, 'a token drawn at 0 HP starts down', JSON.stringify(c.drawnDown));

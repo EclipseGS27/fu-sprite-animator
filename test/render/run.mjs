@@ -42,6 +42,12 @@ for (const n of [1, 10, 25]) {
 	const s = await page.evaluate((c) => window.stress('warrior', c), n);
 	check(s.usersAfter === 0 && s.assetDestroyed, `${n} animated views render and clean up`, `${s.msPerFrame} ms/frame (SwiftShader software GL), atlas users ${s.usersBefore} → ${s.usersAfter}`);
 }
+for (const n of [24, 50]) {
+	const p = await page.evaluate((c) => window.party(c), n);
+	check(p.after <= p.before && p.assetsDestroyed, `${n} mixed humanoids and creatures animate and release every GPU texture`, `${p.msPerFrame} ms/frame (SwiftShader software GL); GL textures ${p.before} → ${p.during} → ${p.after}`);
+}
+const big = await page.evaluate(() => window.large());
+check(big.diff === 0, `large sprite (${big.width}×${big.height}) rest pose exact on the GPU`, `auto-rig ${big.rigMs} ms, build ${big.buildMs} ms, ${big.frameMs} ms/frame animating`);
 check(errors.length === 0, 'no page errors', errors.join(' | '));
 await browser.close();
 server.close();
