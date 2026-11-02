@@ -1,4 +1,5 @@
 import type * as PIXINS from 'pixi.js';
+import { missingRoles } from '../core/clip';
 import type { PlayOptions } from '../core/player';
 import type { RigDocument } from '../core/types';
 import { getClip } from '../presets';
@@ -61,6 +62,8 @@ export class TokenAnimator {
 	private texture: PIXINS.Texture | null = null;
 	private idleAcc = 0;
 	private destroyed = false;
+	/** The clip holding a defeated pose on the base track, or null. */
+	defeatedBy: string | null = null;
 	mode: TextureMode;
 
 	constructor(token: Token, asset: RigAsset, profile: AnimationProfile, mode: TextureMode) {
@@ -77,6 +80,57 @@ export class TokenAnimator {
 		const clip = id ? getClip(id) : undefined;
 		if (clip) this.view.player.play(clip, { track: 0, mixIn: 0, intensity: this.profile.intensity ?? 1 });
 		this.view.player.update(Math.random() * 2); // stagger idles so a party does not breathe in unison
+	}
+
+	/** What the token is showing: its base loop (or held pose) and the action on top, as clip ids. */
+	current(): { base: string | null; action: string | null } {
+		const p = this.view.player;
+		return { base: p.trackInfo(0)?.clip.id ?? null, action: p.trackInfo(1)?.clip.id ?? null };
+	}
+
+	/** The rig's template (humanoid, quadruped, …), for template-specific mappings. */
+	get template(): string {
+		return this.view.build.rig.template;
+	}
+
+	/** The clip exists and this rig has every role it needs. */
+	canPlay(clipId: string): boolean {
+		const clip = getClip(clipId);
+		return !!clip && missingRoles(clip, this.view.skeleton).length === 0;
+	}
+
+	/** Play the first clip of the list this rig can play. Returns its id, or null. */
+	playFirst(clipIds: string[], o: PlayOptions = {}): string | null {
+		for (const id of clipIds) if (this.canPlay(id) && this.play(id, o)) return id;
+		return null;
+	}
+
+	/**
+	 * Hold a defeated pose (the clip plays once on the base track and stays on its last frame), or
+	 * get back up into the idle. `instant` skips straight to the held pose (token drawn while down).
+	 */
+	setDefeated(clipIds: string[] | null, instant = false): void {
+		const p = this.view.player;
+		if (!clipIds) {
+			if (!this.defeatedBy) return;
+			this.defeatedBy = null;
+			const id = this.profile.idle ?? 'idle-breathing';
+			const clip = id ? getClip(id) : undefined;
+			if (clip) p.play(clip, { track: 0, mixIn: 0.5, intensity: this.profile.intensity ?? 1 });
+			else p.stop(0, 0.5);
+			this.idleAcc = Infinity;
+			return;
+		}
+		const id = clipIds.find((c) => this.canPlay(c));
+		if (!id || this.defeatedBy === id) return;
+		this.defeatedBy = id;
+		p.stop(1, 0.1);
+		p.play(getClip(id)!, { track: 0, loop: false, mixIn: instant ? 0 : 0.1, intensity: this.profile.intensity ?? 1 });
+		if (instant) {
+			p.seek(0, p.trackInfo(0)?.duration ?? 0);
+			p.stop(1, 0);
+		}
+		this.idleAcc = Infinity;
 	}
 
 	/** Give the token our texture. Returns false (and leaves the token alone) when it cannot. */
@@ -170,6 +224,12 @@ class TokenAnimators {
 	private readonly pending = new Map<string, Promise<void>>();
 	private ticking = false;
 	private warned = new Set<string>();
+	/** Called for every new animator (e.g. to put a token at 0 HP straight into its defeated pose). */
+	readonly created: ((a: TokenAnimator) => void)[] = [];
+
+	all(): IterableIterator<TokenAnimator> {
+		return this.animators.values();
+	}
 
 	get count(): number {
 		return this.animators.size;
@@ -225,6 +285,13 @@ class TokenAnimators {
 				}
 				this.animators.set(token.id, a);
 				this.ensureTicker();
+				for (const fn of this.created) {
+					try {
+						fn(a);
+					} catch (e) {
+						console.warn(`${MODULE_ID} |`, e);
+					}
+				}
 			} catch (e) {
 				const msg = (e as Error).message;
 				if (!this.warned.has(msg)) {

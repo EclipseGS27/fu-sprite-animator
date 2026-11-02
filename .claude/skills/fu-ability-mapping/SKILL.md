@@ -5,6 +5,10 @@ description: Use for Phase 5 work in fu-sprite-animator — connecting Fabula Ul
 
 # Fabula Ultima ability → animation mapping
 
+**Implemented (Phase 5).** Code: `src/mapping/index.ts` (rule keys, DEFAULT_RULES, CLIP_FALLBACKS, resolveClip/resolveReaction — pure), `src/mapping/projectfu.ts` (describeItem: Project FU data → AbilityInfo — pure, duck-typed), `src/mapping/sync.ts` (timing with fu-animations), `src/foundry/combat.ts` (chat cards → plan → socket → runPlan on every client; defeat on updateActor), `src/foundry/mapping-app.ts` (world editor, per-actor editor, item dialog), `src/ui/mapping-view.ts`. User doc: docs/ABILITY_MAPPING.md. Tests: test/unit/mapping.test.ts, test/render/integration.mjs (Phase 5 section).
+
+Adding a rule: add the key to `RULE_GROUPS` (editor label) and `DEFAULT_RULES`, emit it from `ruleKeys()` in the right specificity order, test in mapping.test.ts. Template-specific defaults use `key@template` (Phase 6 creature rules go there, e.g. `basic:melee@quadruped`).
+
 ## Do not invent
 - Read the system's data. Never hard-code individual abilities in the engine; mappings are an editable data table (world setting) with per-actor and per-item overrides.
 - Reuse fu-animations' classification when present: `game.modules.get('fu-animations')?.api.resolve(item, ctx)` → `{ spec: { style: 'melee'|'ranged'|'spell'|'support'|'self'|'none', … }, source }` covers 446 compendium entries and 611 bestiary attacks.

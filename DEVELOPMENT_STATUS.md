@@ -4,7 +4,7 @@ Statuses: **Not Started**, **In Progress**, **Implemented** (code exists, not ye
 test), **Tested** (an automated or recorded manual test passed — the "Evidence" column says
 which), **Blocked**.
 
-Last updated: 2026-11-01 (Phase 4). Environment for automated tests: Node 22, Chromium (SwiftShader
+Last updated: 2026-11-02 (Phase 5). Environment for automated tests: Node 22, Chromium (SwiftShader
 WebGL), PixiJS 7.4.3. **No Foundry VTT instance was available**: every Foundry-dependent feature
 below is at most *Implemented* (exercised only against a Foundry mock) until the checklist in
 docs/TESTING.md is run in a real Foundry v13 world.
@@ -75,12 +75,26 @@ docs/TESTING.md is run in a real Foundry v13 world.
 | Spine 4.2 JSON export | Not Started | not needed so far; clips export as JSON in our format |
 | Curve (graph) editor | Not Started | easing presets + Bézier values in files cover it for now |
 
+## Phase 5 — Fabula Ultima integration
+| Feature | Status | Evidence |
+| --- | --- | --- |
+| Presets: magical and heavy-weapon idles; walk, run, jump, dash, teleport; thrust, spear, dual-wield, bow, staff, unarmed, firearm, throw; channel, charge, projectile, area, healing, summoning; block, dodge, parry, counterattack, guard; stagger, knockback, knockdown, defeat (30 clips) | Tested | unit (finite poses on every test rig, both facings; keys inside duration); contact sheets reviewed on warrior, mage and greatsword (`test/tools/sheet.test.ts`) |
+| Rest keys (world tracks start and end on the sprite's own drawn angle) | Tested | unit: zero offset at start and end for 4 rest angles × both facings |
+| Events at t = 0 fire (was a bug: never fired) | Tested | unit |
+| Reading Project FU items: weapons by category, shields, NPC attacks, spells (offensive, area, projectile, healing, summoning, support), skills by style and weapon in hand, heroics, Zero Powers, consumables, rituals, basic actions | Tested | unit: mapping.test.ts on objects shaped like Project FU 4.x data — **not yet on a real world's items** |
+| Mapping: rule keys, resolution order item → actor → world ability → world rule → built-in, "none", template-specific keys, fallbacks when a rig lacks roles | Tested | unit |
+| Reactions: hit, critical/heavy, hit while guarding, miss, defeat | Tested | unit + mock integration |
+| Combat triggers from chat cards (author's client → socket → every client) | Implemented | mock integration: 9 card scenarios; needs the in-Foundry checklist (TESTING.md 11–13) |
+| Defeat pose held at 0 HP, no reactions while down, back to idle when healed; tokens drawn while down start down | Implemented | mock integration (all four) |
+| Timing with fu-animations (strike and reactions at its estimated hit) | Implemented | mock integration with a stand-in fu-animations (0.45 s); real timing unverified, estimates only — cut-ins make reactions early |
+| World editor (*Sprite animations for abilities*), per-actor editor, item dialog (this item / every item with this name) | Implemented | mock integration (rows, saving, inheritance, header controls); screenshot reviewed; item dialog form itself not exercised (mock DialogV2) |
+| API 0.2.0: current, resolveClip, describe, mapping, playAction, react | Implemented | mock integration |
+| `fu-animations.contact` hook for exact timing | Not Started | proposal only; fu-animations not changed unasked |
+
 ## Later phases
 | Feature | Status |
 | --- | --- |
-| Phase 5: ability → clip mapping database, combat triggers from Project FU chat cards, fu-animations sync | Not Started (design in .claude/skills/fu-ability-mapping) |
-| Phase 5: presets — movement, defence (block, dodge, parry, counter, guard), remaining attacks and magic, defeat | Not Started |
-| Phase 6: quadruped, winged, serpentine, blob templates and creature clips | Not Started (custom rigs work today) |
+| Phase 6: quadruped, winged, serpentine, blob templates and creature clips | Not Started (custom rigs work today; mapping already supports template-specific keys) |
 | Phase 7: compatibility matrix, RotSprite option, profiling, release | Not Started |
 
 ## Known limitations (Phase 2)
@@ -92,6 +106,11 @@ docs/TESTING.md is run in a real Foundry v13 world.
 - Animated tokens' hit-testing uses the still image's shape.
 - fu-animations' element outlines fall back to a capsule shape on animated tokens.
 - A token whose image differs in shape from the rig's sprite is not animated.
-- The heavy slash raises both arms; shield bearers will want a one-handed variant (Phase 5).
+- The heavy slash raises both arms; shield bearers can be given Sword slash for heavy weapons in
+  their *Sprite animation choices*.
+- Reactions to fu-animations' hits are timed by estimate; cut-ins and boss scenes delay its
+  hits, so reactions come early for those.
+- Movement clips play in place (fu-animations moves the token); they are not triggered
+  automatically by token movement yet.
 - Bucket fill and right-click-to-parent are covered by unit tests of the underlying functions,
   not by the UI test.

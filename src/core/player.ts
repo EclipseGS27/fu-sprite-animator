@@ -46,6 +46,8 @@ interface TrackState {
 	snapshot: { delta: Float64Array; mask: Uint8Array } | null;
 	elapsed: number;
 	ended: boolean;
+	/** No time has passed yet: events at t = 0 still have to fire. */
+	fresh: boolean;
 	endElapsed: number;
 	weight: number;
 	delta: Float64Array;
@@ -118,6 +120,7 @@ export class AnimationPlayer {
 			snapshot: null,
 			elapsed: 0,
 			ended: false,
+			fresh: true,
 			endElapsed: 0,
 			weight: 0,
 			delta: new Float64Array(n * STRIDE),
@@ -172,6 +175,7 @@ export class AnimationPlayer {
 		s.time = Math.max(0, Math.min(time, s.warp.duration));
 		s.elapsed = Math.max(s.elapsed, s.mixIn);
 		s.ended = false;
+		s.fresh = false;
 	}
 
 	/** Advance time, fire events, and write the blended pose into the skeleton. */
@@ -192,7 +196,8 @@ export class AnimationPlayer {
 			return;
 		}
 		const dur = s.warp.duration;
-		const before = s.warp.toClip(s.time);
+		const before = s.fresh ? -1e-9 : s.warp.toClip(s.time);
+		s.fresh = false;
 		let next = s.time + dt * s.speed;
 		if (s.loop && dur > 0) {
 			if (next >= dur) {

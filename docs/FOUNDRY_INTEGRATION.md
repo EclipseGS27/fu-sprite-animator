@@ -11,11 +11,12 @@
 | `init` | settings, settings menu, API (`game.modules.get('fu-sprite-animator').api`, `globalThis.SpriteAnimator`), token hooks |
 | `ready` | socket listener; `Hooks.callAll('fu-sprite-animator.ready', api)` |
 | `getSceneControlButtons` | Studio button in the token tools (GM), v13 record shape |
-| `getHeaderControlsDocumentSheetV2` | "Sprite animation" in actor sheet headers (GM) |
+| `getHeaderControlsDocumentSheetV2` | "Sprite animation" and "Sprite animation choices" in actor sheet headers (GM); "Sprite animation" in item sheet headers (owner) |
+| `createChatMessage` | combat triggers from Project FU chat cards (author's client, then socket) |
 | `getActorContextOptions` / `getActorDirectoryEntryContext` | "Sprite animation" in the Actors directory (GM) |
 | `canvasReady` / `canvasTearDown` | start / dispose token animators |
 | `drawToken` / `refreshToken` / `destroyToken` | attach, keep, release a token's animation |
-| `updateActor` / `updateToken` / `updateSetting` | profile, token image or rig library changed |
+| `updateActor` / `updateToken` / `updateSetting` | profile, token image or rig library changed; HP reaching 0 or rising above it (defeat pose) |
 
 Nothing replaces Foundry classes (`CONFIG.Token.objectClass` is untouched) and no private method
 is wrapped; libWrapper is not needed.
@@ -51,12 +52,19 @@ whose image has a different shape is left alone and a message is logged.
 | Automated Animations / Sequencer | Play effects on top of tokens; Sequencer effects that copy the token texture show the animated pose. | Expected compatible; verify |
 | Dylan's Animated Tokens, other modules that swap `token.mesh.texture` | Both would fight over the texture. Use one or the other per token. | Conflict per token |
 
-## Combat triggers (Phase 5, not yet active)
-Planned: listen to `createChatMessage` like fu-animations, read the Project FU check flags,
-classify with `fu-animations.api.resolve()` when available, play the attacker's clip and the
-targets' reactions (hit, heavy hit on crits, dodge on misses). Proposed small addition to
-fu-animations to land contact frames together: `Hooks.callAll('fu-animations.beat', { plan, beat, token })`.
-Until then, use the API from macros, e.g. `SpriteAnimator.play(canvas.tokens.controlled[0], 'sword-slash')`.
+## Combat triggers
+`createChatMessage` on the client that posted the card (like fu-animations): it reads the
+Project FU flags (`Check`: item, check type, critical, targets with hit/miss; `Item` for cards
+without a check), describes the action (see ABILITY_MAPPING.md) and broadcasts it on the module
+socket. Every client then picks clips for its own copy of each token from the same settings and
+plays the attacker's clip and, at contact, the targets' reactions. `updateActor` (seen by every
+client) puts a token at 0 HP into its held defeat pose and back up when healed.
+
+**With fu-animations** its classification (`api.resolve`) is used, and its timing is estimated
+from its sequence so our strike lands with its hit (see ABILITY_MAPPING.md → Timing). Proposed
+one-line addition to fu-animations to make this exact, not made unasked:
+`Hooks.callAll('fu-animations.contact', { plan, target })` where `strike()` lands its hit. This
+module would then play reactions on that hook instead of the estimate.
 
 ## Permissions
 - Opening the Studio and saving rigs: GM (or users allowed to upload files).

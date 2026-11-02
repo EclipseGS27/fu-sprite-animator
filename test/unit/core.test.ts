@@ -177,6 +177,20 @@ describe('player', () => {
 		expect(fired).toEqual(['contact']);
 		expect(done).toBe(1);
 	});
+	it('fires events at t = 0 on the first update, once (reactions put contact there)', () => {
+		const p = new AnimationPlayer(sk(), { bodyHeight: 50, facing: 'right' });
+		const fired: string[] = [];
+		const flinch = clip({ arm: { rotate: [{ t: 0, v: 20 }, { t: 0.5, v: 0 }] } }, { id: 'flinch', duration: 0.5, events: [{ t: 0, name: 'contact' }] });
+		p.play(flinch, { onEvent: (n) => fired.push(n) });
+		p.update(0.02);
+		p.update(0.02);
+		expect(fired).toEqual(['contact']);
+		// a loop fires its t = 0 event at the start and on every wrap
+		const loopFired: string[] = [];
+		p.play({ ...flinch, id: 'pulse', loop: true }, { track: 0, onEvent: (n) => loopFired.push(n) });
+		for (let i = 0; i < 30; i++) p.update(0.04);
+		expect(loopFired.length).toBe(3);
+	});
 	it('layers an action over the base loop and fades back to it', () => {
 		const s = sk();
 		const p = new AnimationPlayer(s, { bodyHeight: 50, facing: 'right' });

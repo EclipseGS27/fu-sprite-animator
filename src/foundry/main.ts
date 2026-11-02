@@ -4,6 +4,8 @@ import { StudioApp } from './studio-app';
 import { registerTokenHooks, tokenAnimators } from './tokens';
 import { worldClips } from './storage';
 import { registerClip, unregisterClip } from '../presets';
+import { onCombatSocket, registerCombatHooks } from './combat';
+import { ActorMappingApp, MappingApp, itemDialog, refreshMappingApp } from './mapping-app';
 
 /**
  * Fabula Ultima Sprite Animator — entry point (Foundry v13).
@@ -40,6 +42,37 @@ Hooks.once('init', () => {
 		default: 'padded',
 		onChange: () => tokenAnimators.reset(),
 	});
+	reg('combat', {
+		name: 'Animate actions from chat cards',
+		hint: 'When an attack, spell, skill or item card is posted, characters with a sprite animation play the matching animation (see “Sprite animations for abilities”).',
+		scope: 'world',
+		type: Boolean,
+		default: true,
+	});
+	reg('reactions', {
+		name: 'Targets react',
+		hint: 'Targets flinch when hit, recoil harder on critical hits, block while guarding and dodge when missed.',
+		scope: 'world',
+		type: Boolean,
+		default: true,
+	});
+	reg('defeat', {
+		name: 'Defeated pose at 0 HP',
+		hint: 'Characters at 0 HP fall and stay down until they have HP again.',
+		scope: 'world',
+		type: Boolean,
+		default: true,
+		onChange: () => tokenAnimators.reset(),
+	});
+	game.settings.register(MODULE_ID, 'mapping', { scope: 'world', config: false, type: Object, default: { rules: {}, abilities: {} }, onChange: () => refreshMappingApp() });
+	game.settings.registerMenu(MODULE_ID, 'mapping', {
+		name: 'Sprite animations for abilities',
+		label: 'Open the list',
+		hint: 'Which animation plays for each weapon category, kind of spell, skill, item, basic action and reaction.',
+		icon: 'fa-solid fa-list',
+		type: MappingApp,
+		restricted: true,
+	});
 	game.settings.registerMenu(MODULE_ID, 'studio', {
 		name: 'Sprite Animation Studio',
 		label: 'Open the Studio',
@@ -53,6 +86,7 @@ Hooks.once('init', () => {
 	if (mod) mod.api = api;
 	if (!('SpriteAnimator' in globalThis)) (globalThis as Record<string, unknown>).SpriteAnimator = api;
 	registerTokenHooks();
+	registerCombatHooks();
 });
 
 /** Register the world's own clips (and drop ones that were deleted) on this client. */
@@ -73,7 +107,9 @@ function syncWorldClips(): void {
 
 Hooks.once('ready', () => {
 	syncWorldClips();
-	game.socket?.on(SOCKET, onSocket);
+	game.socket?.on(SOCKET, (msg: { type?: string }) => {
+		if (!onCombatSocket(msg as never)) onSocket(msg as never);
+	});
 	Hooks.callAll(`${MODULE_ID}.ready`, game.modules.get(MODULE_ID)?.api);
 });
 
@@ -96,8 +132,21 @@ Hooks.on('getHeaderControlsDocumentSheetV2', (app: { document?: { documentName?:
 	if (doc?.documentName !== 'Actor' || !game.user?.isGM) return;
 	app.options.actions ??= {};
 	app.options.actions.fusaStudio ??= () => void StudioApp.open({ actor: doc as { id: string } });
+	app.options.actions.fusaActorMap ??= () => void ActorMappingApp.open(doc);
 	if (controls.some((c) => c.action === 'fusaStudio')) return;
 	controls.push({ action: 'fusaStudio', icon: 'fa-solid fa-person-running', label: 'Sprite animation', ownership: 'OWNER' } as { action: string });
+	controls.push({ action: 'fusaActorMap', icon: 'fa-solid fa-list', label: 'Sprite animation choices', ownership: 'OWNER' } as { action: string });
+});
+
+/* "Sprite animation" in the header of item sheets that can be used in combat. */
+const ANIMATABLE_ITEMS = new Set(['weapon', 'customWeapon', 'shield', 'basic', 'spell', 'skill', 'heroic', 'miscAbility', 'classFeature', 'optionalFeature', 'consumable', 'ritual']);
+Hooks.on('getHeaderControlsDocumentSheetV2', (app: { document?: { documentName?: string; type?: string; isOwner?: boolean }; options: { actions?: Record<string, unknown> } }, controls: { action: string }[]) => {
+	const doc = app.document;
+	if (doc?.documentName !== 'Item' || !ANIMATABLE_ITEMS.has(doc.type ?? '') || !doc.isOwner) return;
+	app.options.actions ??= {};
+	app.options.actions.fusaItem ??= () => void itemDialog(app.document);
+	if (controls.some((c) => c.action === 'fusaItem')) return;
+	controls.push({ action: 'fusaItem', icon: 'fa-solid fa-person-running', label: 'Sprite animation', ownership: 'OWNER' } as { action: string });
 });
 
 for (const hook of ['getActorContextOptions', 'getActorDirectoryEntryContext']) {

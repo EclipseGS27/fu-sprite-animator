@@ -249,8 +249,705 @@ var HEAVY_HIT = base({
 });
 var HUMANOID_CLIPS = [IDLE_BREATHING, COMBAT_STANCE, SWORD_SLASH, HEAVY_SLASH, MAGIC_CAST, LIGHT_HIT, HEAVY_HIT];
 
+// src/presets/library.ts
+var k3 = (t, v, e) => e ? { t, v, e } : { t, v };
+var k22 = (t, x, y, e) => e ? { t, x, y, e } : { t, x, y };
+var R = (t, v, e) => ({ ...k3(t, v, e), rest: true });
+var SNAP2 = [0.55, 0, 0.9, 0.35];
+var OUT = "outCubic";
+var SET = "inOutQuad";
+var SINE = "inOutSine";
+var BACK = "outBack";
+var FRONT_CHAIN = ["arm.upper.front", "arm.lower.front", "hand.front", "weapon"];
+function withOverHead(tracks, span) {
+  if (!span) return tracks;
+  const out = { ...tracks };
+  for (const role of FRONT_CHAIN) out[role] = { ...out[role], layer: [{ t: span[0], behind: "head" }, { t: span[1] }] };
+  return out;
+}
+var clip = (s) => ({
+  format: "fusa-clip",
+  version: 1,
+  id: s.id,
+  name: s.name,
+  category: s.category,
+  description: s.description,
+  duration: s.duration,
+  loop: !!s.loop,
+  tracks: withOverHead(s.tracks, s.overHead),
+  ...s.phases ? { phases: s.phases } : {},
+  ...s.events ? { events: s.events } : {},
+  requires: s.requires ?? ["torso"],
+  templates: ["humanoid"],
+  defaults: { mixIn: s.mixIn ?? (s.loop ? 0.25 : 0.08), mixOut: s.mixOut ?? 0.25 }
+});
+var ev = (t, name) => ({ t, name });
+var cycle = (dur, values, e = SINE) => [...values, values[0]].map((v, i) => k3(dur * i / values.length, v, e));
+var cycle2 = (dur, values, e = SINE) => [...values, values[0]].map(([x, y], i) => k22(dur * i / values.length, x, y, e));
+var MAGICAL_IDLE = clip({
+  id: "magical-idle",
+  name: "Magical idle",
+  category: "idle",
+  description: "Floating slightly, hands held out with gathered power, a slow sway.",
+  duration: 2.4,
+  loop: true,
+  tracks: {
+    root: { translate: cycle2(2.4, [[0, 0], [0, -0.025]]) },
+    torso: { rotate: cycle(2.4, [-2, 1]) },
+    head: { rotate: cycle(2.4, [1.5, -1]) },
+    "arm.upper.front": { rotate: cycle(2.4, [-22, -27]) },
+    "arm.lower.front": { rotate: cycle(2.4, [-30, -36]) },
+    "arm.upper.back": { rotate: cycle(2.4, [-14, -19]) },
+    "arm.lower.back": { rotate: cycle(2.4, [-24, -30]) },
+    "leg.lower.front": { rotate: cycle(2.4, [6, 9]) },
+    "leg.lower.back": { rotate: cycle(2.4, [8, 11]) }
+  }
+});
+var HEAVY_IDLE = clip({
+  id: "heavy-weapon-idle",
+  name: "Heavy weapon idle",
+  category: "idle",
+  description: "Slow, heavy breathing with the weight on the legs and the weapon resting low.",
+  duration: 3,
+  loop: true,
+  tracks: {
+    pelvis: { translate: cycle2(3, [[0, 0.012], [0, 0.026]]) },
+    torso: { rotate: cycle(3, [5, 7]), scale: cycle2(3, [[1, 1], [1.01, 1.02]]) },
+    head: { rotate: cycle(3, [-3, -1.5]) },
+    "arm.upper.front": { rotate: cycle(3, [8, 10]) },
+    "arm.lower.front": { rotate: cycle(3, [-6, -4]) },
+    weapon: { rotate: cycle(3, [12, 14]) },
+    "leg.upper.front": { rotate: cycle(3, [-7, -9]) },
+    "leg.lower.front": { rotate: cycle(3, [9, 13]) },
+    "leg.upper.back": { rotate: cycle(3, [7, 8]) },
+    "leg.lower.back": { rotate: cycle(3, [5, 8]) }
+  }
+});
+var WALK = clip({
+  id: "walk",
+  name: "Walk",
+  category: "movement",
+  description: "An in-place walk cycle: legs stride, arms counter-swing, the body bobs on each step.",
+  duration: 0.9,
+  loop: true,
+  events: [ev(0, "step"), ev(0.45, "step")],
+  tracks: {
+    pelvis: { translate: cycle2(0.9, [[0, 0], [0, -0.018], [0, 0], [0, -0.018]]) },
+    torso: { rotate: cycle(0.9, [4, 3, 4, 3]) },
+    head: { rotate: cycle(0.9, [-2, -1, -2, -1]) },
+    "leg.upper.front": { rotate: cycle(0.9, [-22, 0, 18, 0]) },
+    "leg.lower.front": { rotate: cycle(0.9, [4, 6, 10, 32]) },
+    "foot.front": { rotate: cycle(0.9, [-8, 0, 8, 0]) },
+    "leg.upper.back": { rotate: cycle(0.9, [18, 0, -22, 0]) },
+    "leg.lower.back": { rotate: cycle(0.9, [10, 32, 4, 6]) },
+    "foot.back": { rotate: cycle(0.9, [8, 0, -8, 0]) },
+    "arm.upper.front": { rotate: cycle(0.9, [16, 0, -16, 0]) },
+    "arm.upper.back": { rotate: cycle(0.9, [-16, 0, 16, 0]) },
+    "arm.lower.front": { rotate: cycle(0.9, [-10, -14, -18, -14]) },
+    "arm.lower.back": { rotate: cycle(0.9, [-18, -14, -10, -14]) }
+  }
+});
+var RUN = clip({
+  id: "run",
+  name: "Run",
+  category: "movement",
+  description: "An in-place run: a strong forward lean, long strides, bent arms pumping.",
+  duration: 0.56,
+  loop: true,
+  events: [ev(0, "step"), ev(0.28, "step")],
+  tracks: {
+    pelvis: { translate: cycle2(0.56, [[0, 0.01], [0, -0.035], [0, 0.01], [0, -0.035]]) },
+    torso: { rotate: cycle(0.56, [13, 11, 13, 11]) },
+    head: { rotate: cycle(0.56, [-9, -8, -9, -8]) },
+    "leg.upper.front": { rotate: cycle(0.56, [-38, -8, 30, 4]) },
+    "leg.lower.front": { rotate: cycle(0.56, [10, 20, 18, 70]) },
+    "leg.upper.back": { rotate: cycle(0.56, [30, 4, -38, -8]) },
+    "leg.lower.back": { rotate: cycle(0.56, [18, 70, 10, 20]) },
+    // The front arm usually holds the weapon: a smaller swing and bend keep the blade off the face.
+    "arm.upper.front": { rotate: cycle(0.56, [22, 0, -26, 0]) },
+    "arm.upper.back": { rotate: cycle(0.56, [-36, 0, 32, 0]) },
+    "arm.lower.front": { rotate: cycle(0.56, [-28, -32, -40, -32]) },
+    // Counter-turn a held weapon so a staff or blade stays roughly upright while the arm pumps.
+    weapon: { rotate: cycle(0.56, [-4, 18, 46, 18]) },
+    "arm.lower.back": { rotate: cycle(0.56, [-70, -60, -55, -60]) }
+  }
+});
+var JUMP = clip({
+  id: "jump",
+  name: "Jump",
+  category: "movement",
+  description: "Crouch, spring up with the legs tucked, land and absorb the weight.",
+  duration: 1.05,
+  phases: { anticipation: [0, 0.24], action: [0.24, 0.34], impact: 0.82, recovery: [0.82, 1.05] },
+  events: [ev(0.28, "release"), ev(0.82, "land"), ev(1.05, "end")],
+  tracks: {
+    root: { translate: [k22(0, 0, 0), k22(0.24, 0, 0, "outQuad"), k22(0.52, 0, -0.32, "inQuad"), k22(0.82, 0, 0), k22(1.05, 0, 0)], scale: [k22(0, 1, 1, OUT), k22(0.22, 1.04, 0.94, SNAP2), k22(0.34, 0.96, 1.06, OUT), k22(0.52, 1, 1), k22(0.82, 1.05, 0.93, OUT), k22(1.05, 1, 1)] },
+    pelvis: { translate: [k22(0, 0, 0, OUT), k22(0.22, 0, 0.06, SNAP2), k22(0.34, 0, 0), k22(0.82, 0, 0.05, OUT), k22(1.05, 0, 0, SET)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.22, 12, SNAP2), k3(0.34, -4), k3(0.55, 4), k3(0.82, 14, OUT), k3(1.05, 0, SET)] },
+    "leg.upper.front": { rotate: [k3(0, 0, OUT), k3(0.22, -25, SNAP2), k3(0.34, 5), k3(0.5, -50, OUT), k3(0.82, -22, OUT), k3(1.05, 0, SET)] },
+    "leg.lower.front": { rotate: [k3(0, 0, OUT), k3(0.22, 45, SNAP2), k3(0.34, 0), k3(0.5, 70, OUT), k3(0.82, 40, OUT), k3(1.05, 0, SET)] },
+    "leg.upper.back": { rotate: [k3(0, 0, OUT), k3(0.22, -20, SNAP2), k3(0.34, 10), k3(0.5, -35, OUT), k3(0.82, -18, OUT), k3(1.05, 0, SET)] },
+    "leg.lower.back": { rotate: [k3(0, 0, OUT), k3(0.22, 40, SNAP2), k3(0.34, 0), k3(0.5, 60, OUT), k3(0.82, 36, OUT), k3(1.05, 0, SET)] },
+    "arm.upper.front": { rotate: [k3(0, 0, OUT), k3(0.22, 30, SNAP2), k3(0.34, -60, OUT), k3(0.6, -40), k3(0.82, 10, OUT), k3(1.05, 0, SET)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.22, 30, SNAP2), k3(0.34, -50, OUT), k3(0.6, -35), k3(0.82, 10, OUT), k3(1.05, 0, SET)] }
+  }
+});
+var DASH = clip({
+  id: "dash",
+  name: "Dash",
+  category: "movement",
+  description: "A burst forward: low lean, arms trailing, a long stride, then settle.",
+  duration: 0.65,
+  phases: { anticipation: [0, 0.12], action: [0.12, 0.26], recovery: [0.4, 0.65] },
+  events: [ev(0.12, "release"), ev(0.65, "end")],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.12, -0.03, 0, SNAP2), k22(0.26, 0.12, 0, OUT), k22(0.42, 0.12, 0, SET), k22(0.65, 0, 0)] },
+    pelvis: { translate: [k22(0, 0, 0), k22(0.12, 0, 0.03, SNAP2), k22(0.26, 0, 0.04), k22(0.65, 0, 0, SET)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.12, 8, SNAP2), k3(0.26, 26, OUT), k3(0.42, 22, SET), k3(0.65, 0)] },
+    head: { rotate: [k3(0, 0), k3(0.26, -18, OUT), k3(0.65, 0, SET)] },
+    "arm.upper.front": { rotate: [k3(0, 0), k3(0.26, 45, OUT), k3(0.65, 0, SET)] },
+    "arm.upper.back": { rotate: [k3(0, 0), k3(0.26, 55, OUT), k3(0.65, 0, SET)] },
+    "leg.upper.front": { rotate: [k3(0, 0), k3(0.26, -34, OUT), k3(0.65, 0, SET)] },
+    "leg.lower.front": { rotate: [k3(0, 0), k3(0.26, 20, OUT), k3(0.65, 0, SET)] },
+    "leg.upper.back": { rotate: [k3(0, 0), k3(0.26, 36, OUT), k3(0.65, 0, SET)] },
+    "leg.lower.back": { rotate: [k3(0, 0), k3(0.26, 18, OUT), k3(0.65, 0, SET)] }
+  }
+});
+var TELEPORT = clip({
+  id: "teleport",
+  name: "Teleport",
+  category: "movement",
+  description: "Squash, stretch into a thin line and snap back: pair it with a flash effect.",
+  duration: 0.8,
+  phases: { anticipation: [0, 0.2], action: [0.2, 0.36], recovery: [0.46, 0.8] },
+  events: [ev(0.36, "vanish"), ev(0.46, "appear"), ev(0.8, "end")],
+  tracks: {
+    root: { scale: [k22(0, 1, 1, OUT), k22(0.2, 1.12, 0.86, SNAP2), k22(0.36, 0.12, 1.45, "linear"), k22(0.46, 0.12, 1.45, BACK), k22(0.62, 1.06, 0.96, OUT), k22(0.8, 1, 1)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.2, 6), k3(0.36, 0), k3(0.8, 0)] },
+    "arm.upper.front": { rotate: [k3(0, 0, OUT), k3(0.2, -40, SNAP2), k3(0.36, -140), k3(0.46, -140, OUT), k3(0.8, 0, SET)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.2, -30, SNAP2), k3(0.36, -140), k3(0.46, -140, OUT), k3(0.8, 0, SET)] }
+  }
+});
+var lunge = (a, i, r, depth = 1) => ({
+  root: { translate: [k22(0, 0, 0, OUT), k22(a, -0.03 * depth, 0, SNAP2), k22(i, 0.08 * depth, 0, "outQuad"), k22(r, 0.08 * depth, 0, SET), k22(r + 0.3, 0, 0)] },
+  pelvis: { translate: [k22(0, 0, 0, OUT), k22(a, 0, 0.02 * depth, SNAP2), k22(i, 0, 0.035 * depth, "outQuad"), k22(r + 0.3, 0, 0, SET)] },
+  "leg.upper.front": { rotate: [k3(0, 0, OUT), k3(a, 6, SNAP2), k3(i, -24 * depth, "outQuad"), k3(r, -20 * depth, SET), k3(r + 0.3, 0)] },
+  "leg.lower.front": { rotate: [k3(0, 0, OUT), k3(a, 4, SNAP2), k3(i, 20 * depth, "outQuad"), k3(r, 16 * depth, SET), k3(r + 0.3, 0)] },
+  "leg.upper.back": { rotate: [k3(0, 0, OUT), k3(a, -6, SNAP2), k3(i, 16 * depth, "outQuad"), k3(r, 12 * depth, SET), k3(r + 0.3, 0)] },
+  "leg.lower.back": { rotate: [k3(0, 0, OUT), k3(a, 8, SNAP2), k3(i, 6, "outQuad"), k3(r + 0.3, 0, SET)] }
+});
+var THRUST = clip({
+  id: "thrust",
+  name: "Thrust",
+  category: "attack",
+  description: "Draw the blade back at the hip, then drive it straight forward with a lunge.",
+  duration: 0.85,
+  phases: { anticipation: [0, 0.3], action: [0.3, 0.4], impact: 0.4, recovery: [0.5, 0.85] },
+  events: [ev(0, "windup"), ev(0.3, "release"), ev(0.4, "contact"), ev(0.6, "recover"), ev(0.85, "end")],
+  requires: ["arm.upper.front", "arm.lower.front", "torso"],
+  tracks: {
+    ...lunge(0.3, 0.4, 0.55, 1.2),
+    torso: { rotate: [k3(0, 0, OUT), k3(0.3, -9, SNAP2), k3(0.4, 16, BACK), k3(0.55, 13, SET), k3(0.85, 0)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.3, -4), k3(0.42, 6, "outQuad"), k3(0.85, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.28, 150), k3(0.3, 152, SNAP2), k3(0.4, 8, BACK), k3(0.55, 10, SET), R(0.85, 70)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.28, 20), k3(0.3, 18, SNAP2), k3(0.4, 0, BACK), k3(0.55, 2, SET), R(0.85, 40)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.28, -2), k3(0.3, 0, SNAP2), k3(0.4, 0), k3(0.55, 0, SET), R(0.85, -50)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.3, -15), k3(0.4, 30, "outQuad"), k3(0.85, 0, SET)] }
+  }
+});
+var SPEAR = clip({
+  id: "spear-attack",
+  name: "Spear attack",
+  category: "attack",
+  description: "Both hands on the shaft: pull back low, then a long two-handed thrust with a deep lunge.",
+  duration: 1,
+  phases: { anticipation: [0, 0.36], action: [0.36, 0.48], impact: 0.48, recovery: [0.6, 1] },
+  events: [ev(0, "windup"), ev(0.36, "release"), ev(0.47, "contact"), ev(0.7, "recover"), ev(1, "end")],
+  requires: ["arm.upper.front", "arm.lower.front", "weapon", "torso"],
+  tracks: {
+    ...lunge(0.36, 0.48, 0.65, 1.5),
+    torso: { rotate: [k3(0, 0, OUT), k3(0.36, -12, SNAP2), k3(0.48, 20, BACK), k3(0.65, 16, SET), k3(1, 0)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.36, -6), k3(0.5, 8, "outQuad"), k3(1, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.34, 140), k3(0.36, 142, SNAP2), k3(0.48, 10, BACK), k3(0.65, 12, SET), R(1, 75)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.34, 10), k3(0.36, 8, SNAP2), k3(0.48, -2, BACK), k3(0.65, 0, SET), R(1, 40)] },
+    "arm.upper.back": { space: "world", rotate: [R(0, 100, OUT), k3(0.34, 160), k3(0.36, 162, SNAP2), k3(0.48, 30, BACK), k3(0.65, 32, SET), R(1, 95)] },
+    "arm.lower.back": { space: "world", rotate: [R(0, 80, OUT), k3(0.34, 20), k3(0.36, 18, SNAP2), k3(0.48, 0, BACK), k3(0.65, 2, SET), R(1, 70)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.34, 8), k3(0.36, 8, SNAP2), k3(0.48, -3), k3(0.65, -2, SET), R(1, -50)] }
+  }
+});
+var DUAL = clip({
+  id: "dual-wield-attack",
+  name: "Dual-wield attack",
+  category: "attack",
+  description: "Two quick cuts: the front blade slashes down, then the back blade follows across.",
+  duration: 1.1,
+  phases: { anticipation: [0, 0.2], action: [0.2, 0.3], impact: 0.3, recovery: [0.75, 1.1] },
+  events: [ev(0, "windup"), ev(0.2, "release"), ev(0.29, "contact"), ev(0.62, "contact"), ev(0.8, "recover"), ev(1.1, "end")],
+  requires: ["arm.upper.front", "arm.lower.front", "arm.upper.back", "torso"],
+  overHead: [0.04, 0.26],
+  tracks: {
+    ...lunge(0.2, 0.3, 0.7, 0.9),
+    torso: { rotate: [k3(0, 0, OUT), k3(0.2, -8, SNAP2), k3(0.3, 12, "outQuad"), k3(0.45, -4, SNAP2), k3(0.62, 16, "outQuad"), k3(0.8, 10, SET), k3(1.1, 0)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.3, 5), k3(0.62, 7, "outQuad"), k3(1.1, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.18, 168), k3(0.2, 172, SNAP2), k3(0.3, 40, BACK), k3(0.62, 60, SET), R(1.1, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.18, -110), k3(0.2, -114, SNAP2), k3(0.3, 38, BACK), k3(0.62, 50, SET), R(1.1, 55)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.18, -190), k3(0.2, -196, SNAP2), k3(0.3, 40, BACK), k3(0.62, 50, SET), R(1.1, -50)] },
+    "arm.upper.back": { space: "world", rotate: [R(0, 100, OUT), k3(0.3, 110), k3(0.45, 200, SNAP2), k3(0.62, 20, BACK), k3(0.8, 30, SET), R(1.1, 95)] },
+    "arm.lower.back": { space: "world", rotate: [R(0, 80, OUT), k3(0.3, 90), k3(0.45, -100, SNAP2), k3(0.62, 20, BACK), k3(0.8, 30, SET), R(1.1, 75)] },
+    "hand.back": { rotate: [k3(0, 0), k3(0.45, 15, SNAP2), k3(0.62, -10, "outQuad"), k3(1.1, 0, SET)] }
+  }
+});
+var BOW = clip({
+  id: "bow-attack",
+  name: "Bow attack",
+  category: "attack",
+  description: "Raise the bow, draw the string to the cheek, hold, loose, and let the arms recoil.",
+  duration: 1.25,
+  phases: { anticipation: [0, 0.65], action: [0.72, 0.8], impact: 0.95, recovery: [0.95, 1.25] },
+  events: [ev(0, "windup"), ev(0.72, "release"), ev(0.95, "contact"), ev(1.25, "end")],
+  requires: ["arm.upper.front", "arm.lower.front", "arm.upper.back", "arm.lower.back"],
+  tracks: {
+    torso: { rotate: [k3(0, 0, OUT), k3(0.3, -5), k3(0.7, -7, SNAP2), k3(0.8, -2, "outQuad"), k3(1.25, 0, SET)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.3, 3), k3(1.25, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.3, 2), k3(0.7, 0, SNAP2), k3(0.8, -6, "outQuad"), k3(0.95, -3, SET), R(1.25, 90)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.3, 0), k3(0.7, -1, SNAP2), k3(0.8, -8, "outQuad"), k3(0.95, -4, SET), R(1.25, 60)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.3, -90), R(1.25, -60, SET)] },
+    "arm.upper.back": { space: "world", rotate: [R(0, 100, OUT), k3(0.3, 10), k3(0.65, 185, OUT), k3(0.72, 186, SNAP2), k3(0.8, 200, "outQuad"), R(1.25, 95, SET)] },
+    "arm.lower.back": { space: "world", rotate: [R(0, 80, OUT), k3(0.3, 6), k3(0.65, -2, OUT), k3(0.72, -2, SNAP2), k3(0.8, 200, "outQuad"), R(1.25, 80, SET)] },
+    "leg.upper.front": { rotate: [k3(0, 0), k3(0.3, -12, OUT), k3(1.25, 0, SET)] },
+    "leg.upper.back": { rotate: [k3(0, 0), k3(0.3, 10, OUT), k3(1.25, 0, SET)] }
+  }
+});
+var STAFF = clip({
+  id: "staff-attack",
+  name: "Staff attack",
+  category: "attack",
+  description: "A quick two-handed overhead swing of a staff or rod.",
+  duration: 0.95,
+  phases: { anticipation: [0, 0.3], action: [0.3, 0.42], impact: 0.42, recovery: [0.55, 0.95] },
+  events: [ev(0, "windup"), ev(0.3, "release"), ev(0.41, "contact"), ev(0.6, "recover"), ev(0.95, "end")],
+  requires: ["arm.upper.front", "arm.lower.front", "torso"],
+  overHead: [0.08, 0.38],
+  tracks: {
+    ...lunge(0.3, 0.42, 0.6, 0.8),
+    torso: { rotate: [k3(0, 0, OUT), k3(0.3, -10, SNAP2), k3(0.42, 15, BACK), k3(0.6, 11, SET), k3(0.95, 0)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.3, -6), k3(0.45, 7, "outQuad"), k3(0.95, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.28, -80), k3(0.3, -84, SNAP2), k3(0.42, 45, BACK), k3(0.6, 50, SET), R(0.95, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.28, -120), k3(0.3, -124, SNAP2), k3(0.42, 40, BACK), k3(0.6, 44, SET), R(0.95, 55)] },
+    "arm.upper.back": { space: "world", rotate: [R(0, 100, OUT), k3(0.28, -70), k3(0.3, -74, SNAP2), k3(0.42, 55, BACK), k3(0.6, 60, SET), R(0.95, 95)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.28, -150), k3(0.3, -156, SNAP2), k3(0.42, 30, BACK), k3(0.6, 34, SET), R(0.95, -50)] }
+  }
+});
+var UNARMED = clip({
+  id: "unarmed-attack",
+  name: "Unarmed attack",
+  category: "attack",
+  description: "Twist back with the fist cocked at the shoulder, then a straight punch with the weight behind it.",
+  duration: 0.75,
+  phases: { anticipation: [0, 0.22], action: [0.22, 0.3], impact: 0.3, recovery: [0.42, 0.75] },
+  events: [ev(0, "windup"), ev(0.22, "release"), ev(0.3, "contact"), ev(0.45, "recover"), ev(0.75, "end")],
+  requires: ["arm.upper.front", "arm.lower.front", "torso"],
+  overHead: [0.06, 0.28],
+  tracks: {
+    ...lunge(0.22, 0.3, 0.42, 0.8),
+    torso: { rotate: [k3(0, 0, OUT), k3(0.22, -10, SNAP2), k3(0.3, 14, BACK), k3(0.42, 10, SET), k3(0.7, 0)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.22, -3), k3(0.32, 5), k3(0.7, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.2, 160), k3(0.22, 162, SNAP2), k3(0.3, 2, BACK), k3(0.42, 4, SET), R(0.7, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.2, -45), k3(0.22, -48, SNAP2), k3(0.3, 0, BACK), k3(0.42, 2, SET), R(0.7, 55)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.22, -30), k3(0.3, 28, "outQuad"), k3(0.7, 0, SET)] },
+    "arm.lower.back": { rotate: [k3(0, 0, OUT), k3(0.22, -50), k3(0.3, -40), k3(0.7, 0, SET)] }
+  }
+});
+var FIREARM = clip({
+  id: "firearm-shot",
+  name: "Firearm shot",
+  category: "attack",
+  description: "Bring the weapon up to aim, fire with a sharp recoil, lower it.",
+  duration: 0.9,
+  phases: { anticipation: [0, 0.32], action: [0.4, 0.46], impact: 0.48, recovery: [0.55, 0.9] },
+  events: [ev(0, "windup"), ev(0.4, "release"), ev(0.48, "contact"), ev(0.9, "end")],
+  requires: ["arm.upper.front", "arm.lower.front"],
+  tracks: {
+    torso: { rotate: [k3(0, 0, OUT), k3(0.32, -3), k3(0.4, -3, SNAP2), k3(0.46, -8, "outQuad"), k3(0.9, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.3, 4), k3(0.4, 2, SNAP2), k3(0.46, -10, "outQuad"), k3(0.6, 0, SET), R(0.9, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.3, 0), k3(0.4, -1, SNAP2), k3(0.46, -22, "outQuad"), k3(0.6, -2, SET), R(0.9, 55)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.3, 0), k3(0.4, 0, SNAP2), k3(0.46, -18, "outQuad"), k3(0.6, -2, SET), R(0.9, -50)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.3, -20), k3(0.9, 0, SET)] },
+    "leg.upper.front": { rotate: [k3(0, 0), k3(0.3, -10, OUT), k3(0.9, 0, SET)] },
+    "leg.upper.back": { rotate: [k3(0, 0), k3(0.3, 8, OUT), k3(0.9, 0, SET)] }
+  }
+});
+var THROW = clip({
+  id: "throw",
+  name: "Throw",
+  category: "attack",
+  description: "An overhand throw: reach back and up, step in and whip the arm through.",
+  duration: 0.85,
+  phases: { anticipation: [0, 0.3], action: [0.3, 0.4], impact: 0.55, recovery: [0.45, 0.85] },
+  events: [ev(0, "windup"), ev(0.38, "release"), ev(0.55, "contact"), ev(0.85, "end")],
+  requires: ["arm.upper.front", "arm.lower.front", "torso"],
+  overHead: [0.08, 0.4],
+  tracks: {
+    ...lunge(0.3, 0.4, 0.5, 0.7),
+    torso: { rotate: [k3(0, 0, OUT), k3(0.3, -14, SNAP2), k3(0.4, 18, BACK), k3(0.5, 14, SET), k3(0.85, 0)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.28, 200), k3(0.3, 202, SNAP2), k3(0.4, 30, BACK), k3(0.5, 40, SET), R(0.85, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.28, -110), k3(0.3, -112, SNAP2), k3(0.4, 20, BACK), k3(0.5, 40, SET), R(0.85, 55)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.3, -35), k3(0.4, 30, "outQuad"), k3(0.85, 0, SET)] }
+  }
+});
+var CHANNEL = clip({
+  id: "channel",
+  name: "Channel",
+  category: "magic",
+  description: "Both hands raised forward, holding the spell with a faint tremble, then lowered.",
+  duration: 1.5,
+  phases: { anticipation: [0, 0.3], action: [0.3, 1.1], recovery: [1.1, 1.5] },
+  events: [ev(0.3, "release"), ev(1.5, "end")],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.3, 0, -0.015), k22(1.1, 0, -0.02, SET), k22(1.5, 0, 0)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.3, -4), k3(0.5, -3), k3(0.7, -4.5), k3(0.9, -3), k3(1.1, -4, SET), k3(1.5, 0)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.3, -4), k3(1.1, -4, SET), k3(1.5, 0)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.3, -20), k3(0.5, -22), k3(0.7, -19), k3(0.9, -22), k3(1.1, -20, SET), R(1.5, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.3, -30), k3(0.5, -27), k3(0.7, -31), k3(0.9, -28), k3(1.1, -30, SET), R(1.5, 55)] },
+    // A held staff or sword stays upright, clear of the face.
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.3, -78), k3(1.1, -76, SET), R(1.5, -60)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.3, -60), k3(1.1, -58, SET), k3(1.5, 0)] },
+    "arm.lower.back": { rotate: [k3(0, 0, OUT), k3(0.3, -40), k3(1.1, -40, SET), k3(1.5, 0)] }
+  }
+});
+var tremble = (t0, t1, amp, base2 = 0) => {
+  const keys = [];
+  const n = Math.max(2, Math.round((t1 - t0) / 0.05));
+  for (let i = 0; i <= n; i++) keys.push(k3(t0 + (t1 - t0) * i / n, base2 + (i % 2 ? amp : -amp) * (0.6 + 0.4 * Math.sin(i))));
+  return keys;
+};
+var CHARGE = clip({
+  id: "charge",
+  name: "Charge",
+  category: "magic",
+  description: "Crouch and pull the power in with clenched fists, trembling, then burst open.",
+  duration: 1.5,
+  phases: { anticipation: [0, 1.1], action: [1.1, 1.22], impact: 1.22, recovery: [1.22, 1.5] },
+  events: [ev(0, "windup"), ev(1.15, "release"), ev(1.5, "end")],
+  tracks: {
+    pelvis: { translate: [k22(0, 0, 0, OUT), k22(0.3, 0, 0.04), k22(1.1, 0, 0.05, SNAP2), k22(1.22, 0, -0.02, BACK), k22(1.5, 0, 0, SET)] },
+    torso: { rotate: [k3(0, 0, OUT), ...tremble(0.3, 1.1, 1.2, 9), k3(1.22, -10, BACK), k3(1.5, 0, SET)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.3, 8), k3(1.1, 10, SNAP2), k3(1.22, -12, BACK), k3(1.5, 0, SET)] },
+    "arm.upper.front": { rotate: [k3(0, 0, OUT), k3(0.3, 20), k3(1.1, 22, SNAP2), k3(1.22, -80, BACK), k3(1.5, 0, SET)] },
+    "arm.lower.front": { rotate: [k3(0, 0, OUT), k3(0.3, -70), k3(1.1, -75, SNAP2), k3(1.22, -10, BACK), k3(1.5, 0, SET)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.3, -35), k3(1.1, -38, SNAP2), k3(1.22, -72, BACK), R(1.5, -60, SET)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.3, 15), k3(1.1, 18, SNAP2), k3(1.22, 70, BACK), k3(1.5, 0, SET)] },
+    "arm.lower.back": { rotate: [k3(0, 0, OUT), k3(0.3, -70), k3(1.1, -75, SNAP2), k3(1.22, -10, BACK), k3(1.5, 0, SET)] },
+    "leg.upper.front": { rotate: [k3(0, 0, OUT), k3(0.3, -14), k3(1.1, -16), k3(1.5, 0, SET)] },
+    "leg.lower.front": { rotate: [k3(0, 0, OUT), k3(0.3, 24), k3(1.1, 26), k3(1.5, 0, SET)] },
+    "leg.upper.back": { rotate: [k3(0, 0, OUT), k3(0.3, 12), k3(1.1, 14), k3(1.5, 0, SET)] },
+    "leg.lower.back": { rotate: [k3(0, 0, OUT), k3(0.3, 18), k3(1.1, 20), k3(1.5, 0, SET)] }
+  }
+});
+var PROJECTILE = clip({
+  id: "projectile-cast",
+  name: "Projectile cast",
+  category: "magic",
+  description: "Pull the hand back by the shoulder, then thrust it straight at the target to launch the spell.",
+  duration: 1,
+  phases: { anticipation: [0, 0.32], action: [0.32, 0.4], impact: 0.6, recovery: [0.5, 1] },
+  events: [ev(0, "windup"), ev(0.38, "release"), ev(0.6, "contact"), ev(1, "end")],
+  requires: ["arm.upper.front", "arm.lower.front"],
+  overHead: [0.05, 0.38],
+  tracks: {
+    ...lunge(0.32, 0.4, 0.55, 0.6),
+    torso: { rotate: [k3(0, 0, OUT), k3(0.32, -10, SNAP2), k3(0.4, 10, BACK), k3(0.55, 8, SET), k3(1, 0)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.3, 165), k3(0.32, 166, SNAP2), k3(0.4, -4, BACK), k3(0.6, -2, SET), R(1, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.3, -60), k3(0.32, -62, SNAP2), k3(0.4, -6, BACK), k3(0.6, -4, SET), R(1, 55)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.3, -105), k3(0.32, -106, SNAP2), k3(0.4, -18, BACK), k3(0.6, -22, SET), R(1, -60)] },
+    "hand.front": { rotate: [k3(0, 0), k3(0.32, 10, SNAP2), k3(0.4, -25, "outQuad"), k3(1, 0, SET)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.32, -25), k3(0.4, 25, "outQuad"), k3(1, 0, SET)] }
+  }
+});
+var AREA = clip({
+  id: "area-cast",
+  name: "Area spell cast",
+  category: "magic",
+  description: "Raise both hands high, then sweep them down and out as the spell spreads over the field.",
+  duration: 1.4,
+  phases: { anticipation: [0, 0.6], action: [0.6, 0.74], impact: 0.8, recovery: [0.9, 1.4] },
+  events: [ev(0, "windup"), ev(0.7, "release"), ev(0.8, "contact"), ev(1.4, "end")],
+  overHead: [0.15, 0.7],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.6, 0, -0.03, SNAP2), k22(0.74, 0, 0.01, BACK), k22(1.4, 0, 0, SET)] },
+    pelvis: { translate: [k22(0, 0, 0), k22(0.74, 0, 0.04, "outQuad"), k22(1.4, 0, 0, SET)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.6, -12, SNAP2), k3(0.74, 12, BACK), k3(0.9, 9, SET), k3(1.4, 0)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.6, -12), k3(0.76, 8, "outQuad"), k3(1.4, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.55, -92), k3(0.6, -95, SNAP2), k3(0.74, 50, BACK), k3(0.9, 48, SET), R(1.4, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.55, -95), k3(0.6, -96, SNAP2), k3(0.74, 35, BACK), k3(0.9, 35, SET), R(1.4, 55)] },
+    "arm.upper.back": { space: "world", rotate: [R(0, 100, OUT), k3(0.55, -88), k3(0.6, -90, SNAP2), k3(0.74, 140, BACK), k3(0.9, 138, SET), R(1.4, 95)] },
+    "arm.lower.back": { space: "world", rotate: [R(0, 80, OUT), k3(0.55, -90), k3(0.6, -92, SNAP2), k3(0.74, 150, BACK), k3(0.9, 150, SET), R(1.4, 80)] },
+    "leg.upper.front": { rotate: [k3(0, 0), k3(0.74, -12, "outQuad"), k3(1.4, 0, SET)] },
+    "leg.lower.front": { rotate: [k3(0, 0), k3(0.74, 18, "outQuad"), k3(1.4, 0, SET)] },
+    "leg.upper.back": { rotate: [k3(0, 0), k3(0.74, 10, "outQuad"), k3(1.4, 0, SET)] }
+  }
+});
+var HEALING = clip({
+  id: "healing",
+  name: "Healing",
+  category: "magic",
+  description: "A gentle lift: hands open upward and forward, the head rises, light pours out, then a calm return.",
+  duration: 1.5,
+  phases: { anticipation: [0, 0.5], action: [0.5, 0.65], recovery: [1.05, 1.5] },
+  events: [ev(0.6, "release"), ev(0.8, "contact"), ev(1.5, "end")],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, SINE), k22(0.6, 0, -0.03, SINE), k22(1.05, 0, -0.03, SINE), k22(1.5, 0, 0)] },
+    torso: { rotate: [k3(0, 0, SINE), k3(0.6, -7, SINE), k3(1.05, -6, SINE), k3(1.5, 0)] },
+    head: { rotate: [k3(0, 0, SINE), k3(0.6, -10, SINE), k3(1.05, -8, SINE), k3(1.5, 0)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, SINE), k3(0.6, -40, SINE), k3(1.05, -38, SINE), R(1.5, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, SINE), k3(0.6, -55, SINE), k3(1.05, -52, SINE), R(1.5, 55)] },
+    weapon: { space: "world", rotate: [R(0, -60, SINE), k3(0.6, -82, SINE), k3(1.05, -80, SINE), R(1.5, -60)] },
+    "hand.front": { rotate: [k3(0, 0, SINE), k3(0.6, -20, SINE), k3(1.5, 0)] },
+    "arm.upper.back": { rotate: [k3(0, 0, SINE), k3(0.6, -70, SINE), k3(1.05, -68, SINE), k3(1.5, 0)] },
+    "arm.lower.back": { rotate: [k3(0, 0, SINE), k3(0.6, -40, SINE), k3(1.5, 0)] }
+  }
+});
+var SUMMON = clip({
+  id: "summoning",
+  name: "Summoning",
+  category: "magic",
+  description: "Arms raised high and leaning back as the call goes out, then a sweeping gesture forward to bring the summon in.",
+  duration: 1.7,
+  phases: { anticipation: [0, 0.9], action: [0.9, 1.05], impact: 1.1, recovery: [1.2, 1.7] },
+  events: [ev(0, "windup"), ev(1, "release"), ev(1.1, "contact"), ev(1.7, "end")],
+  overHead: [0.2, 0.98],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.9, 0, -0.04, SNAP2), k22(1.05, 0, 0, BACK), k22(1.7, 0, 0)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.9, -14, SNAP2), k3(1.05, 12, BACK), k3(1.2, 9, SET), k3(1.7, 0)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.9, -15), k3(1.1, 6, "outQuad"), k3(1.7, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.85, -100), k3(0.9, -102, SNAP2), k3(1.05, 25, BACK), k3(1.2, 25, SET), R(1.7, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.85, -100), k3(0.9, -102, SNAP2), k3(1.05, 10, BACK), k3(1.2, 12, SET), R(1.7, 55)] },
+    "arm.upper.back": { space: "world", rotate: [R(0, 100, OUT), k3(0.85, -80), k3(0.9, -82, SNAP2), k3(1.05, 160, BACK), R(1.7, 95, SET)] },
+    "arm.lower.back": { space: "world", rotate: [R(0, 80, OUT), k3(0.85, -85), k3(0.9, -86, SNAP2), k3(1.05, 170, BACK), R(1.7, 80, SET)] },
+    "leg.upper.front": { rotate: [k3(0, 0), k3(1.05, -14, "outQuad"), k3(1.7, 0, SET)] },
+    "leg.lower.front": { rotate: [k3(0, 0), k3(1.05, 16, "outQuad"), k3(1.7, 0, SET)] }
+  }
+});
+var BLOCK = clip({
+  id: "block",
+  name: "Block",
+  category: "defence",
+  description: "Brace: the forearm (or shield) comes up in front of the body and takes the blow.",
+  duration: 0.75,
+  phases: { anticipation: [0, 0.12], action: [0.12, 0.2], impact: 0.24, recovery: [0.4, 0.75] },
+  events: [ev(0.24, "contact"), ev(0.75, "end")],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.2, 0, 0), k22(0.24, -0.025, 0, "outQuad"), k22(0.4, -0.02, 0, SET), k22(0.75, 0, 0)] },
+    pelvis: { translate: [k22(0, 0, 0, OUT), k22(0.2, 0, 0.03), k22(0.75, 0, 0, SET)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.2, -4), k3(0.26, -9, "outQuad"), k3(0.75, 0, SET)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.2, 6), k3(0.75, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.18, 30), k3(0.26, 36, "outQuad"), k3(0.45, 32, SET), R(0.75, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.18, -45), k3(0.26, -40, "outQuad"), k3(0.45, -42, SET), R(0.75, 55)] },
+    // The blade (if any) slants up and forward in front of the body, not across the face.
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.18, -64), k3(0.26, -58, "outQuad"), k3(0.45, -61, SET), R(0.75, -60)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.18, -25), k3(0.75, 0, SET)] },
+    "arm.lower.back": { rotate: [k3(0, 0, OUT), k3(0.18, -45), k3(0.75, 0, SET)] },
+    "leg.upper.front": { rotate: [k3(0, 0), k3(0.2, -10, OUT), k3(0.75, 0, SET)] },
+    "leg.upper.back": { rotate: [k3(0, 0), k3(0.2, 12, OUT), k3(0.75, 0, SET)] },
+    "leg.lower.back": { rotate: [k3(0, 0), k3(0.2, 10, OUT), k3(0.75, 0, SET)] }
+  }
+});
+var DODGE = clip({
+  id: "dodge",
+  name: "Dodge",
+  category: "defence",
+  description: "A quick hop back out of reach, leaning away, then a light return.",
+  duration: 0.6,
+  phases: { action: [0, 0.14], recovery: [0.3, 0.6] },
+  events: [ev(0.08, "evade"), ev(0.6, "end")],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, "outQuad"), k22(0.14, -0.13, -0.03, "inQuad"), k22(0.24, -0.15, 0, SET), k22(0.6, 0, 0)] },
+    torso: { rotate: [k3(0, 0, "outQuad"), k3(0.14, -16), k3(0.3, -10, SET), k3(0.6, 0)] },
+    head: { rotate: [k3(0, 0), k3(0.1, 0, "outQuad"), k3(0.2, -10), k3(0.6, 0, SET)] },
+    "arm.upper.front": { rotate: [k3(0, 0, "outQuad"), k3(0.14, -25), k3(0.6, 0, SET)] },
+    "arm.upper.back": { rotate: [k3(0, 0, "outQuad"), k3(0.14, 25), k3(0.6, 0, SET)] },
+    "leg.upper.front": { rotate: [k3(0, 0, "outQuad"), k3(0.14, -22), k3(0.3, -12, SET), k3(0.6, 0)] },
+    "leg.upper.back": { rotate: [k3(0, 0, "outQuad"), k3(0.14, 14), k3(0.6, 0, SET)] },
+    "leg.lower.back": { rotate: [k3(0, 0, "outQuad"), k3(0.14, 20), k3(0.6, 0, SET)] }
+  }
+});
+var PARRY = clip({
+  id: "parry",
+  name: "Parry",
+  category: "defence",
+  description: "The blade sweeps up and across to knock the attack aside.",
+  duration: 0.65,
+  phases: { anticipation: [0, 0.1], action: [0.1, 0.2], impact: 0.2, recovery: [0.3, 0.65] },
+  events: [ev(0.2, "contact"), ev(0.65, "end")],
+  requires: ["arm.upper.front", "arm.lower.front"],
+  tracks: {
+    torso: { rotate: [k3(0, 0, OUT), k3(0.1, 4, SNAP2), k3(0.2, -8, "outQuad"), k3(0.65, 0, SET)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.1, 60, SNAP2), k3(0.2, -10, BACK), k3(0.35, -6, SET), R(0.65, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.1, 20, SNAP2), k3(0.2, -60, BACK), k3(0.35, -55, SET), R(0.65, 55)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.1, -10, SNAP2), k3(0.2, -110, BACK), k3(0.35, -100, SET), R(0.65, -50)] },
+    "leg.upper.front": { rotate: [k3(0, 0), k3(0.2, -8, "outQuad"), k3(0.65, 0, SET)] }
+  }
+});
+var COUNTER = clip({
+  id: "counterattack",
+  name: "Counterattack",
+  category: "defence",
+  description: "Parry the blow, then answer at once with a fast cut.",
+  duration: 1.05,
+  phases: { anticipation: [0.2, 0.36], action: [0.36, 0.46], impact: 0.46, recovery: [0.6, 1.05] },
+  events: [ev(0.18, "parry"), ev(0.46, "contact"), ev(1.05, "end")],
+  requires: ["arm.upper.front", "arm.lower.front"],
+  overHead: [0.3, 0.42],
+  tracks: {
+    ...lunge(0.36, 0.46, 0.65, 0.9),
+    torso: { rotate: [k3(0, 0, OUT), k3(0.18, -8, "outQuad"), k3(0.36, -10, SNAP2), k3(0.46, 16, BACK), k3(0.65, 11, SET), k3(1.05, 0)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.18, -10, BACK), k3(0.36, -40, SNAP2), k3(0.46, 45, BACK), k3(0.65, 50, SET), R(1.05, 85)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.18, -60, BACK), k3(0.36, -100, SNAP2), k3(0.46, 40, BACK), k3(0.65, 44, SET), R(1.05, 55)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.18, -110, BACK), k3(0.36, -150, SNAP2), k3(0.46, 42, BACK), k3(0.65, 48, SET), R(1.05, -50)] }
+  }
+});
+var GUARD = clip({
+  id: "guard",
+  name: "Guard",
+  category: "defence",
+  description: "Settle into a low defensive stance with the arms up, and hold it.",
+  duration: 1.2,
+  phases: { action: [0, 0.3] },
+  events: [ev(0.3, "contact"), ev(1.2, "end")],
+  mixOut: 0.45,
+  tracks: {
+    pelvis: { translate: [k22(0, 0, 0, OUT), k22(0.3, 0, 0.035), k22(1.2, 0, 0.03, SINE)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.3, 4), k3(1.2, 3, SINE)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.3, 5), k3(1.2, 5)] },
+    "arm.upper.front": { space: "world", rotate: [R(0, 100, OUT), k3(0.3, 30), k3(1.2, 32, SINE)] },
+    "arm.lower.front": { space: "world", rotate: [R(0, 70, OUT), k3(0.3, -40), k3(1.2, -38, SINE)] },
+    weapon: { space: "world", rotate: [R(0, -60, OUT), k3(0.3, -52), k3(1.2, -54, SINE)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.3, -40), k3(1.2, -38, SINE)] },
+    "arm.lower.back": { rotate: [k3(0, 0, OUT), k3(0.3, -60), k3(1.2, -60)] },
+    "leg.upper.front": { rotate: [k3(0, 0, OUT), k3(0.3, -14), k3(1.2, -14)] },
+    "leg.lower.front": { rotate: [k3(0, 0, OUT), k3(0.3, 20), k3(1.2, 20)] },
+    "leg.upper.back": { rotate: [k3(0, 0, OUT), k3(0.3, 14), k3(1.2, 14)] },
+    "leg.lower.back": { rotate: [k3(0, 0, OUT), k3(0.3, 16), k3(1.2, 16)] }
+  }
+});
+var STAGGER = clip({
+  id: "stagger",
+  name: "Stagger",
+  category: "reaction",
+  description: "Rocked off balance: the body wobbles back and forth on unsteady knees, then steadies.",
+  duration: 1,
+  phases: { impact: 0, recovery: [0.15, 1] },
+  events: [ev(0, "contact"), ev(1, "end")],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, "outQuad"), k22(0.12, -0.04, 0), k22(0.35, 0.015, 0, SINE), k22(0.55, -0.015, 0, SINE), k22(0.75, 5e-3, 0, SINE), k22(1, 0, 0)] },
+    pelvis: { translate: [k22(0, 0, 0), k22(0.15, 0, 0.04, "outQuad"), k22(0.6, 0, 0.03, SINE), k22(1, 0, 0, SET)] },
+    torso: { rotate: [k3(0, 0, "outQuad"), k3(0.12, -14), k3(0.35, 9, SINE), k3(0.55, -6, SINE), k3(0.75, 3, SINE), k3(1, 0)] },
+    head: { rotate: [k3(0, 0), k3(0.08, 0, "outQuad"), k3(0.2, -14), k3(0.42, 10, SINE), k3(0.62, -5, SINE), k3(1, 0, SET)] },
+    "arm.upper.front": { rotate: [k3(0, 0, "outQuad"), k3(0.15, -30), k3(0.4, 10, SINE), k3(1, 0, SET)] },
+    "arm.upper.back": { rotate: [k3(0, 0, "outQuad"), k3(0.15, 25), k3(0.4, -8, SINE), k3(1, 0, SET)] },
+    "leg.upper.front": { rotate: [k3(0, 0, "outQuad"), k3(0.15, -12), k3(0.5, -6, SINE), k3(1, 0, SET)] },
+    "leg.lower.front": { rotate: [k3(0, 0, "outQuad"), k3(0.15, 22), k3(0.5, 12, SINE), k3(1, 0, SET)] },
+    "leg.lower.back": { rotate: [k3(0, 0, "outQuad"), k3(0.15, 16), k3(1, 0, SET)] }
+  }
+});
+var KNOCKBACK = clip({
+  id: "knockback",
+  name: "Knockback",
+  category: "reaction",
+  description: "Hurled backward: the feet leave the ground, a skid on landing, then a stumbling recovery.",
+  duration: 1.1,
+  phases: { impact: 0, action: [0, 0.18], recovery: [0.45, 1.1] },
+  events: [ev(0, "contact"), ev(0.32, "land"), ev(1.1, "end")],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, "outQuad"), k22(0.16, -0.12, -0.06, "inQuad"), k22(0.32, -0.17, 0, "outQuad"), k22(0.48, -0.19, 0, SET), k22(1.1, 0, 0)] },
+    pelvis: { translate: [k22(0, 0, 0), k22(0.32, 0, 0), k22(0.36, 0, 0.05, "outQuad"), k22(0.6, 0, 0.03, SET), k22(1.1, 0, 0)] },
+    torso: { rotate: [k3(0, 0, "outQuad"), k3(0.16, -28), k3(0.36, 10, "outQuad"), k3(0.6, 6, SET), k3(1.1, 0)] },
+    head: { rotate: [k3(0, 0), k3(0.06, 0, "outQuad"), k3(0.2, -20), k3(0.4, 12, SINE), k3(1.1, 0, SET)] },
+    "arm.upper.front": { rotate: [k3(0, 0, "outQuad"), k3(0.16, -60), k3(0.36, -10, SINE), k3(1.1, 0, SET)] },
+    "arm.upper.back": { rotate: [k3(0, 0, "outQuad"), k3(0.16, -50), k3(0.36, 10, SINE), k3(1.1, 0, SET)] },
+    "leg.upper.front": { rotate: [k3(0, 0, "outQuad"), k3(0.16, -35), k3(0.36, -14, "outQuad"), k3(1.1, 0, SET)] },
+    "leg.lower.front": { rotate: [k3(0, 0, "outQuad"), k3(0.16, 30), k3(0.36, 24, "outQuad"), k3(1.1, 0, SET)] },
+    "leg.upper.back": { rotate: [k3(0, 0, "outQuad"), k3(0.16, -10), k3(0.36, 14, "outQuad"), k3(1.1, 0, SET)] },
+    "leg.lower.back": { rotate: [k3(0, 0, "outQuad"), k3(0.16, 40), k3(0.36, 20, "outQuad"), k3(1.1, 0, SET)] }
+  }
+});
+var KNOCKDOWN = clip({
+  id: "knockdown",
+  name: "Knockdown",
+  category: "reaction",
+  description: "Swept off the feet and falling flat on the back, a moment on the ground, then back up.",
+  duration: 2,
+  phases: { impact: 0, action: [0, 0.35], recovery: [1.1, 2] },
+  events: [ev(0, "contact"), ev(0.38, "land"), ev(1.1, "rise"), ev(2, "end")],
+  tracks: {
+    root: { rotate: [k3(0, 0, "inQuad"), k3(0.35, -82, "outBack"), k3(0.5, -78), k3(1.1, -80, "inOutCubic"), k3(1.7, -6, "outQuad"), k3(2, 0)], translate: [k22(0, 0, 0, "outQuad"), k22(0.35, -0.12, 0, SET), k22(1.1, -0.12, 0, "inOutCubic"), k22(2, 0, 0)] },
+    torso: { rotate: [k3(0, 0, "outQuad"), k3(0.2, -15), k3(0.4, 6, SET), k3(1.1, 4), k3(1.4, 20, SET), k3(2, 0)] },
+    head: { rotate: [k3(0, 0), k3(0.1, -20, "outQuad"), k3(0.42, 18, "outQuad"), k3(1.1, 10), k3(2, 0, SET)] },
+    "arm.upper.front": { rotate: [k3(0, 0, "outQuad"), k3(0.2, -70), k3(0.42, -20, "outQuad"), k3(1.1, -15), k3(1.5, 30, SET), k3(2, 0)] },
+    "arm.upper.back": { rotate: [k3(0, 0, "outQuad"), k3(0.2, -60), k3(0.42, -10, "outQuad"), k3(1.1, -10), k3(1.5, 25, SET), k3(2, 0)] },
+    "leg.upper.front": { rotate: [k3(0, 0, "outQuad"), k3(0.25, -40), k3(0.45, -10, "outQuad"), k3(1.1, -15), k3(1.5, -50, SET), k3(2, 0)] },
+    "leg.lower.front": { rotate: [k3(0, 0, "outQuad"), k3(0.25, 30), k3(0.45, 8, "outQuad"), k3(1.1, 10), k3(1.5, 70, SET), k3(2, 0)] },
+    "leg.upper.back": { rotate: [k3(0, 0, "outQuad"), k3(0.25, -25), k3(0.45, 0, "outQuad"), k3(1.1, 0), k3(1.5, -30, SET), k3(2, 0)] },
+    "leg.lower.back": { rotate: [k3(0, 0, "outQuad"), k3(0.25, 15), k3(0.45, 0), k3(1.1, 0), k3(1.5, 50, SET), k3(2, 0)] }
+  }
+});
+var DEFEAT = clip({
+  id: "defeat",
+  name: "Defeat",
+  category: "reaction",
+  description: "The knees give way, the body slumps forward and topples to the ground, and stays down.",
+  duration: 1.6,
+  phases: { action: [0, 0.6], recovery: [0.6, 1.3] },
+  events: [ev(0.55, "kneel"), ev(1.25, "fall"), ev(1.6, "end")],
+  mixIn: 0.15,
+  tracks: {
+    pelvis: { translate: [k22(0, 0, 0, OUT), k22(0.55, 0, 0.14, "outQuad"), k22(1.6, 0, 0.14)] },
+    root: { rotate: [k3(0, 0), k3(0.65, 0, "inQuad"), k3(1.25, 82, "outBack"), k3(1.6, 80)], translate: [k22(0, 0, 0), k22(0.65, 0, 0, "inQuad"), k22(1.25, 0.06, 0, OUT), k22(1.6, 0.06, 0)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.55, 30, "outQuad"), k3(0.8, 26, SINE), k3(1.25, 10, OUT), k3(1.6, 8)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.6, 26, "outQuad"), k3(1.25, 10, OUT), k3(1.6, 12)] },
+    "arm.upper.front": { rotate: [k3(0, 0, OUT), k3(0.55, 12, SINE), k3(1.25, -50, OUT), k3(1.6, -45)] },
+    "arm.upper.back": { rotate: [k3(0, 0, OUT), k3(0.55, 10, SINE), k3(1.25, -40, OUT), k3(1.6, -38)] },
+    "leg.upper.front": { rotate: [k3(0, 0, OUT), k3(0.55, -45, "outQuad"), k3(1.25, -10, OUT), k3(1.6, -8)] },
+    "leg.lower.front": { rotate: [k3(0, 0, OUT), k3(0.55, 80, "outQuad"), k3(1.25, 15, OUT), k3(1.6, 12)] },
+    "leg.upper.back": { rotate: [k3(0, 0, OUT), k3(0.55, -30, "outQuad"), k3(1.25, -5, OUT), k3(1.6, -5)] },
+    "leg.lower.back": { rotate: [k3(0, 0, OUT), k3(0.55, 70, "outQuad"), k3(1.25, 10, OUT), k3(1.6, 10)] }
+  }
+});
+var LIBRARY_CLIPS = [
+  MAGICAL_IDLE,
+  HEAVY_IDLE,
+  WALK,
+  RUN,
+  JUMP,
+  DASH,
+  TELEPORT,
+  THRUST,
+  SPEAR,
+  DUAL,
+  BOW,
+  STAFF,
+  UNARMED,
+  FIREARM,
+  THROW,
+  CHANNEL,
+  CHARGE,
+  PROJECTILE,
+  AREA,
+  HEALING,
+  SUMMON,
+  BLOCK,
+  DODGE,
+  PARRY,
+  COUNTER,
+  GUARD,
+  STAGGER,
+  KNOCKBACK,
+  KNOCKDOWN,
+  DEFEAT
+];
+
 // src/presets/index.ts
-var builtIn = new Map(HUMANOID_CLIPS.map((c) => [c.id, c]));
+var builtIn = new Map([...HUMANOID_CLIPS, ...LIBRARY_CLIPS].map((c) => [c.id, c]));
 var registered = /* @__PURE__ */ new Map();
 var CATEGORY_LABELS = {
   idle: "Idle",
@@ -272,96 +969,514 @@ function listClips() {
 function isBuiltIn(id) {
   return builtIn.has(id) && !registered.has(id);
 }
-function registerClip(clip) {
-  if (!clip || clip.format !== "fusa-clip") throw new Error('Not a clip (format must be "fusa-clip").');
-  if (!clip.id || typeof clip.id !== "string") throw new Error("A clip needs an id.");
-  if (!(clip.duration > 0)) throw new Error(`Clip "${clip.id}" needs a positive duration.`);
-  for (const [role, track2] of Object.entries(clip.tracks ?? {})) {
+function registerClip(clip2) {
+  if (!clip2 || clip2.format !== "fusa-clip") throw new Error('Not a clip (format must be "fusa-clip").');
+  if (!clip2.id || typeof clip2.id !== "string") throw new Error("A clip needs an id.");
+  if (!(clip2.duration > 0)) throw new Error(`Clip "${clip2.id}" needs a positive duration.`);
+  for (const [role, track2] of Object.entries(clip2.tracks ?? {})) {
     for (const keys of [track2.rotate, track2.translate, track2.scale]) {
       if (!keys) continue;
       for (let i = 1; i < keys.length; i++) {
-        if (!(keys[i].t >= keys[i - 1].t)) throw new Error(`Clip "${clip.id}", role "${role}": keys must be in time order.`);
+        if (!(keys[i].t >= keys[i - 1].t)) throw new Error(`Clip "${clip2.id}", role "${role}": keys must be in time order.`);
       }
     }
   }
-  registered.set(clip.id, clip);
+  registered.set(clip2.id, clip2);
 }
 function unregisterClip(id) {
   return registered.delete(id);
 }
 
-// src/sprite/image.ts
-function opaqueBounds(img, alphaMin = 1) {
-  const { width: w, height: h2, data } = img;
-  let x0 = w;
-  let y0 = h2;
-  let x1 = -1;
-  let y1 = -1;
-  for (let y = 0; y < h2; y++) {
-    for (let x = 0; x < w; x++) {
-      if (data[(y * w + x) * 4 + 3] >= alphaMin) {
-        if (x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
+// src/mapping/index.ts
+var NONE = "none";
+var RULE_GROUPS = [
+  {
+    title: "Weapons (by Project FU category)",
+    keys: [
+      ["weapon:sword", "Sword"],
+      ["weapon:dagger", "Dagger"],
+      ["weapon:flail", "Flail"],
+      ["weapon:heavy", "Heavy"],
+      ["weapon:spear", "Spear"],
+      ["weapon:brawling", "Brawling"],
+      ["weapon:arcane", "Arcane"],
+      ["weapon:bow", "Bow"],
+      ["weapon:firearm", "Firearm"],
+      ["weapon:thrown", "Thrown"],
+      ["weapon:shield", "Shield"],
+      ["weapon:melee", "Other melee weapon"],
+      ["weapon:ranged", "Other ranged weapon"]
+    ]
+  },
+  {
+    title: "NPC attacks",
+    keys: [
+      ["basic:melee", "Melee attack"],
+      ["basic:ranged", "Ranged attack"],
+      ["basic:ranged:arrow", "Ranged attack with arrows"],
+      ["basic:ranged:bullet", "Ranged attack with shots"]
+    ]
+  },
+  {
+    title: "Spells",
+    keys: [
+      ["spell:offensive", "Offensive spell"],
+      ["spell:projectile", "Offensive spell with a projectile"],
+      ["spell:area", "Offensive spell on several targets"],
+      ["spell:healing", "Healing spell"],
+      ["spell:summon", "Summoning spell"],
+      ["spell:support", "Other spell"]
+    ]
+  },
+  {
+    title: "Skills, features and items",
+    keys: [
+      ["style:melee", "Skill used like a melee attack"],
+      ["style:ranged", "Skill used like a ranged attack"],
+      ["style:spell", "Skill used like a spell"],
+      ["style:support", "Skill that helps others"],
+      ["style:self", "Skill on oneself"],
+      ["heroic", "Heroic skill"],
+      ["zeroPower", "Zero Power"],
+      ["consumable", "Item (potion, elixir\u2026)"],
+      ["consumable:offensive", "Item thrown at enemies"],
+      ["ritual", "Ritual"]
+    ]
+  },
+  {
+    title: "Basic actions",
+    keys: [
+      ["act:guard", "Guard"],
+      ["act:study", "Study"],
+      ["act:hinder", "Hinder"]
+    ]
+  },
+  {
+    title: "Reactions of the target",
+    keys: [
+      ["react:hit", "Hit"],
+      ["react:heavy", "Critical or big hit"],
+      ["react:guarding", "Hit while guarding"],
+      ["react:miss", "Missed"],
+      ["react:defeat", "Reduced to 0 HP"]
+    ]
+  }
+];
+var DEFAULT_RULES = {
+  "weapon:sword": "sword-slash",
+  "weapon:dagger": "thrust",
+  "weapon:flail": "sword-slash",
+  "weapon:heavy": "heavy-slash",
+  "weapon:spear": "spear-attack",
+  "weapon:brawling": "unarmed-attack",
+  "weapon:arcane": "staff-attack",
+  "weapon:bow": "bow-attack",
+  "weapon:firearm": "firearm-shot",
+  "weapon:thrown": "throw",
+  "weapon:shield": "unarmed-attack",
+  "weapon:melee": "sword-slash",
+  "weapon:ranged": "throw",
+  "basic:melee": "sword-slash",
+  "basic:ranged": "projectile-cast",
+  "basic:ranged:arrow": "bow-attack",
+  "basic:ranged:bullet": "firearm-shot",
+  "spell:offensive": "magic-cast",
+  "spell:projectile": "projectile-cast",
+  "spell:area": "area-cast",
+  "spell:healing": "healing",
+  "spell:summon": "summoning",
+  "spell:support": "channel",
+  "style:melee": "sword-slash",
+  "style:ranged": "projectile-cast",
+  "style:spell": "magic-cast",
+  "style:support": "channel",
+  "style:self": "charge",
+  heroic: "heavy-slash",
+  "heroic:spell": "area-cast",
+  zeroPower: "charge",
+  consumable: "healing",
+  "consumable:offensive": "throw",
+  ritual: "channel",
+  "act:guard": "guard",
+  "act:study": NONE,
+  "act:hinder": "projectile-cast",
+  "react:hit": "light-hit",
+  "react:heavy": "heavy-hit",
+  "react:guarding": "block",
+  "react:miss": "dodge",
+  "react:defeat": "defeat",
+  // last resorts by family, when nothing more specific matches or the rig lacks the roles
+  attack: "sword-slash",
+  magic: "magic-cast",
+  support: "channel"
+};
+var CLIP_FALLBACKS = {
+  "bow-attack": ["projectile-cast", "magic-cast"],
+  "firearm-shot": ["projectile-cast", "magic-cast"],
+  throw: ["projectile-cast", "magic-cast"],
+  "spear-attack": ["thrust", "sword-slash"],
+  thrust: ["sword-slash"],
+  "dual-wield-attack": ["sword-slash"],
+  "staff-attack": ["sword-slash"],
+  "unarmed-attack": ["thrust", "sword-slash"],
+  "heavy-slash": ["sword-slash"],
+  "projectile-cast": ["magic-cast"],
+  "area-cast": ["magic-cast"],
+  summoning: ["area-cast", "magic-cast"],
+  healing: ["channel", "magic-cast"],
+  channel: ["magic-cast"],
+  charge: ["magic-cast"],
+  block: ["guard", "light-hit"],
+  guard: ["block"],
+  dodge: ["light-hit"],
+  "heavy-hit": ["light-hit"],
+  stagger: ["heavy-hit", "light-hit"],
+  knockback: ["heavy-hit", "light-hit"],
+  knockdown: ["heavy-hit", "light-hit"],
+  defeat: ["knockdown", "heavy-hit"]
+};
+function emptyTable() {
+  return { rules: {}, abilities: {} };
+}
+function parseTable(raw) {
+  const out = emptyTable();
+  const r = raw;
+  for (const k4 of ["rules", "abilities"]) {
+    const src = r?.[k4];
+    if (!src || typeof src !== "object") continue;
+    for (const [key, clip2] of Object.entries(src)) if (typeof key === "string" && typeof clip2 === "string" && clip2) out[k4][key] = clip2;
+  }
+  return out;
+}
+var HEAL_WORDS = /\b(heal|healing|cure|recover|recovery|regen|regenerat|restor|revive|resurrect|life|mend|remedy|aid)/i;
+var SUMMON_WORDS = /\b(summon|conjur|familiar|invoc|invok|call forth)/i;
+var ARROWS = /arrow|bolt/i;
+var BULLETS = /bullet|shot|gun/i;
+var RANGED_CATS = /* @__PURE__ */ new Set(["bow", "firearm", "thrown"]);
+function ruleKeys(a) {
+  const keys = [];
+  const cat = a.weaponCategory ?? null;
+  const style = a.fuaStyle && a.fuaStyle !== "none" ? a.fuaStyle : null;
+  switch (a.kind) {
+    case "weapon":
+    case "shield": {
+      if (a.kind === "shield") keys.push("weapon:shield");
+      else if (cat) keys.push(`weapon:${cat}`);
+      keys.push(a.ranged || RANGED_CATS.has(cat ?? "") ? "weapon:ranged" : "weapon:melee", "attack");
+      break;
+    }
+    case "basic": {
+      if (a.ranged) {
+        if (a.projectile && ARROWS.test(a.projectile)) keys.push("basic:ranged:arrow");
+        else if (a.projectile && BULLETS.test(a.projectile)) keys.push("basic:ranged:bullet");
+        keys.push("basic:ranged");
+      } else keys.push("basic:melee");
+      keys.push("attack");
+      break;
+    }
+    case "spell": {
+      if (a.summon) keys.push("spell:summon");
+      if (a.offensive) {
+        if (a.area) keys.push("spell:area");
+        if (a.projectile) keys.push("spell:projectile");
+        keys.push("spell:offensive", "magic");
+      } else {
+        if (a.healing) keys.push("spell:healing");
+        keys.push("spell:support", "support");
       }
+      break;
     }
-  }
-  return x1 < 0 ? null : { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 };
-}
-function countOpaque(img, alphaMin = 1) {
-  let n = 0;
-  for (let i = 3; i < img.data.length; i += 4) if (img.data[i] >= alphaMin) n++;
-  return n;
-}
-function looksLikePixelArt(img) {
-  const { data } = img;
-  const colours = /* @__PURE__ */ new Set();
-  let opaque = 0;
-  let partial = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    const a = data[i + 3];
-    if (a === 0) continue;
-    opaque++;
-    if (a < 250) partial++;
-    if (colours.size <= 512) colours.add(data[i] << 16 | data[i + 1] << 8 | data[i + 2]);
-  }
-  if (!opaque) return false;
-  return colours.size <= 256 && partial / opaque < 0.02 && Math.max(img.width, img.height) <= 512;
-}
-function bodyBounds(img, alphaMin = 1) {
-  const all = opaqueBounds(img, alphaMin);
-  if (!all) return null;
-  const { width: w, data } = img;
-  const runs = [];
-  let maxRun = 0;
-  for (let y = all.y; y < all.y + all.height; y++) {
-    let best = null;
-    let start = -1;
-    for (let x = all.x; x <= all.x + all.width; x++) {
-      const on = x < all.x + all.width && data[(y * w + x) * 4 + 3] >= alphaMin;
-      if (on && start < 0) start = x;
-      if (!on && start >= 0) {
-        if (!best || x - 1 - start > best.x1 - best.x0) best = { x0: start, x1: x - 1 };
-        start = -1;
-      }
+    case "heroic": {
+      if (style === "spell" || style === "support") keys.push("heroic:spell");
+      keys.push("heroic");
+      keys.push(...styleKeys(a, style));
+      break;
     }
-    if (best) {
-      runs.push({ y, ...best });
-      maxRun = Math.max(maxRun, best.x1 - best.x0 + 1);
-    }
+    case "zeroPower":
+      keys.push("zeroPower", ...styleKeys(a, style));
+      break;
+    case "consumable":
+      if (a.offensive) keys.push("consumable:offensive");
+      keys.push("consumable", "support");
+      break;
+    case "ritual":
+      keys.push("ritual", "support");
+      break;
+    case "action":
+      if (a.action) keys.push(`act:${a.action}`);
+      break;
+    default:
+      keys.push(...styleKeys(a, style));
   }
-  const body = runs.filter((r) => r.x1 - r.x0 + 1 >= maxRun * 0.25);
-  if (body.length < 3) return all;
-  const pct = (vals, p) => {
-    const s = vals.slice().sort((a, b) => a - b);
-    return s[Math.min(s.length - 1, Math.max(0, Math.round((s.length - 1) * p)))];
+  return [...new Set(keys)];
+}
+function styleKeys(a, style) {
+  const s = style ?? (a.offensive ? a.weaponCategory ? RANGED_CATS.has(a.weaponCategory) ? "ranged" : "melee" : "spell" : a.healing ? "support" : "self");
+  const keys = [];
+  if (s === "melee" || s === "ranged") {
+    if (a.weaponCategory) keys.push(`weapon:${a.weaponCategory}`);
+    keys.push(`style:${s}`, "attack");
+  } else if (s === "spell") keys.push("style:spell", "magic");
+  else if (s === "support") keys.push(...a.healing ? ["spell:healing"] : [], "style:support", "support");
+  else if (s === "self") keys.push("style:self", "support");
+  return keys;
+}
+function reactionKeys(r) {
+  if (r.defeated) return ["react:defeat", "react:heavy", "react:hit"];
+  if (r.result === "miss") return ["react:miss"];
+  if (r.result !== "hit") return [];
+  if (r.guarding) return ["react:guarding", "react:hit"];
+  if (r.critical || (r.damageFraction ?? 0) >= 0.3) return ["react:heavy", "react:hit"];
+  return ["react:hit"];
+}
+function resolveClip(a, layers = {}) {
+  return resolveKeys(a.key, ruleKeys(a), layers);
+}
+function resolveReaction(r, layers = {}) {
+  const keys = reactionKeys(r);
+  if (!keys.length) return { clip: null, source: null, key: null, candidates: [] };
+  return resolveKeys(null, keys, { ...layers, item: null });
+}
+function resolveKeys(abilityKey, rules, layers) {
+  const tpl = layers.template ?? null;
+  const variants = (k4) => tpl ? [`${k4}@${tpl}`, k4] : [k4];
+  const chosen = [];
+  const look = (table, keys, source) => {
+    if (!table) return;
+    for (const k4 of keys) for (const kv of variants(k4)) if (table[kv]) chosen.push({ clip: table[kv], source, key: kv });
   };
-  const x0 = pct(body.map((r) => r.x0), 0.1);
-  const x1 = pct(body.map((r) => r.x1), 0.9);
-  const top = body[0].y;
-  const bottom = all.y + all.height - 1;
-  return { x: x0, y: top, width: Math.max(1, x1 - x0 + 1), height: Math.max(1, bottom - top + 1) };
+  const allKeys = [...abilityKey ? [abilityKey] : [], ...rules];
+  if (layers.item) look(layers.item, ["*", ...allKeys], "item");
+  look(layers.actor, allKeys, "actor");
+  if (abilityKey) look(layers.world?.abilities, [abilityKey], "ability");
+  look(layers.world?.rules, rules, "rule");
+  look(DEFAULT_RULES, rules, "default");
+  const first = chosen[0];
+  if (!first || first.clip === NONE) return { clip: null, source: first?.source ?? null, key: first?.key ?? null, candidates: [] };
+  const candidates = [];
+  const add = (c) => {
+    if (c && c !== NONE && !candidates.includes(c)) candidates.push(c);
+  };
+  add(first.clip);
+  for (const c of CLIP_FALLBACKS[first.clip] ?? []) add(c);
+  for (const c of chosen.slice(1)) {
+    if (c.clip === NONE) break;
+    add(c.clip);
+  }
+  return { clip: first.clip, source: first.source, key: first.key, candidates };
+}
+function normName(s) {
+  return String(s ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+function ruleLabel(key) {
+  const [base2, tpl] = key.split("@");
+  for (const g of RULE_GROUPS) for (const [k4, label] of g.keys) if (k4 === base2) return tpl ? `${label} (${tpl})` : label;
+  return key;
+}
+
+// src/mapping/projectfu.ts
+var val = (x) => x && typeof x === "object" && "value" in x ? x.value : x;
+function isZeroPower(item) {
+  return item?.type === "optionalFeature" && item?.system?.optionalType === "projectfu.zeroPower";
+}
+function kindOf(item) {
+  if (!item) return "other";
+  if (isZeroPower(item)) return "zeroPower";
+  switch (item.type) {
+    case "weapon":
+    case "customWeapon":
+      return "weapon";
+    case "shield":
+      return "shield";
+    case "basic":
+      return "basic";
+    case "spell":
+      return "spell";
+    case "skill":
+    case "miscAbility":
+      return "skill";
+    case "heroic":
+      return "heroic";
+    case "consumable":
+      return "consumable";
+    case "ritual":
+      return "ritual";
+    case "classFeature":
+    case "optionalFeature":
+      return "feature";
+    default:
+      return "other";
+  }
+}
+function abilityKeyOf(item) {
+  if (!item) return null;
+  const fuid = item.system?.fuid ?? item.flags?.projectfu?.fuid;
+  if (typeof fuid === "string" && fuid) return fuid;
+  const n = normName(item.name);
+  return n ? `${item.type}:${n}` : null;
+}
+function mainHandCategory(actor) {
+  const items = actor?.items;
+  if (!items) return null;
+  const get = (id) => typeof id === "string" ? items.get?.(id) ?? [...items].find((i) => i.id === id) : null;
+  const eq = actor.system?.equipped ?? {};
+  for (const slot of ["mainHand", "offHand"]) {
+    const it = get(eq[slot]);
+    if (it && (it.type === "weapon" || it.type === "customWeapon")) return val(it.system?.category) ?? null;
+  }
+  return null;
+}
+function damageTypeOf(item, check) {
+  const fromCheck = check?.additionalData?.damage?.type;
+  if (fromCheck) return fromCheck;
+  const d = item?.system?.damageType ?? item?.system?.damage?.type;
+  const v = val(d);
+  return typeof v === "string" && v ? v : null;
+}
+function describeItem(item, ctx = {}) {
+  const check = ctx.check ?? null;
+  const action = check?.additionalData?.ruleDefinedAction ?? null;
+  if (!item && action) return { kind: "action", name: action, key: `act:${action}`, action };
+  const kind = kindOf(item);
+  const sys = item?.system ?? {};
+  const name = String(item?.name ?? "");
+  const damageType = damageTypeOf(item, check);
+  const targets = ctx.targets ?? check?.additionalData?.targets?.length ?? 0;
+  let weaponCategory = null;
+  let ranged = false;
+  if (kind === "weapon" || kind === "shield") {
+    weaponCategory = kind === "shield" ? "shield" : val(sys.category) ?? null;
+    ranged = val(sys.type) === "ranged";
+  } else if (kind === "basic") {
+    ranged = val(sys.type) === "ranged";
+  } else {
+    weaponCategory = mainHandCategory(ctx.actor);
+  }
+  const isOffSpell = kind === "spell" ? !!val(sys.isOffensive) : false;
+  const offensive = isOffSpell || ["accuracy", "magic"].includes(check?.type ?? "") || !!damageType || kind === "weapon" || kind === "basic";
+  const text = `${name} ${typeof sys.description === "string" ? sys.description.replace(/<[^>]+>/g, " ").slice(0, 400) : ""}`;
+  const healing = !offensive && HEAL_WORDS.test(text);
+  const summon = SUMMON_WORDS.test(name);
+  const rule = val(sys.targeting?.rule);
+  const area = offensive && (rule === "multiple" || targets >= 2);
+  const fuaStyle = ctx.fua?.style ?? null;
+  const projectile = ctx.fua?.projectile ?? null;
+  return {
+    kind,
+    name,
+    key: abilityKeyOf(item),
+    weaponCategory,
+    ranged,
+    offensive,
+    damageType,
+    healing,
+    summon,
+    area,
+    fuaStyle,
+    projectile: typeof projectile === "string" ? projectile : null,
+    action: null
+  };
+}
+
+// src/mapping/sync.ts
+function contactTime(clip2) {
+  const ev2 = clip2.events?.find((e) => e.name === "contact");
+  if (ev2) return ev2.t;
+  return clip2.phases?.impact ?? null;
+}
+function timingForContact(clip2, target) {
+  const c = contactTime(clip2);
+  const a = clip2.phases?.anticipation;
+  if (c === null || !a) return void 0;
+  const len = a[1] - a[0];
+  if (!(len > 0) || c < a[1] - 1e-6) return void 0;
+  const m = Math.min(2.5, Math.max(0.6, 1 + (target - c) / len));
+  return Math.abs(m - 1) < 0.02 ? void 0 : { anticipation: m };
+}
+function estimateFuaContact(style, o = {}) {
+  switch (style) {
+    case "melee":
+      return o.dash === false ? 0.15 : o.heavy ? 0.58 : 0.45;
+    case "ranged":
+      return o.projectile === false ? 0.45 : 0.62;
+    case "spell":
+      return o.projectile ? 0.62 : o.heavy ? 0.95 : 0.55;
+    case "support":
+      return 0.55;
+    default:
+      return 0.45;
+  }
+}
+
+// src/core/easing.ts
+var c1 = 1.70158;
+var c2 = c1 * 1.525;
+var c3 = c1 + 1;
+var EASINGS = {
+  linear: (t) => t,
+  step: (t) => t >= 1 ? 1 : 0,
+  inQuad: (t) => t * t,
+  outQuad: (t) => 1 - (1 - t) * (1 - t),
+  inOutQuad: (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2,
+  inCubic: (t) => t * t * t,
+  outCubic: (t) => 1 - Math.pow(1 - t, 3),
+  inOutCubic: (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+  inQuart: (t) => t * t * t * t,
+  outQuart: (t) => 1 - Math.pow(1 - t, 4),
+  inExpo: (t) => t <= 0 ? 0 : Math.pow(2, 10 * t - 10),
+  outExpo: (t) => t >= 1 ? 1 : 1 - Math.pow(2, -10 * t),
+  inBack: (t) => c3 * t * t * t - c1 * t * t,
+  outBack: (t) => 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2),
+  inOutBack: (t) => t < 0.5 ? Math.pow(2 * t, 2) * ((c2 + 1) * 2 * t - c2) / 2 : (Math.pow(2 * t - 2, 2) * ((c2 + 1) * (t * 2 - 2) + c2) + 2) / 2,
+  outElastic: (t) => t <= 0 ? 0 : t >= 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI / 3)) + 1,
+  inOutSine: (t) => -(Math.cos(Math.PI * t) - 1) / 2
+};
+var EASE_NAMES = Object.keys(EASINGS);
+function bezier(x1, y1, x2, y2) {
+  const cx = 3 * x1;
+  const bx = 3 * (x2 - x1) - cx;
+  const ax = 1 - cx - bx;
+  const cy = 3 * y1;
+  const by = 3 * (y2 - y1) - cy;
+  const ay = 1 - cy - by;
+  const sx = (t) => ((ax * t + bx) * t + cx) * t;
+  const sy = (t) => ((ay * t + by) * t + cy) * t;
+  const dx = (t) => (3 * ax * t + 2 * bx) * t + cx;
+  return (x) => {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    let t = x;
+    for (let i = 0; i < 6; i++) {
+      const err = sx(t) - x;
+      if (Math.abs(err) < 1e-6) return sy(t);
+      const d = dx(t);
+      if (Math.abs(d) < 1e-6) break;
+      t -= err / d;
+    }
+    let lo = 0;
+    let hi = 1;
+    t = x;
+    for (let i = 0; i < 30; i++) {
+      const v = sx(t);
+      if (Math.abs(v - x) < 1e-6) break;
+      if (v < x) lo = t;
+      else hi = t;
+      t = (lo + hi) / 2;
+    }
+    return sy(t);
+  };
+}
+var bezierCache = /* @__PURE__ */ new Map();
+function easeFn(e) {
+  if (!e) return EASINGS.linear;
+  if (typeof e === "string") return EASINGS[e] ?? EASINGS.linear;
+  const key = e.join(",");
+  let fn = bezierCache.get(key);
+  if (!fn) {
+    fn = bezier(e[0], e[1], e[2], e[3]);
+    bezierCache.set(key, fn);
+  }
+  return fn;
 }
 
 // src/core/math.ts
@@ -474,6 +1589,727 @@ function hashString(str2) {
   let h2 = 2166136261;
   for (let i = 0; i < str2.length; i++) h2 = Math.imul(h2 ^ str2.charCodeAt(i), 16777619) >>> 0;
   return h2;
+}
+
+// src/core/clip.ts
+var STRIDE = 5;
+function segmentIndex(keys, t) {
+  let lo = 0;
+  let hi = keys.length - 1;
+  while (lo < hi) {
+    const mid = lo + hi + 1 >> 1;
+    if (keys[mid].t <= t) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+function sampleKeys(keys, t, fallback = 0, rest) {
+  if (!keys || keys.length === 0) return fallback;
+  const val2 = (key) => key.rest && rest !== void 0 ? rest : key.v;
+  const first = keys[0];
+  if (keys.length === 1 || t <= first.t) return val2(first);
+  const last = keys[keys.length - 1];
+  if (t >= last.t) return val2(last);
+  const i = segmentIndex(keys, t);
+  const a = keys[i];
+  const b = keys[i + 1];
+  const span = b.t - a.t;
+  const k4 = span > 0 ? easeFn(a.e)((t - a.t) / span) : 1;
+  return val2(a) + (val2(b) - val2(a)) * k4;
+}
+function restAngle(keys, setupWorld, mirror) {
+  const a = mirror ? 180 - setupWorld : setupWorld;
+  const ref = keys.find((key) => !key.rest);
+  return ref ? ref.v + wrapDeg(a - ref.v) : a;
+}
+function sampleKeys2(keys, t, fx = 0, fy = 0) {
+  if (!keys || keys.length === 0) return [fx, fy];
+  const first = keys[0];
+  if (keys.length === 1 || t <= first.t) return [first.x, first.y];
+  const last = keys[keys.length - 1];
+  if (t >= last.t) return [last.x, last.y];
+  const i = segmentIndex(keys, t);
+  const a = keys[i];
+  const b = keys[i + 1];
+  const span = b.t - a.t;
+  const k4 = span > 0 ? easeFn(a.e)((t - a.t) / span) : 1;
+  return [a.x + (b.x - a.x) * k4, a.y + (b.y - a.y) * k4];
+}
+var TimeWarp = class {
+  segs = [];
+  duration;
+  constructor(clip2, timing = {}, actionJitter = 1) {
+    const ph = clip2.phases ?? {};
+    const ranges = [];
+    const add = (r, m) => {
+      if (!r) return;
+      const lo = Math.max(0, Math.min(r[0], r[1]));
+      const hi = Math.min(clip2.duration, Math.max(r[0], r[1]));
+      if (hi > lo) ranges.push({ r: [lo, hi], m: Math.max(0.05, m ?? 1) });
+    };
+    add(ph.anticipation, timing.anticipation);
+    add(ph.action, (timing.action ?? 1) * actionJitter);
+    add(ph.recovery, timing.recovery);
+    const cuts = /* @__PURE__ */ new Set([0, clip2.duration]);
+    for (const { r } of ranges) {
+      cuts.add(r[0]);
+      cuts.add(r[1]);
+    }
+    const points = [...cuts].sort((a, b) => a - b);
+    let p = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      const c0 = points[i];
+      const c12 = points[i + 1];
+      const mid = (c0 + c12) / 2;
+      const m = ranges.find(({ r }) => mid > r[0] && mid < r[1])?.m ?? 1;
+      const len = (c12 - c0) * m;
+      this.segs.push({ c0, c1: c12, p0: p, p1: p + len });
+      p += len;
+    }
+    this.duration = p;
+  }
+  toClip(p) {
+    if (!this.segs.length) return 0;
+    if (p <= 0) return 0;
+    for (const s of this.segs) {
+      if (p <= s.p1) return s.p1 > s.p0 ? s.c0 + (p - s.p0) / (s.p1 - s.p0) * (s.c1 - s.c0) : s.c1;
+    }
+    return this.segs[this.segs.length - 1].c1;
+  }
+  toPlay(c) {
+    if (!this.segs.length || c <= 0) return 0;
+    for (const s of this.segs) {
+      if (c <= s.c1) return s.c1 > s.c0 ? s.p0 + (c - s.c0) / (s.c1 - s.c0) * (s.p1 - s.p0) : s.p1;
+    }
+    return this.duration;
+  }
+};
+function evaluateClip(clip2, t, ctx, out, mask, angles) {
+  const sk = ctx.skeleton;
+  const n = sk.size;
+  out.fill(0);
+  mask.fill(0);
+  const H = ctx.bodyHeight;
+  const sign = ctx.mirror ? -1 : 1;
+  const mirrorAngle = (a) => ctx.mirror ? 180 - a : a;
+  for (let i = 0; i < n; i++) {
+    const bone2 = sk.bones[i];
+    const role = bone2.role;
+    const track2 = role ? clip2.tracks[role] : void 0;
+    const s = sk.setup[i];
+    const o = i * STRIDE;
+    const p = sk.parent[i];
+    const inherits = p >= 0 && bone2.inheritRotation !== false;
+    const parentAngle = inherits ? angles[p] : 0;
+    if (track2 && sk.roles.get(role) === i) {
+      const k4 = ctx.intensity * (ctx.amp ? ctx.amp(role) : 1);
+      mask[i] = 1;
+      if (track2.translate) {
+        const [x, y] = sampleKeys2(track2.translate, t);
+        out[o + 1] = x * H * k4 * sign;
+        out[o + 2] = y * H * k4;
+      }
+      if (track2.scale) {
+        const [x, y] = sampleKeys2(track2.scale, t, 1, 1);
+        out[o + 3] = (x - 1) * k4;
+        out[o + 4] = (y - 1) * k4;
+      }
+      if (track2.rotate && track2.rotate.length) {
+        if (track2.space === "world") {
+          const parentSetup = inherits ? sk.setupAngle[p] : 0;
+          const rest = restAngle(track2.rotate, parentSetup + s.rot, ctx.mirror);
+          const first = mirrorAngle(sampleKeys(track2.rotate, -1, 0, rest)) - parentSetup - s.rot;
+          const turns = wrapDeg(first) - first;
+          const d = mirrorAngle(sampleKeys(track2.rotate, t, 0, rest)) - parentAngle - s.rot + turns;
+          out[o] = d * k4;
+        } else {
+          out[o] = sampleKeys(track2.rotate, t, 0, 0) * k4 * sign;
+        }
+      }
+    }
+    angles[i] = parentAngle + s.rot + out[o];
+  }
+}
+function missingRoles(clip2, skeleton) {
+  const need = clip2.requires ?? Object.keys(clip2.tracks);
+  return need.filter((r) => !skeleton.roles.has(r));
+}
+
+// src/core/skeleton.ts
+function orderBones(bones) {
+  const byId = new Map(bones.map((b) => [b.id, b]));
+  if (byId.size !== bones.length) throw new Error("Two bones share an id.");
+  const out = [];
+  const state = /* @__PURE__ */ new Map();
+  const visit = (b, path) => {
+    const s = state.get(b.id);
+    if (s === 2) return;
+    if (s === 1) throw new Error(`Bone hierarchy has a cycle: ${[...path, b.name].join(" \u2192 ")}`);
+    state.set(b.id, 1);
+    if (b.parent !== null) {
+      const p = byId.get(b.parent);
+      if (!p) throw new Error(`Bone "${b.name}" has a missing parent.`);
+      visit(p, [...path, b.name]);
+    }
+    state.set(b.id, 2);
+    out.push(b);
+  };
+  for (const b of bones) visit(b, []);
+  return out;
+}
+var Skeleton = class {
+  bones;
+  index = /* @__PURE__ */ new Map();
+  parent;
+  children;
+  setup;
+  local;
+  world;
+  setupWorld;
+  setupWorldInv;
+  skin;
+  /** Continuous setup world angle per bone: the sum of local rotations down the chain (degrees). */
+  setupAngle;
+  /** role → bone index (first bone with that role). */
+  roles = /* @__PURE__ */ new Map();
+  scratch = new Affine();
+  constructor(bones) {
+    this.bones = orderBones(bones);
+    const n = this.bones.length;
+    this.parent = new Int32Array(n);
+    this.children = Array.from({ length: n }, () => []);
+    this.bones.forEach((b, i) => this.index.set(b.id, i));
+    this.bones.forEach((b, i) => {
+      const p = b.parent === null ? -1 : this.index.get(b.parent) ?? -1;
+      this.parent[i] = p;
+      if (p >= 0) this.children[p].push(i);
+      if (b.role && !this.roles.has(b.role)) this.roles.set(b.role, i);
+    });
+    this.setup = this.bones.map((b) => ({ rot: b.rotation, x: b.x, y: b.y, sx: b.scaleX, sy: b.scaleY }));
+    this.local = this.setup.map((p) => ({ ...p }));
+    this.world = this.bones.map(() => new Affine());
+    this.skin = this.bones.map(() => new Affine());
+    this.updateWorld(this.setup, this.world);
+    this.setupWorld = this.world.map((m) => m.clone());
+    this.setupWorldInv = this.setupWorld.map((m) => m.invert());
+    this.setupAngle = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const p = this.parent[i];
+      const inherits = p >= 0 && this.bones[i].inheritRotation !== false;
+      this.setupAngle[i] = (inherits ? this.setupAngle[p] : 0) + this.setup[i].rot;
+    }
+    this.updateSkin();
+  }
+  get size() {
+    return this.bones.length;
+  }
+  resetPose() {
+    for (let i = 0; i < this.setup.length; i++) Object.assign(this.local[i], this.setup[i]);
+  }
+  /** Compute world matrices from a local pose (defaults to the current pose). */
+  updateWorld(local = this.local, out = this.world) {
+    for (let i = 0; i < this.bones.length; i++) {
+      const l = local[i];
+      const p = this.parent[i];
+      const m = out[i];
+      if (p < 0) {
+        m.setTRS(l.x, l.y, l.rot, l.sx, l.sy);
+        continue;
+      }
+      const pw = out[p];
+      if (this.bones[i].inheritRotation === false) {
+        const [wx, wy] = pw.apply(l.x, l.y);
+        m.setTRS(wx, wy, l.rot, l.sx, l.sy);
+      } else {
+        this.scratch.setTRS(l.x, l.y, l.rot, l.sx, l.sy);
+        m.setMultiply(pw, this.scratch);
+      }
+    }
+  }
+  updateSkin() {
+    for (let i = 0; i < this.bones.length; i++) this.skin[i].setMultiply(this.world[i], this.setupWorldInv[i]);
+  }
+  /** Recompute world and skin matrices from the current local pose. */
+  update() {
+    this.updateWorld();
+    this.updateSkin();
+  }
+  /** World position of a bone's origin and tip in the current pose. */
+  segment(i, matrices = this.world) {
+    const m = matrices[i];
+    const [bx, by] = m.apply(this.bones[i].length, 0);
+    return { ax: m.tx, ay: m.ty, bx, by };
+  }
+  /** World angle (degrees) of a bone's parent in the given matrices; 0 for roots. */
+  parentWorldAngle(i, matrices = this.world) {
+    const p = this.parent[i];
+    return p < 0 ? 0 : matrices[p].angle();
+  }
+};
+
+// src/core/skin.ts
+var MAX_INFLUENCES = 4;
+function autoCell(bodyHeight) {
+  return Math.max(2, Math.min(32, Math.round(bodyHeight / 12)));
+}
+function spannedBones(sk, b, withParts) {
+  const out = [b];
+  const stack = [...sk.children[b]];
+  while (stack.length) {
+    const c = stack.pop();
+    if (withParts.has(c)) continue;
+    out.push(c);
+    stack.push(...sk.children[c]);
+  }
+  return out;
+}
+function segmentDistance(px, py, m, length) {
+  const ax = m.tx;
+  const ay = m.ty;
+  const [bx, by] = m.apply(length, 0);
+  const dx = bx - ax;
+  const dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+  return Math.hypot(ax + dx * t - px, ay + dy * t - py);
+}
+function vertexWeights(sk, part, b, span, vx, vy, bodyHeight) {
+  let list;
+  if (span.length === 1) list = [[b, 1]];
+  else {
+    const raw = span.map((j) => [j, 1 / Math.pow(segmentDistance(vx, vy, sk.setupWorld[j], sk.bones[j].length) + 1, 4)]);
+    const total = raw.reduce((s, [, w]) => s + w, 0);
+    list = raw.map(([j, w]) => [j, w / total]);
+  }
+  const p = sk.parent[b];
+  const band = Math.max(1, part.softness * bodyHeight);
+  if (p >= 0 && part.softness > 0) {
+    const m = sk.setupWorld[b];
+    const len = Math.hypot(m.a, m.b) || 1;
+    const ux = m.a / len;
+    const uy = m.b / len;
+    const s = (vx - m.tx) * ux + (vy - m.ty) * uy;
+    const r = Math.hypot(vx - m.tx, vy - m.ty);
+    const axial = smoothstep(0.5 - s / (2 * band));
+    const radial = 1 - smoothstep((r - band) / band);
+    const wp = axial * radial;
+    if (wp > 1e-4) {
+      list = list.map(([j, w]) => [j, w * (1 - wp)]);
+      list.push([p, wp]);
+    }
+  }
+  list.sort((a, b2) => b2[1] - a[1]);
+  list = list.slice(0, MAX_INFLUENCES).filter(([, w]) => w > 1e-4);
+  const sum = list.reduce((s, [, w]) => s + w, 0) || 1;
+  return list.map(([j, w]) => [j, w / sum]);
+}
+function buildPartGeometry(part, rect, coverage, sk, opts) {
+  const b = sk.index.get(part.bone);
+  if (b === void 0) throw new Error(`Part "${part.name}" follows a missing bone.`);
+  const xs = [];
+  const ys = [];
+  if (part.deform === "rigid") {
+    xs.push(0, rect.w);
+    ys.push(0, rect.h);
+  } else {
+    const cell = part.cell > 0 ? Math.round(part.cell) : autoCell(opts.bodyHeight);
+    for (let x = 0; x < rect.w; x += cell) xs.push(x);
+    xs.push(rect.w);
+    for (let y = 0; y < rect.h; y += cell) ys.push(y);
+    ys.push(rect.h);
+  }
+  const keep = [];
+  for (let cy = 0; cy < ys.length - 1; cy++) {
+    for (let cx = 0; cx < xs.length - 1; cx++) {
+      let any = false;
+      for (let y = ys[cy]; y < ys[cy + 1] && !any; y++) {
+        for (let x = xs[cx]; x < xs[cx + 1]; x++) {
+          if (coverage[y * rect.w + x]) {
+            any = true;
+            break;
+          }
+        }
+      }
+      if (any) keep.push([cx, cy]);
+    }
+  }
+  const vertexOf = /* @__PURE__ */ new Map();
+  const pos = [];
+  const indices = [];
+  const vid = (gx, gy) => {
+    const key = gy * xs.length + gx;
+    let v = vertexOf.get(key);
+    if (v === void 0) {
+      v = pos.length / 2;
+      vertexOf.set(key, v);
+      pos.push(xs[gx], ys[gy]);
+    }
+    return v;
+  };
+  for (const [cx, cy] of keep) {
+    const a = vid(cx, cy);
+    const bb = vid(cx + 1, cy);
+    const c = vid(cx + 1, cy + 1);
+    const d = vid(cx, cy + 1);
+    indices.push(a, bb, c, a, c, d);
+  }
+  const n = pos.length / 2;
+  if (n > 65535) throw new Error(`Part "${part.name}" has too many vertices; use a larger grid cell.`);
+  const rest = new Float32Array(n * 2);
+  const uvs = new Float32Array(n * 2);
+  const bones = new Int16Array(n * MAX_INFLUENCES).fill(-1);
+  const weights = new Float32Array(n * MAX_INFLUENCES);
+  const span = part.deform === "mesh" ? spannedBones(sk, b, opts.bonesWithParts) : [b];
+  for (let v = 0; v < n; v++) {
+    const lx = pos[v * 2];
+    const ly = pos[v * 2 + 1];
+    const sx = rect.srcX + lx;
+    const sy = rect.srcY + ly;
+    rest[v * 2] = sx;
+    rest[v * 2 + 1] = sy;
+    uvs[v * 2] = (rect.x + lx) / opts.atlasWidth;
+    uvs[v * 2 + 1] = (rect.y + ly) / opts.atlasHeight;
+    const ws = part.deform === "mesh" ? vertexWeights(sk, part, b, span, sx, sy, opts.bodyHeight) : [[b, 1]];
+    ws.forEach(([j, w], k4) => {
+      bones[v * MAX_INFLUENCES + k4] = j;
+      weights[v * MAX_INFLUENCES + k4] = w;
+    });
+  }
+  return { part, boneIndex: b, rest, out: new Float32Array(n * 2), uvs, indices: Uint16Array.from(indices), bones, weights };
+}
+function snapSkins(src, out) {
+  for (let i = 0; i < src.length; i++) {
+    const m = (out[i] ??= new Affine()).copyFrom(src[i]);
+    if (m.isTranslationOnly(1e-4)) {
+      m.a = 1;
+      m.b = 0;
+      m.c = 0;
+      m.d = 1;
+      m.tx = Math.round(m.tx);
+      m.ty = Math.round(m.ty);
+    }
+  }
+  return out;
+}
+function deformPart(g, skins, offsetX = 0, offsetY = 0) {
+  const { rest, out, bones, weights } = g;
+  const n = rest.length / 2;
+  const own = skins[g.boneIndex];
+  const k4 = g.part.deform === "mesh" ? Math.max(0, Math.min(1, g.part.stiffness)) : 1;
+  for (let v = 0; v < n; v++) {
+    const x = rest[v * 2];
+    const y = rest[v * 2 + 1];
+    let ox = 0;
+    let oy = 0;
+    if (k4 < 1) {
+      for (let i = 0; i < MAX_INFLUENCES; i++) {
+        const j = bones[v * MAX_INFLUENCES + i];
+        if (j < 0) break;
+        const w = weights[v * MAX_INFLUENCES + i];
+        const m = skins[j];
+        ox += (m.a * x + m.c * y + m.tx) * w;
+        oy += (m.b * x + m.d * y + m.ty) * w;
+      }
+    }
+    if (k4 > 0) {
+      const rx = own.a * x + own.c * y + own.tx;
+      const ry = own.b * x + own.d * y + own.ty;
+      ox = ox * (1 - k4) + rx * k4;
+      oy = oy * (1 - k4) + ry * k4;
+    }
+    out[v * 2] = ox + offsetX;
+    out[v * 2 + 1] = oy + offsetY;
+  }
+}
+function drawOrder(geoms, overrides) {
+  let order = geoms.map((_, i) => i);
+  if (!overrides.size) return order;
+  const firstOf = (bone2) => geoms.findIndex((g) => g.boneIndex === bone2);
+  const moves = [...overrides.entries()].filter(([b]) => firstOf(b) >= 0).sort((a, b) => firstOf(a[0]) - firstOf(b[0]));
+  for (const [bone2, o] of moves) {
+    const movers = order.filter((i) => geoms[i].boneIndex === bone2);
+    const rest = order.filter((i) => geoms[i].boneIndex !== bone2);
+    let at;
+    if (o.behind !== void 0) at = rest.findIndex((i) => geoms[i].boneIndex === o.behind);
+    else {
+      const last = rest.map((i) => geoms[i].boneIndex).lastIndexOf(o.front);
+      at = last < 0 ? -1 : last + 1;
+    }
+    if (at < 0) continue;
+    rest.splice(at, 0, ...movers);
+    order = rest;
+  }
+  return order;
+}
+
+// src/sprite/atlas.ts
+var GUTTER = 2;
+function buildAtlas(img, labels, fills, partLabels, maxSize = 8192) {
+  const { width: w, data } = img;
+  const bounds = /* @__PURE__ */ new Map();
+  const grow = (l, i) => {
+    const x2 = i % w;
+    const y2 = (i - x2) / w;
+    const b = bounds.get(l);
+    if (!b) bounds.set(l, { x0: x2, y0: y2, x1: x2, y1: y2 });
+    else {
+      if (x2 < b.x0) b.x0 = x2;
+      if (x2 > b.x1) b.x1 = x2;
+      if (y2 < b.y0) b.y0 = y2;
+      if (y2 > b.y1) b.y1 = y2;
+    }
+  };
+  const wanted = new Set(partLabels);
+  for (let i = 0; i < labels.length; i++) if (labels[i] && wanted.has(labels[i])) grow(labels[i], i);
+  for (const [l, f] of fills) if (wanted.has(l)) for (const i of f.indices) grow(l, i);
+  const items = [...bounds.entries()].map(([label, b]) => ({ label, b, w: b.x1 - b.x0 + 1, h: b.y1 - b.y0 + 1 }));
+  items.sort((a, b) => b.h - a.h || b.w - a.w);
+  const area = items.reduce((s, it) => s + (it.w + GUTTER) * (it.h + GUTTER), 0);
+  const widest = items.reduce((m, it) => Math.max(m, it.w + GUTTER * 2), 0);
+  const atlasW = Math.min(maxSize, Math.max(widest, Math.ceil(Math.sqrt(area) * 1.15) + GUTTER));
+  const rects = /* @__PURE__ */ new Map();
+  let x = GUTTER;
+  let y = GUTTER;
+  let shelf = 0;
+  for (const it of items) {
+    if (x + it.w + GUTTER > atlasW) {
+      x = GUTTER;
+      y += shelf + GUTTER;
+      shelf = 0;
+    }
+    rects.set(it.label, { x, y, w: it.w, h: it.h, srcX: it.b.x0, srcY: it.b.y0 });
+    x += it.w + GUTTER;
+    shelf = Math.max(shelf, it.h);
+  }
+  const atlasH = Math.max(1, y + shelf + GUTTER);
+  if (atlasH > maxSize) throw new Error(`The parts do not fit in a ${maxSize}px texture. Use a smaller sprite.`);
+  const out = new Uint8ClampedArray(atlasW * atlasH * 4);
+  const coverage = /* @__PURE__ */ new Map();
+  for (const [l, r] of rects) coverage.set(l, new Uint8Array(r.w * r.h));
+  const put = (l, i, rgba, o) => {
+    const r = rects.get(l);
+    const sx = i % w;
+    const sy = (i - sx) / w;
+    const lx = sx - r.srcX;
+    const ly = sy - r.srcY;
+    const d = ((r.y + ly) * atlasW + (r.x + lx)) * 4;
+    out[d] = rgba[o];
+    out[d + 1] = rgba[o + 1];
+    out[d + 2] = rgba[o + 2];
+    out[d + 3] = rgba[o + 3];
+    coverage.get(l)[ly * r.w + lx] = 1;
+  };
+  for (let i = 0; i < labels.length; i++) {
+    const l = labels[i];
+    if (l && rects.has(l)) put(l, i, data, i * 4);
+  }
+  for (const [l, f] of fills) {
+    if (!rects.has(l)) continue;
+    for (let k4 = 0; k4 < f.indices.length; k4++) put(l, f.indices[k4], f.rgba, k4 * 4);
+  }
+  return { width: atlasW, height: atlasH, data: out, rects, coverage };
+}
+
+// src/sprite/fill.ts
+function convexHull(points) {
+  if (points.length < 3) return points.slice();
+  const pts = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  upper.pop();
+  lower.pop();
+  return lower.concat(upper);
+}
+function insideHull(hull, x, y) {
+  if (hull.length < 3) return false;
+  for (let i = 0; i < hull.length; i++) {
+    const a = hull[i];
+    const b = hull[(i + 1) % hull.length];
+    if ((b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) < -1e-9) return false;
+  }
+  return true;
+}
+function computeFills(img, labels, order, opts) {
+  const { width: w, height: h2, data } = img;
+  const out = /* @__PURE__ */ new Map();
+  const rank = /* @__PURE__ */ new Map();
+  order.forEach((l, i) => rank.set(l, i));
+  const pixels = /* @__PURE__ */ new Map();
+  for (let i = 0; i < labels.length; i++) {
+    const l = labels[i];
+    if (!l) continue;
+    let list = pixels.get(l);
+    if (!list) pixels.set(l, list = []);
+    list.push(i);
+  }
+  const reach = Math.max(1, Math.round(opts.radius));
+  const dist = new Int32Array(w * h2);
+  const src = new Int32Array(w * h2);
+  for (const label of order) {
+    if (opts.enabled && !opts.enabled.has(label)) continue;
+    const own = pixels.get(label);
+    if (!own || !own.length) continue;
+    const myRank = rank.get(label);
+    const rows = /* @__PURE__ */ new Map();
+    for (const i of own) {
+      const x = i % w;
+      const y = (i - x) / w;
+      const r = rows.get(y);
+      if (!r) rows.set(y, [x, x]);
+      else {
+        if (x < r[0]) r[0] = x;
+        if (x > r[1]) r[1] = x;
+      }
+    }
+    const corners = [];
+    for (const [y, [x0, x1]] of rows) corners.push([x0, y], [x1 + 1, y], [x0, y + 1], [x1 + 1, y + 1]);
+    const hull = convexHull(corners);
+    const hints = opts.hints;
+    const hinted = (j) => !!hints && hints[j] === label;
+    const covered = (j) => {
+      const l = labels[j];
+      if (!l || l === label) return false;
+      const r = rank.get(l);
+      if (r === void 0 || r <= myRank) return false;
+      return data[j * 4 + 3] === 255;
+    };
+    const eligible = (j, step) => {
+      if (!covered(j)) return false;
+      if (hinted(j)) return true;
+      if (step > reach) return false;
+      const x = j % w;
+      return insideHull(hull, x + 0.5, (j - x) / w + 0.5);
+    };
+    dist.fill(-1);
+    let queue = [];
+    for (const i of own) {
+      dist[i] = 0;
+      src[i] = i;
+      queue.push(i);
+    }
+    const filled = [];
+    const maxSteps = hints ? w + h2 : reach;
+    for (let step = 1; step <= maxSteps && queue.length; step++) {
+      const next = [];
+      for (const i of queue) {
+        const x = i % w;
+        const y = (i - x) / w;
+        for (let dy = -1; dy <= 1; dy++) {
+          const ny = y + dy;
+          if (ny < 0 || ny >= h2) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            const nx = x + dx;
+            if (nx < 0 || nx >= w) continue;
+            const j = ny * w + nx;
+            if (dist[j] !== -1 || !eligible(j, step)) continue;
+            dist[j] = step;
+            src[j] = src[i];
+            next.push(j);
+            filled.push(j);
+          }
+        }
+      }
+      queue = next;
+    }
+    if (!filled.length) continue;
+    filled.sort((a, b) => a - b);
+    const indices = Int32Array.from(filled);
+    const rgba = new Uint8Array(indices.length * 4);
+    for (let k4 = 0; k4 < indices.length; k4++) {
+      const s = src[indices[k4]] * 4;
+      rgba[k4 * 4] = data[s];
+      rgba[k4 * 4 + 1] = data[s + 1];
+      rgba[k4 * 4 + 2] = data[s + 2];
+      rgba[k4 * 4 + 3] = data[s + 3];
+    }
+    out.set(label, { indices, rgba });
+  }
+  return out;
+}
+
+// src/sprite/image.ts
+function opaqueBounds(img, alphaMin = 1) {
+  const { width: w, height: h2, data } = img;
+  let x0 = w;
+  let y0 = h2;
+  let x1 = -1;
+  let y1 = -1;
+  for (let y = 0; y < h2; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] >= alphaMin) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 };
+}
+function countOpaque(img, alphaMin = 1) {
+  let n = 0;
+  for (let i = 3; i < img.data.length; i += 4) if (img.data[i] >= alphaMin) n++;
+  return n;
+}
+function looksLikePixelArt(img) {
+  const { data } = img;
+  const colours = /* @__PURE__ */ new Set();
+  let opaque = 0;
+  let partial = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3];
+    if (a === 0) continue;
+    opaque++;
+    if (a < 250) partial++;
+    if (colours.size <= 512) colours.add(data[i] << 16 | data[i + 1] << 8 | data[i + 2]);
+  }
+  if (!opaque) return false;
+  return colours.size <= 256 && partial / opaque < 0.02 && Math.max(img.width, img.height) <= 512;
+}
+function bodyBounds(img, alphaMin = 1) {
+  const all = opaqueBounds(img, alphaMin);
+  if (!all) return null;
+  const { width: w, data } = img;
+  const runs = [];
+  let maxRun = 0;
+  for (let y = all.y; y < all.y + all.height; y++) {
+    let best = null;
+    let start = -1;
+    for (let x = all.x; x <= all.x + all.width; x++) {
+      const on = x < all.x + all.width && data[(y * w + x) * 4 + 3] >= alphaMin;
+      if (on && start < 0) start = x;
+      if (!on && start >= 0) {
+        if (!best || x - 1 - start > best.x1 - best.x0) best = { x0: start, x1: x - 1 };
+        start = -1;
+      }
+    }
+    if (best) {
+      runs.push({ y, ...best });
+      maxRun = Math.max(maxRun, best.x1 - best.x0 + 1);
+    }
+  }
+  const body = runs.filter((r) => r.x1 - r.x0 + 1 >= maxRun * 0.25);
+  if (body.length < 3) return all;
+  const pct = (vals, p) => {
+    const s = vals.slice().sort((a, b) => a - b);
+    return s[Math.min(s.length - 1, Math.max(0, Math.round((s.length - 1) * p)))];
+  };
+  const x0 = pct(body.map((r) => r.x0), 0.1);
+  const x1 = pct(body.map((r) => r.x1), 0.9);
+  const top = body[0].y;
+  const bottom = all.y + all.height - 1;
+  return { x: x0, y: top, width: Math.max(1, x1 - x0 + 1), height: Math.max(1, bottom - top + 1) };
 }
 
 // src/sprite/ownership.ts
@@ -606,16 +2442,16 @@ var Heap = class {
       this.cost = nc;
       this.idx = ni;
     }
-    let k3 = this.size++;
-    while (k3 > 0) {
-      const p = k3 - 1 >> 1;
+    let k4 = this.size++;
+    while (k4 > 0) {
+      const p = k4 - 1 >> 1;
       if (this.cost[p] <= c) break;
-      this.cost[k3] = this.cost[p];
-      this.idx[k3] = this.idx[p];
-      k3 = p;
+      this.cost[k4] = this.cost[p];
+      this.idx[k4] = this.idx[p];
+      k4 = p;
     }
-    this.cost[k3] = c;
-    this.idx[k3] = i;
+    this.cost[k4] = c;
+    this.idx[k4] = i;
   }
   /** Pop the smallest; returns the index and leaves its cost in `lastCost`. */
   lastCost = 0;
@@ -624,18 +2460,18 @@ var Heap = class {
     this.lastCost = this.cost[0];
     const c = this.cost[--this.size];
     const i = this.idx[this.size];
-    let k3 = 0;
+    let k4 = 0;
     for (; ; ) {
-      let m = 2 * k3 + 1;
+      let m = 2 * k4 + 1;
       if (m >= this.size) break;
       if (m + 1 < this.size && this.cost[m + 1] < this.cost[m]) m++;
       if (this.cost[m] >= c) break;
-      this.cost[k3] = this.cost[m];
-      this.idx[k3] = this.idx[m];
-      k3 = m;
+      this.cost[k4] = this.cost[m];
+      this.idx[k4] = this.idx[m];
+      k4 = m;
     }
-    this.cost[k3] = c;
-    this.idx[k3] = i;
+    this.cost[k4] = c;
+    this.idx[k4] = i;
     return top;
   }
 };
@@ -656,8 +2492,8 @@ function geodesicAssign(img, segments, o = {}) {
     const t1 = len > 4 ? 1 - t0 : 1;
     const steps = Math.max(1, Math.ceil(len * 2));
     let seeded = false;
-    for (let k3 = 0; k3 <= steps; k3++) {
-      const t = t0 + (t1 - t0) * k3 / steps;
+    for (let k4 = 0; k4 <= steps; k4++) {
+      const t = t0 + (t1 - t0) * k4 / steps;
       const x = Math.floor(s.ax + (s.bx - s.ax) * t);
       const y = Math.floor(s.ay + (s.by - s.ay) * t);
       if (x < 0 || y < 0 || x >= w || y >= h2) continue;
@@ -844,7 +2680,7 @@ function skeletonize(mask, w, h2) {
           if (b < 2 || b > 6) continue;
           const seq = [p2, p3, p4, p5, p6, p7, p8, p9, p2];
           let a = 0;
-          for (let k3 = 0; k3 < 8; k3++) if (!seq[k3] && seq[k3 + 1]) a++;
+          for (let k4 = 0; k4 < 8; k4++) if (!seq[k4] && seq[k4 + 1]) a++;
           if (a !== 1) continue;
           if (step === 0 ? p2 * p4 * p6 || p4 * p6 * p8 : p2 * p4 * p8 || p2 * p6 * p8) continue;
           del.push(y * w + x);
@@ -888,7 +2724,7 @@ function skeletonBranches(skel, w, h2) {
   const crossings = (i) => {
     const r = ring(i);
     let a = 0;
-    for (let k3 = 0; k3 < 8; k3++) if (!r[k3] && r[(k3 + 1) % 8]) a++;
+    for (let k4 = 0; k4 < 8; k4++) if (!r[k4] && r[(k4 + 1) % 8]) a++;
     return a;
   };
   const nb = (i) => {
@@ -925,7 +2761,7 @@ function skeletonBranches(skel, w, h2) {
     const b = path[path.length - 1];
     const chord = Math.hypot(px(a) - px(b), py(a) - py(b));
     let len = 0;
-    for (let k3 = 1; k3 < path.length; k3++) len += Math.hypot(px(path[k3 - 1]) - px(path[k3]), py(path[k3 - 1]) - py(path[k3]));
+    for (let k4 = 1; k4 < path.length; k4++) len += Math.hypot(px(path[k4 - 1]) - px(path[k4]), py(path[k4 - 1]) - py(path[k4]));
     out.push({ path, length: len, straightness: len > 0 ? chord / len : 0 });
   }
   return out;
@@ -962,18 +2798,18 @@ function detectWeapon(mask, w, h2, height) {
     const py = (i) => Math.floor(i / w) + 0.5;
     const p0 = b.path[0];
     let keep = 1;
-    for (let k3 = 2; k3 < b.path.length; k3++) {
-      const pk = b.path[k3];
+    for (let k4 = 2; k4 < b.path.length; k4++) {
+      const pk = b.path[k4];
       const L = Math.hypot(px(pk) - px(p0), py(pk) - py(p0)) || 1;
       const tol = Math.max(1.25, L * 0.04);
       let ok = true;
-      for (let j = 1; j < k3 && ok; j++) {
+      for (let j = 1; j < k4 && ok; j++) {
         const q = b.path[j];
         const dev = Math.abs((px(pk) - px(p0)) * (py(p0) - py(q)) - (px(p0) - px(q)) * (py(pk) - py(p0))) / L;
         if (dev > tol) ok = false;
       }
       if (!ok) break;
-      keep = k3 + 1;
+      keep = k4 + 1;
     }
     const path = b.path.slice(0, keep);
     const last = path[path.length - 1];
@@ -1329,118 +3165,6 @@ function detectHumanoid(img, facingIn = "auto") {
     notes
   };
 }
-
-// src/core/skeleton.ts
-function orderBones(bones) {
-  const byId = new Map(bones.map((b) => [b.id, b]));
-  if (byId.size !== bones.length) throw new Error("Two bones share an id.");
-  const out = [];
-  const state = /* @__PURE__ */ new Map();
-  const visit = (b, path) => {
-    const s = state.get(b.id);
-    if (s === 2) return;
-    if (s === 1) throw new Error(`Bone hierarchy has a cycle: ${[...path, b.name].join(" \u2192 ")}`);
-    state.set(b.id, 1);
-    if (b.parent !== null) {
-      const p = byId.get(b.parent);
-      if (!p) throw new Error(`Bone "${b.name}" has a missing parent.`);
-      visit(p, [...path, b.name]);
-    }
-    state.set(b.id, 2);
-    out.push(b);
-  };
-  for (const b of bones) visit(b, []);
-  return out;
-}
-var Skeleton = class {
-  bones;
-  index = /* @__PURE__ */ new Map();
-  parent;
-  children;
-  setup;
-  local;
-  world;
-  setupWorld;
-  setupWorldInv;
-  skin;
-  /** Continuous setup world angle per bone: the sum of local rotations down the chain (degrees). */
-  setupAngle;
-  /** role → bone index (first bone with that role). */
-  roles = /* @__PURE__ */ new Map();
-  scratch = new Affine();
-  constructor(bones) {
-    this.bones = orderBones(bones);
-    const n = this.bones.length;
-    this.parent = new Int32Array(n);
-    this.children = Array.from({ length: n }, () => []);
-    this.bones.forEach((b, i) => this.index.set(b.id, i));
-    this.bones.forEach((b, i) => {
-      const p = b.parent === null ? -1 : this.index.get(b.parent) ?? -1;
-      this.parent[i] = p;
-      if (p >= 0) this.children[p].push(i);
-      if (b.role && !this.roles.has(b.role)) this.roles.set(b.role, i);
-    });
-    this.setup = this.bones.map((b) => ({ rot: b.rotation, x: b.x, y: b.y, sx: b.scaleX, sy: b.scaleY }));
-    this.local = this.setup.map((p) => ({ ...p }));
-    this.world = this.bones.map(() => new Affine());
-    this.skin = this.bones.map(() => new Affine());
-    this.updateWorld(this.setup, this.world);
-    this.setupWorld = this.world.map((m) => m.clone());
-    this.setupWorldInv = this.setupWorld.map((m) => m.invert());
-    this.setupAngle = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      const p = this.parent[i];
-      const inherits = p >= 0 && this.bones[i].inheritRotation !== false;
-      this.setupAngle[i] = (inherits ? this.setupAngle[p] : 0) + this.setup[i].rot;
-    }
-    this.updateSkin();
-  }
-  get size() {
-    return this.bones.length;
-  }
-  resetPose() {
-    for (let i = 0; i < this.setup.length; i++) Object.assign(this.local[i], this.setup[i]);
-  }
-  /** Compute world matrices from a local pose (defaults to the current pose). */
-  updateWorld(local = this.local, out = this.world) {
-    for (let i = 0; i < this.bones.length; i++) {
-      const l = local[i];
-      const p = this.parent[i];
-      const m = out[i];
-      if (p < 0) {
-        m.setTRS(l.x, l.y, l.rot, l.sx, l.sy);
-        continue;
-      }
-      const pw = out[p];
-      if (this.bones[i].inheritRotation === false) {
-        const [wx, wy] = pw.apply(l.x, l.y);
-        m.setTRS(wx, wy, l.rot, l.sx, l.sy);
-      } else {
-        this.scratch.setTRS(l.x, l.y, l.rot, l.sx, l.sy);
-        m.setMultiply(pw, this.scratch);
-      }
-    }
-  }
-  updateSkin() {
-    for (let i = 0; i < this.bones.length; i++) this.skin[i].setMultiply(this.world[i], this.setupWorldInv[i]);
-  }
-  /** Recompute world and skin matrices from the current local pose. */
-  update() {
-    this.updateWorld();
-    this.updateSkin();
-  }
-  /** World position of a bone's origin and tip in the current pose. */
-  segment(i, matrices = this.world) {
-    const m = matrices[i];
-    const [bx, by] = m.apply(this.bones[i].length, 0);
-    return { ax: m.tx, ay: m.ty, bx, by };
-  }
-  /** World angle (degrees) of a bone's parent in the given matrices; 0 for roots. */
-  parentWorldAngle(i, matrices = this.world) {
-    const p = this.parent[i];
-    return p < 0 ? 0 : matrices[p].angle();
-  }
-};
 
 // src/rig/frames.ts
 function tipOf(f) {
@@ -1830,397 +3554,6 @@ function cloneRig(rig) {
   return JSON.parse(JSON.stringify(rig));
 }
 
-// src/core/skin.ts
-var MAX_INFLUENCES = 4;
-function autoCell(bodyHeight) {
-  return Math.max(2, Math.min(32, Math.round(bodyHeight / 12)));
-}
-function spannedBones(sk, b, withParts) {
-  const out = [b];
-  const stack = [...sk.children[b]];
-  while (stack.length) {
-    const c = stack.pop();
-    if (withParts.has(c)) continue;
-    out.push(c);
-    stack.push(...sk.children[c]);
-  }
-  return out;
-}
-function segmentDistance(px, py, m, length) {
-  const ax = m.tx;
-  const ay = m.ty;
-  const [bx, by] = m.apply(length, 0);
-  const dx = bx - ax;
-  const dy = by - ay;
-  const l2 = dx * dx + dy * dy;
-  const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
-  return Math.hypot(ax + dx * t - px, ay + dy * t - py);
-}
-function vertexWeights(sk, part, b, span, vx, vy, bodyHeight) {
-  let list;
-  if (span.length === 1) list = [[b, 1]];
-  else {
-    const raw = span.map((j) => [j, 1 / Math.pow(segmentDistance(vx, vy, sk.setupWorld[j], sk.bones[j].length) + 1, 4)]);
-    const total = raw.reduce((s, [, w]) => s + w, 0);
-    list = raw.map(([j, w]) => [j, w / total]);
-  }
-  const p = sk.parent[b];
-  const band = Math.max(1, part.softness * bodyHeight);
-  if (p >= 0 && part.softness > 0) {
-    const m = sk.setupWorld[b];
-    const len = Math.hypot(m.a, m.b) || 1;
-    const ux = m.a / len;
-    const uy = m.b / len;
-    const s = (vx - m.tx) * ux + (vy - m.ty) * uy;
-    const r = Math.hypot(vx - m.tx, vy - m.ty);
-    const axial = smoothstep(0.5 - s / (2 * band));
-    const radial = 1 - smoothstep((r - band) / band);
-    const wp = axial * radial;
-    if (wp > 1e-4) {
-      list = list.map(([j, w]) => [j, w * (1 - wp)]);
-      list.push([p, wp]);
-    }
-  }
-  list.sort((a, b2) => b2[1] - a[1]);
-  list = list.slice(0, MAX_INFLUENCES).filter(([, w]) => w > 1e-4);
-  const sum = list.reduce((s, [, w]) => s + w, 0) || 1;
-  return list.map(([j, w]) => [j, w / sum]);
-}
-function buildPartGeometry(part, rect, coverage, sk, opts) {
-  const b = sk.index.get(part.bone);
-  if (b === void 0) throw new Error(`Part "${part.name}" follows a missing bone.`);
-  const xs = [];
-  const ys = [];
-  if (part.deform === "rigid") {
-    xs.push(0, rect.w);
-    ys.push(0, rect.h);
-  } else {
-    const cell = part.cell > 0 ? Math.round(part.cell) : autoCell(opts.bodyHeight);
-    for (let x = 0; x < rect.w; x += cell) xs.push(x);
-    xs.push(rect.w);
-    for (let y = 0; y < rect.h; y += cell) ys.push(y);
-    ys.push(rect.h);
-  }
-  const keep = [];
-  for (let cy = 0; cy < ys.length - 1; cy++) {
-    for (let cx = 0; cx < xs.length - 1; cx++) {
-      let any = false;
-      for (let y = ys[cy]; y < ys[cy + 1] && !any; y++) {
-        for (let x = xs[cx]; x < xs[cx + 1]; x++) {
-          if (coverage[y * rect.w + x]) {
-            any = true;
-            break;
-          }
-        }
-      }
-      if (any) keep.push([cx, cy]);
-    }
-  }
-  const vertexOf = /* @__PURE__ */ new Map();
-  const pos = [];
-  const indices = [];
-  const vid = (gx, gy) => {
-    const key = gy * xs.length + gx;
-    let v = vertexOf.get(key);
-    if (v === void 0) {
-      v = pos.length / 2;
-      vertexOf.set(key, v);
-      pos.push(xs[gx], ys[gy]);
-    }
-    return v;
-  };
-  for (const [cx, cy] of keep) {
-    const a = vid(cx, cy);
-    const bb = vid(cx + 1, cy);
-    const c = vid(cx + 1, cy + 1);
-    const d = vid(cx, cy + 1);
-    indices.push(a, bb, c, a, c, d);
-  }
-  const n = pos.length / 2;
-  if (n > 65535) throw new Error(`Part "${part.name}" has too many vertices; use a larger grid cell.`);
-  const rest = new Float32Array(n * 2);
-  const uvs = new Float32Array(n * 2);
-  const bones = new Int16Array(n * MAX_INFLUENCES).fill(-1);
-  const weights = new Float32Array(n * MAX_INFLUENCES);
-  const span = part.deform === "mesh" ? spannedBones(sk, b, opts.bonesWithParts) : [b];
-  for (let v = 0; v < n; v++) {
-    const lx = pos[v * 2];
-    const ly = pos[v * 2 + 1];
-    const sx = rect.srcX + lx;
-    const sy = rect.srcY + ly;
-    rest[v * 2] = sx;
-    rest[v * 2 + 1] = sy;
-    uvs[v * 2] = (rect.x + lx) / opts.atlasWidth;
-    uvs[v * 2 + 1] = (rect.y + ly) / opts.atlasHeight;
-    const ws = part.deform === "mesh" ? vertexWeights(sk, part, b, span, sx, sy, opts.bodyHeight) : [[b, 1]];
-    ws.forEach(([j, w], k3) => {
-      bones[v * MAX_INFLUENCES + k3] = j;
-      weights[v * MAX_INFLUENCES + k3] = w;
-    });
-  }
-  return { part, boneIndex: b, rest, out: new Float32Array(n * 2), uvs, indices: Uint16Array.from(indices), bones, weights };
-}
-function snapSkins(src, out) {
-  for (let i = 0; i < src.length; i++) {
-    const m = (out[i] ??= new Affine()).copyFrom(src[i]);
-    if (m.isTranslationOnly(1e-4)) {
-      m.a = 1;
-      m.b = 0;
-      m.c = 0;
-      m.d = 1;
-      m.tx = Math.round(m.tx);
-      m.ty = Math.round(m.ty);
-    }
-  }
-  return out;
-}
-function deformPart(g, skins, offsetX = 0, offsetY = 0) {
-  const { rest, out, bones, weights } = g;
-  const n = rest.length / 2;
-  const own = skins[g.boneIndex];
-  const k3 = g.part.deform === "mesh" ? Math.max(0, Math.min(1, g.part.stiffness)) : 1;
-  for (let v = 0; v < n; v++) {
-    const x = rest[v * 2];
-    const y = rest[v * 2 + 1];
-    let ox = 0;
-    let oy = 0;
-    if (k3 < 1) {
-      for (let i = 0; i < MAX_INFLUENCES; i++) {
-        const j = bones[v * MAX_INFLUENCES + i];
-        if (j < 0) break;
-        const w = weights[v * MAX_INFLUENCES + i];
-        const m = skins[j];
-        ox += (m.a * x + m.c * y + m.tx) * w;
-        oy += (m.b * x + m.d * y + m.ty) * w;
-      }
-    }
-    if (k3 > 0) {
-      const rx = own.a * x + own.c * y + own.tx;
-      const ry = own.b * x + own.d * y + own.ty;
-      ox = ox * (1 - k3) + rx * k3;
-      oy = oy * (1 - k3) + ry * k3;
-    }
-    out[v * 2] = ox + offsetX;
-    out[v * 2 + 1] = oy + offsetY;
-  }
-}
-function drawOrder(geoms, overrides) {
-  let order = geoms.map((_, i) => i);
-  if (!overrides.size) return order;
-  const firstOf = (bone2) => geoms.findIndex((g) => g.boneIndex === bone2);
-  const moves = [...overrides.entries()].filter(([b]) => firstOf(b) >= 0).sort((a, b) => firstOf(a[0]) - firstOf(b[0]));
-  for (const [bone2, o] of moves) {
-    const movers = order.filter((i) => geoms[i].boneIndex === bone2);
-    const rest = order.filter((i) => geoms[i].boneIndex !== bone2);
-    let at;
-    if (o.behind !== void 0) at = rest.findIndex((i) => geoms[i].boneIndex === o.behind);
-    else {
-      const last = rest.map((i) => geoms[i].boneIndex).lastIndexOf(o.front);
-      at = last < 0 ? -1 : last + 1;
-    }
-    if (at < 0) continue;
-    rest.splice(at, 0, ...movers);
-    order = rest;
-  }
-  return order;
-}
-
-// src/sprite/atlas.ts
-var GUTTER = 2;
-function buildAtlas(img, labels, fills, partLabels, maxSize = 8192) {
-  const { width: w, data } = img;
-  const bounds = /* @__PURE__ */ new Map();
-  const grow = (l, i) => {
-    const x2 = i % w;
-    const y2 = (i - x2) / w;
-    const b = bounds.get(l);
-    if (!b) bounds.set(l, { x0: x2, y0: y2, x1: x2, y1: y2 });
-    else {
-      if (x2 < b.x0) b.x0 = x2;
-      if (x2 > b.x1) b.x1 = x2;
-      if (y2 < b.y0) b.y0 = y2;
-      if (y2 > b.y1) b.y1 = y2;
-    }
-  };
-  const wanted = new Set(partLabels);
-  for (let i = 0; i < labels.length; i++) if (labels[i] && wanted.has(labels[i])) grow(labels[i], i);
-  for (const [l, f] of fills) if (wanted.has(l)) for (const i of f.indices) grow(l, i);
-  const items = [...bounds.entries()].map(([label, b]) => ({ label, b, w: b.x1 - b.x0 + 1, h: b.y1 - b.y0 + 1 }));
-  items.sort((a, b) => b.h - a.h || b.w - a.w);
-  const area = items.reduce((s, it) => s + (it.w + GUTTER) * (it.h + GUTTER), 0);
-  const widest = items.reduce((m, it) => Math.max(m, it.w + GUTTER * 2), 0);
-  const atlasW = Math.min(maxSize, Math.max(widest, Math.ceil(Math.sqrt(area) * 1.15) + GUTTER));
-  const rects = /* @__PURE__ */ new Map();
-  let x = GUTTER;
-  let y = GUTTER;
-  let shelf = 0;
-  for (const it of items) {
-    if (x + it.w + GUTTER > atlasW) {
-      x = GUTTER;
-      y += shelf + GUTTER;
-      shelf = 0;
-    }
-    rects.set(it.label, { x, y, w: it.w, h: it.h, srcX: it.b.x0, srcY: it.b.y0 });
-    x += it.w + GUTTER;
-    shelf = Math.max(shelf, it.h);
-  }
-  const atlasH = Math.max(1, y + shelf + GUTTER);
-  if (atlasH > maxSize) throw new Error(`The parts do not fit in a ${maxSize}px texture. Use a smaller sprite.`);
-  const out = new Uint8ClampedArray(atlasW * atlasH * 4);
-  const coverage = /* @__PURE__ */ new Map();
-  for (const [l, r] of rects) coverage.set(l, new Uint8Array(r.w * r.h));
-  const put = (l, i, rgba, o) => {
-    const r = rects.get(l);
-    const sx = i % w;
-    const sy = (i - sx) / w;
-    const lx = sx - r.srcX;
-    const ly = sy - r.srcY;
-    const d = ((r.y + ly) * atlasW + (r.x + lx)) * 4;
-    out[d] = rgba[o];
-    out[d + 1] = rgba[o + 1];
-    out[d + 2] = rgba[o + 2];
-    out[d + 3] = rgba[o + 3];
-    coverage.get(l)[ly * r.w + lx] = 1;
-  };
-  for (let i = 0; i < labels.length; i++) {
-    const l = labels[i];
-    if (l && rects.has(l)) put(l, i, data, i * 4);
-  }
-  for (const [l, f] of fills) {
-    if (!rects.has(l)) continue;
-    for (let k3 = 0; k3 < f.indices.length; k3++) put(l, f.indices[k3], f.rgba, k3 * 4);
-  }
-  return { width: atlasW, height: atlasH, data: out, rects, coverage };
-}
-
-// src/sprite/fill.ts
-function convexHull(points) {
-  if (points.length < 3) return points.slice();
-  const pts = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const lower = [];
-  for (const p of pts) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
-    lower.push(p);
-  }
-  const upper = [];
-  for (let i = pts.length - 1; i >= 0; i--) {
-    const p = pts[i];
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
-    upper.push(p);
-  }
-  upper.pop();
-  lower.pop();
-  return lower.concat(upper);
-}
-function insideHull(hull, x, y) {
-  if (hull.length < 3) return false;
-  for (let i = 0; i < hull.length; i++) {
-    const a = hull[i];
-    const b = hull[(i + 1) % hull.length];
-    if ((b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) < -1e-9) return false;
-  }
-  return true;
-}
-function computeFills(img, labels, order, opts) {
-  const { width: w, height: h2, data } = img;
-  const out = /* @__PURE__ */ new Map();
-  const rank = /* @__PURE__ */ new Map();
-  order.forEach((l, i) => rank.set(l, i));
-  const pixels = /* @__PURE__ */ new Map();
-  for (let i = 0; i < labels.length; i++) {
-    const l = labels[i];
-    if (!l) continue;
-    let list = pixels.get(l);
-    if (!list) pixels.set(l, list = []);
-    list.push(i);
-  }
-  const reach = Math.max(1, Math.round(opts.radius));
-  const dist = new Int32Array(w * h2);
-  const src = new Int32Array(w * h2);
-  for (const label of order) {
-    if (opts.enabled && !opts.enabled.has(label)) continue;
-    const own = pixels.get(label);
-    if (!own || !own.length) continue;
-    const myRank = rank.get(label);
-    const rows = /* @__PURE__ */ new Map();
-    for (const i of own) {
-      const x = i % w;
-      const y = (i - x) / w;
-      const r = rows.get(y);
-      if (!r) rows.set(y, [x, x]);
-      else {
-        if (x < r[0]) r[0] = x;
-        if (x > r[1]) r[1] = x;
-      }
-    }
-    const corners = [];
-    for (const [y, [x0, x1]] of rows) corners.push([x0, y], [x1 + 1, y], [x0, y + 1], [x1 + 1, y + 1]);
-    const hull = convexHull(corners);
-    const hints = opts.hints;
-    const hinted = (j) => !!hints && hints[j] === label;
-    const covered = (j) => {
-      const l = labels[j];
-      if (!l || l === label) return false;
-      const r = rank.get(l);
-      if (r === void 0 || r <= myRank) return false;
-      return data[j * 4 + 3] === 255;
-    };
-    const eligible = (j, step) => {
-      if (!covered(j)) return false;
-      if (hinted(j)) return true;
-      if (step > reach) return false;
-      const x = j % w;
-      return insideHull(hull, x + 0.5, (j - x) / w + 0.5);
-    };
-    dist.fill(-1);
-    let queue = [];
-    for (const i of own) {
-      dist[i] = 0;
-      src[i] = i;
-      queue.push(i);
-    }
-    const filled = [];
-    const maxSteps = hints ? w + h2 : reach;
-    for (let step = 1; step <= maxSteps && queue.length; step++) {
-      const next = [];
-      for (const i of queue) {
-        const x = i % w;
-        const y = (i - x) / w;
-        for (let dy = -1; dy <= 1; dy++) {
-          const ny = y + dy;
-          if (ny < 0 || ny >= h2) continue;
-          for (let dx = -1; dx <= 1; dx++) {
-            if (!dx && !dy) continue;
-            const nx = x + dx;
-            if (nx < 0 || nx >= w) continue;
-            const j = ny * w + nx;
-            if (dist[j] !== -1 || !eligible(j, step)) continue;
-            dist[j] = step;
-            src[j] = src[i];
-            next.push(j);
-            filled.push(j);
-          }
-        }
-      }
-      queue = next;
-    }
-    if (!filled.length) continue;
-    filled.sort((a, b) => a - b);
-    const indices = Int32Array.from(filled);
-    const rgba = new Uint8Array(indices.length * 4);
-    for (let k3 = 0; k3 < indices.length; k3++) {
-      const s = src[indices[k3]] * 4;
-      rgba[k3 * 4] = data[s];
-      rgba[k3 * 4 + 1] = data[s + 1];
-      rgba[k3 * 4 + 2] = data[s + 2];
-      rgba[k3 * 4 + 3] = data[s + 3];
-    }
-    out.set(label, { indices, rgba });
-  }
-  return out;
-}
-
 // src/rig/build.ts
 function paddingPx(rig) {
   return Math.round(rig.render.padding * Math.max(rig.image.width, rig.image.height));
@@ -2252,209 +3585,67 @@ function buildRig(rig, image, labels = rigLabels(rig)) {
   return { rig, labels, fills, atlas, geometries, pad, outWidth: rig.image.width + pad * 2, outHeight: rig.image.height + pad * 2, ms: t1 - t0 };
 }
 
-// src/core/easing.ts
-var c1 = 1.70158;
-var c2 = c1 * 1.525;
-var c3 = c1 + 1;
-var EASINGS = {
-  linear: (t) => t,
-  step: (t) => t >= 1 ? 1 : 0,
-  inQuad: (t) => t * t,
-  outQuad: (t) => 1 - (1 - t) * (1 - t),
-  inOutQuad: (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2,
-  inCubic: (t) => t * t * t,
-  outCubic: (t) => 1 - Math.pow(1 - t, 3),
-  inOutCubic: (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
-  inQuart: (t) => t * t * t * t,
-  outQuart: (t) => 1 - Math.pow(1 - t, 4),
-  inExpo: (t) => t <= 0 ? 0 : Math.pow(2, 10 * t - 10),
-  outExpo: (t) => t >= 1 ? 1 : 1 - Math.pow(2, -10 * t),
-  inBack: (t) => c3 * t * t * t - c1 * t * t,
-  outBack: (t) => 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2),
-  inOutBack: (t) => t < 0.5 ? Math.pow(2 * t, 2) * ((c2 + 1) * 2 * t - c2) / 2 : (Math.pow(2 * t - 2, 2) * ((c2 + 1) * (t * 2 - 2) + c2) + 2) / 2,
-  outElastic: (t) => t <= 0 ? 0 : t >= 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI / 3)) + 1,
-  inOutSine: (t) => -(Math.cos(Math.PI * t) - 1) / 2
-};
-var EASE_NAMES = Object.keys(EASINGS);
-function bezier(x1, y1, x2, y2) {
-  const cx = 3 * x1;
-  const bx = 3 * (x2 - x1) - cx;
-  const ax = 1 - cx - bx;
-  const cy = 3 * y1;
-  const by = 3 * (y2 - y1) - cy;
-  const ay = 1 - cy - by;
-  const sx = (t) => ((ax * t + bx) * t + cx) * t;
-  const sy = (t) => ((ay * t + by) * t + cy) * t;
-  const dx = (t) => (3 * ax * t + 2 * bx) * t + cx;
-  return (x) => {
-    if (x <= 0) return 0;
-    if (x >= 1) return 1;
-    let t = x;
-    for (let i = 0; i < 6; i++) {
-      const err = sx(t) - x;
-      if (Math.abs(err) < 1e-6) return sy(t);
-      const d = dx(t);
-      if (Math.abs(d) < 1e-6) break;
-      t -= err / d;
-    }
-    let lo = 0;
-    let hi = 1;
-    t = x;
-    for (let i = 0; i < 30; i++) {
-      const v = sx(t);
-      if (Math.abs(v - x) < 1e-6) break;
-      if (v < x) lo = t;
-      else hi = t;
-      t = (lo + hi) / 2;
-    }
-    return sy(t);
-  };
-}
-var bezierCache = /* @__PURE__ */ new Map();
-function easeFn(e) {
-  if (!e) return EASINGS.linear;
-  if (typeof e === "string") return EASINGS[e] ?? EASINGS.linear;
-  const key = e.join(",");
-  let fn = bezierCache.get(key);
-  if (!fn) {
-    fn = bezier(e[0], e[1], e[2], e[3]);
-    bezierCache.set(key, fn);
+// src/rig/validate.ts
+function validateRig(rig, o = {}) {
+  const issues = [];
+  const err = (code, message, extra = {}) => issues.push({ level: "error", code, message, ...extra });
+  const warn = (code, message, extra = {}) => issues.push({ level: "warning", code, message, ...extra });
+  const info = (code, message, extra = {}) => issues.push({ level: "info", code, message, ...extra });
+  try {
+    orderBones(rig.bones);
+  } catch (e) {
+    err("hierarchy", e.message);
+    return issues;
   }
-  return fn;
-}
-
-// src/core/clip.ts
-var STRIDE = 5;
-function segmentIndex(keys, t) {
-  let lo = 0;
-  let hi = keys.length - 1;
-  while (lo < hi) {
-    const mid = lo + hi + 1 >> 1;
-    if (keys[mid].t <= t) lo = mid;
-    else hi = mid - 1;
+  const boneIds = new Set(rig.bones.map((b) => b.id));
+  const roles = /* @__PURE__ */ new Map();
+  for (const b of rig.bones) if (b.role) roles.set(b.role, [...roles.get(b.role) ?? [], b.name]);
+  for (const [role, names] of roles) if (names.length > 1) warn("role-duplicate", `Role "${role}" is on ${names.join(", ")}; only the first one is animated.`);
+  const labels = /* @__PURE__ */ new Set();
+  for (const p of rig.parts) {
+    if (!boneIds.has(p.bone)) err("part-bone", `Part "${p.name}" follows a bone that no longer exists.`, { partId: p.id });
+    if (p.label < 1 || p.label > 254) err("part-label", `Part "${p.name}" has an invalid label.`, { partId: p.id });
+    if (labels.has(p.label)) err("part-label-dup", `Two parts share label ${p.label}.`, { partId: p.id });
+    labels.add(p.label);
   }
-  return lo;
-}
-function sampleKeys(keys, t, fallback = 0) {
-  if (!keys || keys.length === 0) return fallback;
-  const first = keys[0];
-  if (keys.length === 1 || t <= first.t) return first.v;
-  const last = keys[keys.length - 1];
-  if (t >= last.t) return last.v;
-  const i = segmentIndex(keys, t);
-  const a = keys[i];
-  const b = keys[i + 1];
-  const span = b.t - a.t;
-  const k3 = span > 0 ? easeFn(a.e)((t - a.t) / span) : 1;
-  return a.v + (b.v - a.v) * k3;
-}
-function sampleKeys2(keys, t, fx = 0, fy = 0) {
-  if (!keys || keys.length === 0) return [fx, fy];
-  const first = keys[0];
-  if (keys.length === 1 || t <= first.t) return [first.x, first.y];
-  const last = keys[keys.length - 1];
-  if (t >= last.t) return [last.x, last.y];
-  const i = segmentIndex(keys, t);
-  const a = keys[i];
-  const b = keys[i + 1];
-  const span = b.t - a.t;
-  const k3 = span > 0 ? easeFn(a.e)((t - a.t) / span) : 1;
-  return [a.x + (b.x - a.x) * k3, a.y + (b.y - a.y) * k3];
-}
-var TimeWarp = class {
-  segs = [];
-  duration;
-  constructor(clip, timing = {}, actionJitter = 1) {
-    const ph = clip.phases ?? {};
-    const ranges = [];
-    const add = (r, m) => {
-      if (!r) return;
-      const lo = Math.max(0, Math.min(r[0], r[1]));
-      const hi = Math.min(clip.duration, Math.max(r[0], r[1]));
-      if (hi > lo) ranges.push({ r: [lo, hi], m: Math.max(0.05, m ?? 1) });
-    };
-    add(ph.anticipation, timing.anticipation);
-    add(ph.action, (timing.action ?? 1) * actionJitter);
-    add(ph.recovery, timing.recovery);
-    const cuts = /* @__PURE__ */ new Set([0, clip.duration]);
-    for (const { r } of ranges) {
-      cuts.add(r[0]);
-      cuts.add(r[1]);
+  let map = o.labels ?? null;
+  if (!map) {
+    try {
+      map = rig.ownership ? rigLabels(rig) : null;
+    } catch (e) {
+      err("ownership", e.message);
     }
-    const points = [...cuts].sort((a, b) => a - b);
-    let p = 0;
-    for (let i = 0; i < points.length - 1; i++) {
-      const c0 = points[i];
-      const c12 = points[i + 1];
-      const mid = (c0 + c12) / 2;
-      const m = ranges.find(({ r }) => mid > r[0] && mid < r[1])?.m ?? 1;
-      const len = (c12 - c0) * m;
-      this.segs.push({ c0, c1: c12, p0: p, p1: p + len });
-      p += len;
-    }
-    this.duration = p;
   }
-  toClip(p) {
-    if (!this.segs.length) return 0;
-    if (p <= 0) return 0;
-    for (const s of this.segs) {
-      if (p <= s.p1) return s.p1 > s.p0 ? s.c0 + (p - s.p0) / (s.p1 - s.p0) * (s.c1 - s.c0) : s.c1;
-    }
-    return this.segs[this.segs.length - 1].c1;
-  }
-  toPlay(c) {
-    if (!this.segs.length || c <= 0) return 0;
-    for (const s of this.segs) {
-      if (c <= s.c1) return s.c1 > s.c0 ? s.p0 + (c - s.c0) / (s.c1 - s.c0) * (s.p1 - s.p0) : s.p1;
-    }
-    return this.duration;
-  }
-};
-function evaluateClip(clip, t, ctx, out, mask, angles) {
-  const sk = ctx.skeleton;
-  const n = sk.size;
-  out.fill(0);
-  mask.fill(0);
-  const H = ctx.bodyHeight;
-  const sign = ctx.mirror ? -1 : 1;
-  const mirrorAngle = (a) => ctx.mirror ? 180 - a : a;
-  for (let i = 0; i < n; i++) {
-    const bone2 = sk.bones[i];
-    const role = bone2.role;
-    const track2 = role ? clip.tracks[role] : void 0;
-    const s = sk.setup[i];
-    const o = i * STRIDE;
-    const p = sk.parent[i];
-    const inherits = p >= 0 && bone2.inheritRotation !== false;
-    const parentAngle = inherits ? angles[p] : 0;
-    if (track2 && sk.roles.get(role) === i) {
-      const k3 = ctx.intensity * (ctx.amp ? ctx.amp(role) : 1);
-      mask[i] = 1;
-      if (track2.translate) {
-        const [x, y] = sampleKeys2(track2.translate, t);
-        out[o + 1] = x * H * k3 * sign;
-        out[o + 2] = y * H * k3;
+  if (!map) warn("ownership-missing", 'No pixels are assigned to bones yet: use "Assign pixels".');
+  else {
+    const counts = labelCounts(map);
+    for (const p of rig.parts) if (!counts.get(p.label)) warn("part-empty", `Part "${p.name}" has no pixels.`, { partId: p.id });
+    if (o.image) {
+      let lost = 0;
+      for (let i = 0; i < map.length; i++) {
+        if (o.image.data[i * 4 + 3] > 0 && !labels.has(map[i])) lost++;
       }
-      if (track2.scale) {
-        const [x, y] = sampleKeys2(track2.scale, t, 1, 1);
-        out[o + 3] = (x - 1) * k3;
-        out[o + 4] = (y - 1) * k3;
-      }
-      if (track2.rotate && track2.rotate.length) {
-        if (track2.space === "world") {
-          const parentSetup = inherits ? sk.setupAngle[p] : 0;
-          const first = mirrorAngle(track2.rotate[0].v) - parentSetup - s.rot;
-          const turns = wrapDeg(first) - first;
-          const d = mirrorAngle(sampleKeys(track2.rotate, t)) - parentAngle - s.rot + turns;
-          out[o] = d * k3;
-        } else {
-          out[o] = sampleKeys(track2.rotate, t) * k3 * sign;
-        }
+      const visible = countOpaque(o.image);
+      if (lost > 0) {
+        const pct = lost / Math.max(1, visible) * 100;
+        const text = `${lost} visible pixel${lost === 1 ? "" : "s"} (${pct < 0.1 ? "<0.1" : pct.toFixed(1)}%) belong to no part and would disappear. Paint them onto a bone.`;
+        if (pct > 0.5) err("pixels-lost", text);
+        else warn("pixels-lost", text);
       }
     }
-    angles[i] = parentAngle + s.rot + out[o];
   }
+  if (!rig.bones.some((b) => b.parent === null && b.role === "root")) info("no-root", 'No bone has the "root" role; whole-body motion (lunges, recoil) will not play.');
+  const max = Math.max(rig.image.width, rig.image.height);
+  if (max > 2048) warn("large", `The sprite is ${max}px; animating many tokens this size is slow. 1024px or less is recommended.`);
+  if (rig.metrics.bodyHeight < 8) warn("tiny", "The character is under 8px tall; motion will be very coarse.");
+  for (const clip2 of o.clips ?? []) {
+    const need = clip2.requires ?? [];
+    const missing = need.filter((r) => !roles.has(r));
+    if (missing.length) info("clip-roles", `"${clip2.name}" uses ${missing.join(", ")}, which this rig does not have; those parts stay still.`);
+  }
+  return issues;
 }
+var isUsable = (issues) => !issues.some((i) => i.level === "error");
 
 // src/core/player.ts
 function nearestTurn(a, ref) {
@@ -2482,34 +3673,35 @@ var AnimationPlayer = class {
   setOptions(opts) {
     this.opts = { ...this.opts, ...opts };
   }
-  play(clip, o = {}) {
-    const track2 = o.track ?? (clip.loop ? 0 : 1);
+  play(clip2, o = {}) {
+    const track2 = o.track ?? (clip2.loop ? 0 : 1);
     const prev = this.tracks[track2] ?? null;
     const variation = o.variation ?? 0;
-    const seed = o.seed ?? hashString(clip.id) + this.playCount++;
+    const seed = o.seed ?? hashString(clip2.id) + this.playCount++;
     const rand = rng(seed);
     const amp = /* @__PURE__ */ new Map();
     const roleScale = this.opts.roleScale ?? {};
-    for (const role of Object.keys(clip.tracks)) {
+    for (const role of Object.keys(clip2.tracks)) {
       const jitter = variation > 0 ? 1 + (rand() * 2 - 1) * 0.12 * variation : 1;
       amp.set(role, (roleScale[role] ?? 1) * jitter);
     }
     const actionJitter = variation > 0 ? 1 + (rand() * 2 - 1) * 0.1 * variation : 1;
     const n = this.skeleton.size;
     const state = {
-      clip,
-      warp: new TimeWarp(clip, o.timing, actionJitter),
+      clip: clip2,
+      warp: new TimeWarp(clip2, o.timing, actionJitter),
       time: 0,
-      loop: o.loop ?? clip.loop,
+      loop: o.loop ?? clip2.loop,
       speed: o.speed ?? 1,
       intensity: o.intensity ?? 1,
       amp,
-      mixIn: o.mixIn ?? clip.defaults?.mixIn ?? (track2 === 0 ? 0.25 : 0.08),
-      mixOut: o.mixOut ?? clip.defaults?.mixOut ?? 0.2,
+      mixIn: o.mixIn ?? clip2.defaults?.mixIn ?? (track2 === 0 ? 0.25 : 0.08),
+      mixOut: o.mixOut ?? clip2.defaults?.mixOut ?? 0.2,
       startWeight: 0,
       snapshot: null,
       elapsed: 0,
       ended: false,
+      fresh: true,
       endElapsed: 0,
       weight: 0,
       delta: new Float64Array(n * STRIDE),
@@ -2557,6 +3749,7 @@ var AnimationPlayer = class {
     s.time = Math.max(0, Math.min(time, s.warp.duration));
     s.elapsed = Math.max(s.elapsed, s.mixIn);
     s.ended = false;
+    s.fresh = false;
   }
   /** Advance time, fire events, and write the blended pose into the skeleton. */
   update(dt) {
@@ -2575,7 +3768,8 @@ var AnimationPlayer = class {
       return;
     }
     const dur = s.warp.duration;
-    const before = s.warp.toClip(s.time);
+    const before = s.fresh ? -1e-9 : s.warp.toClip(s.time);
+    s.fresh = false;
     let next = s.time + dt * s.speed;
     if (s.loop && dur > 0) {
       if (next >= dur) {
@@ -2685,16 +3879,16 @@ var AnimationPlayer = class {
         const bone2 = sk.roles.get(role);
         if (bone2 === void 0) continue;
         let key;
-        for (const k4 of track2.layer) if (k4.t <= t + 1e-9) key = k4;
+        for (const k5 of track2.layer) if (k5.t <= t + 1e-9) key = k5;
         const target = key?.behind ?? key?.front;
         const ti = target ? sk.roles.get(target) : void 0;
         if (key && ti !== void 0) ov.set(bone2, key.behind ? { behind: ti } : { front: ti });
         else ov.delete(bone2);
       }
     }
-    let k3 = "";
-    for (const [b, o] of ov) k3 += `${b}:${o.behind ?? ""}/${o.front ?? ""};`;
-    this.layerKey = k3;
+    let k4 = "";
+    for (const [b, o] of ov) k4 += `${b}:${o.behind ?? ""}/${o.front ?? ""};`;
+    this.layerKey = k4;
   }
 };
 
@@ -2861,68 +4055,6 @@ async function loadImageData(src) {
   return { image, data: ctx.getImageData(0, 0, canvas2.width, canvas2.height) };
 }
 
-// src/rig/validate.ts
-function validateRig(rig, o = {}) {
-  const issues = [];
-  const err = (code, message, extra = {}) => issues.push({ level: "error", code, message, ...extra });
-  const warn = (code, message, extra = {}) => issues.push({ level: "warning", code, message, ...extra });
-  const info = (code, message, extra = {}) => issues.push({ level: "info", code, message, ...extra });
-  try {
-    orderBones(rig.bones);
-  } catch (e) {
-    err("hierarchy", e.message);
-    return issues;
-  }
-  const boneIds = new Set(rig.bones.map((b) => b.id));
-  const roles = /* @__PURE__ */ new Map();
-  for (const b of rig.bones) if (b.role) roles.set(b.role, [...roles.get(b.role) ?? [], b.name]);
-  for (const [role, names] of roles) if (names.length > 1) warn("role-duplicate", `Role "${role}" is on ${names.join(", ")}; only the first one is animated.`);
-  const labels = /* @__PURE__ */ new Set();
-  for (const p of rig.parts) {
-    if (!boneIds.has(p.bone)) err("part-bone", `Part "${p.name}" follows a bone that no longer exists.`, { partId: p.id });
-    if (p.label < 1 || p.label > 254) err("part-label", `Part "${p.name}" has an invalid label.`, { partId: p.id });
-    if (labels.has(p.label)) err("part-label-dup", `Two parts share label ${p.label}.`, { partId: p.id });
-    labels.add(p.label);
-  }
-  let map = o.labels ?? null;
-  if (!map) {
-    try {
-      map = rig.ownership ? rigLabels(rig) : null;
-    } catch (e) {
-      err("ownership", e.message);
-    }
-  }
-  if (!map) warn("ownership-missing", 'No pixels are assigned to bones yet: use "Assign pixels".');
-  else {
-    const counts = labelCounts(map);
-    for (const p of rig.parts) if (!counts.get(p.label)) warn("part-empty", `Part "${p.name}" has no pixels.`, { partId: p.id });
-    if (o.image) {
-      let lost = 0;
-      for (let i = 0; i < map.length; i++) {
-        if (o.image.data[i * 4 + 3] > 0 && !labels.has(map[i])) lost++;
-      }
-      const visible = countOpaque(o.image);
-      if (lost > 0) {
-        const pct = lost / Math.max(1, visible) * 100;
-        const text = `${lost} visible pixel${lost === 1 ? "" : "s"} (${pct < 0.1 ? "<0.1" : pct.toFixed(1)}%) belong to no part and would disappear. Paint them onto a bone.`;
-        if (pct > 0.5) err("pixels-lost", text);
-        else warn("pixels-lost", text);
-      }
-    }
-  }
-  if (!rig.bones.some((b) => b.parent === null && b.role === "root")) info("no-root", 'No bone has the "root" role; whole-body motion (lunges, recoil) will not play.');
-  const max = Math.max(rig.image.width, rig.image.height);
-  if (max > 2048) warn("large", `The sprite is ${max}px; animating many tokens this size is slow. 1024px or less is recommended.`);
-  if (rig.metrics.bodyHeight < 8) warn("tiny", "The character is under 8px tall; motion will be very coarse.");
-  for (const clip of o.clips ?? []) {
-    const need = clip.requires ?? [];
-    const missing = need.filter((r) => !roles.has(r));
-    if (missing.length) info("clip-roles", `"${clip.name}" uses ${missing.join(", ")}, which this rig does not have; those parts stay still.`);
-  }
-  return issues;
-}
-var isUsable = (issues) => !issues.some((i) => i.level === "error");
-
 // src/foundry/storage.ts
 var cache = /* @__PURE__ */ new Map();
 var FilePickerImpl = () => foundry.applications?.apps?.FilePicker?.implementation ?? globalThis.FilePicker;
@@ -3042,9 +4174,9 @@ function download(filename, text) {
 function worldClips() {
   return setting("clips") ?? {};
 }
-async function saveClip(clip) {
+async function saveClip(clip2) {
   if (!canSave()) throw new Error("Only the GM can save animations.");
-  await game.settings.set(MODULE_ID, "clips", { ...worldClips(), [clip.id]: clip });
+  await game.settings.set(MODULE_ID, "clips", { ...worldClips(), [clip2.id]: clip2 });
 }
 async function deleteClip(id) {
   const next = { ...worldClips() };
@@ -3084,6 +4216,8 @@ var TokenAnimator = class {
   texture = null;
   idleAcc = 0;
   destroyed = false;
+  /** The clip holding a defeated pose on the base track, or null. */
+  defeatedBy = null;
   mode;
   constructor(token, asset, profile, mode) {
     this.token = token;
@@ -3095,9 +4229,55 @@ var TokenAnimator = class {
   }
   startIdle() {
     const id = this.profile.idle ?? "idle-breathing";
-    const clip = id ? getClip(id) : void 0;
-    if (clip) this.view.player.play(clip, { track: 0, mixIn: 0, intensity: this.profile.intensity ?? 1 });
+    const clip2 = id ? getClip(id) : void 0;
+    if (clip2) this.view.player.play(clip2, { track: 0, mixIn: 0, intensity: this.profile.intensity ?? 1 });
     this.view.player.update(Math.random() * 2);
+  }
+  /** What the token is showing: its base loop (or held pose) and the action on top, as clip ids. */
+  current() {
+    const p = this.view.player;
+    return { base: p.trackInfo(0)?.clip.id ?? null, action: p.trackInfo(1)?.clip.id ?? null };
+  }
+  /** The rig's template (humanoid, quadruped, …), for template-specific mappings. */
+  get template() {
+    return this.view.build.rig.template;
+  }
+  /** The clip exists and this rig has every role it needs. */
+  canPlay(clipId) {
+    const clip2 = getClip(clipId);
+    return !!clip2 && missingRoles(clip2, this.view.skeleton).length === 0;
+  }
+  /** Play the first clip of the list this rig can play. Returns its id, or null. */
+  playFirst(clipIds, o = {}) {
+    for (const id of clipIds) if (this.canPlay(id) && this.play(id, o)) return id;
+    return null;
+  }
+  /**
+   * Hold a defeated pose (the clip plays once on the base track and stays on its last frame), or
+   * get back up into the idle. `instant` skips straight to the held pose (token drawn while down).
+   */
+  setDefeated(clipIds, instant = false) {
+    const p = this.view.player;
+    if (!clipIds) {
+      if (!this.defeatedBy) return;
+      this.defeatedBy = null;
+      const id2 = this.profile.idle ?? "idle-breathing";
+      const clip2 = id2 ? getClip(id2) : void 0;
+      if (clip2) p.play(clip2, { track: 0, mixIn: 0.5, intensity: this.profile.intensity ?? 1 });
+      else p.stop(0, 0.5);
+      this.idleAcc = Infinity;
+      return;
+    }
+    const id = clipIds.find((c) => this.canPlay(c));
+    if (!id || this.defeatedBy === id) return;
+    this.defeatedBy = id;
+    p.stop(1, 0.1);
+    p.play(getClip(id), { track: 0, loop: false, mixIn: instant ? 0 : 0.1, intensity: this.profile.intensity ?? 1 });
+    if (instant) {
+      p.seek(0, p.trackInfo(0)?.duration ?? 0);
+      p.stop(1, 0);
+    }
+    this.idleAcc = Infinity;
   }
   /** Give the token our texture. Returns false (and leaves the token alone) when it cannot. */
   attach() {
@@ -3123,10 +4303,10 @@ var TokenAnimator = class {
     if (this.texture && mesh && !mesh.destroyed && mesh.texture !== this.texture) mesh.texture = this.texture;
   }
   play(clipId, o = {}) {
-    const clip = getClip(clipId);
-    if (!clip) return false;
-    this.view.player.play(clip, {
-      track: clip.loop ? 0 : 1,
+    const clip2 = getClip(clipId);
+    if (!clip2) return false;
+    this.view.player.play(clip2, {
+      track: clip2.loop ? 0 : 1,
       intensity: (o.intensity ?? 1) * (this.profile.intensity ?? 1),
       ...o,
       onEvent: (name, c) => {
@@ -3177,6 +4357,11 @@ var TokenAnimators = class {
   pending = /* @__PURE__ */ new Map();
   ticking = false;
   warned = /* @__PURE__ */ new Set();
+  /** Called for every new animator (e.g. to put a token at 0 HP straight into its defeated pose). */
+  created = [];
+  all() {
+    return this.animators.values();
+  }
   get count() {
     return this.animators.size;
   }
@@ -3226,6 +4411,13 @@ var TokenAnimators = class {
         }
         this.animators.set(token.id, a);
         this.ensureTicker();
+        for (const fn of this.created) {
+          try {
+            fn(a);
+          } catch (e) {
+            console.warn(`${MODULE_ID} |`, e);
+          }
+        }
       } catch (e) {
         const msg = e.message;
         if (!this.warned.has(msg)) {
@@ -3279,6 +4471,598 @@ function registerTokenHooks() {
   Hooks.on("updateSetting", (s) => {
     if (s?.key === `${MODULE_ID}.rigs`) tokenAnimators.refreshAll();
   });
+}
+
+// src/foundry/combat.ts
+var ITEM_FLAG = "clip";
+function mappingTable() {
+  return parseTable(setting("mapping"));
+}
+async function setMappingTable(table) {
+  await game.settings.set(MODULE_ID, "mapping", parseTable(table));
+}
+var actorOverrides = (actor) => actor?.getFlag?.(MODULE_ID, "profile")?.map ?? null;
+function itemClipOf(item) {
+  const c = item?.getFlag?.(MODULE_ID, ITEM_FLAG);
+  return typeof c === "string" && c ? c : null;
+}
+function fuaPlaying() {
+  const mod = game.modules?.get?.("fu-animations");
+  if (!mod?.active) return false;
+  try {
+    return game.settings.get("fu-animations", "enabled") !== false;
+  } catch {
+    return true;
+  }
+}
+function fuaSpec(item, ctx) {
+  const api = game.modules?.get?.("fu-animations")?.active ? game.modules.get("fu-animations")?.api : null;
+  if (!api?.resolve || !item) return null;
+  try {
+    return api.resolve(item, ctx)?.spec ?? null;
+  } catch {
+    return null;
+  }
+}
+function fromUuid(uuid) {
+  const fn = foundry.utils?.fromUuidSync ?? globalThis.fromUuidSync;
+  return fn ? fn(uuid) : null;
+}
+function tokenFromUuid(uuid) {
+  if (!uuid || !canvas?.ready) return null;
+  let doc = null;
+  try {
+    doc = fromUuid(uuid);
+  } catch {
+    return null;
+  }
+  if (doc?.documentName === "Token") return canvas.tokens.get(doc.id) ?? null;
+  const actor = doc?.documentName === "Actor" ? doc : doc?.actor;
+  if (actor?.isToken && actor.token) return canvas.tokens.get(actor.token.id) ?? null;
+  return actor?.getActiveTokens?.(false, false)?.[0] ?? null;
+}
+function sourceToken(msg, item) {
+  const sp = msg.speaker ?? {};
+  if (sp.token && (!sp.scene || sp.scene === canvas.scene?.id)) {
+    const t = canvas.tokens.get(sp.token);
+    if (t) return t;
+  }
+  const actor = item?.actor ?? (sp.actor ? game.actors.get(sp.actor) : null);
+  return actor?.getActiveTokens?.(false, false)?.[0] ?? null;
+}
+function planFromMessage(msg) {
+  if (!canvas?.ready) return null;
+  const check = msg.getFlag?.("projectfu", "Check") ?? null;
+  const itemUuid = check?.itemUuid ?? msg.getFlag?.("projectfu", "Item");
+  const action = check?.additionalData?.ruleDefinedAction ?? null;
+  let item = null;
+  if (itemUuid) {
+    try {
+      item = fromUuid(itemUuid);
+    } catch {
+      item = null;
+    }
+  }
+  if (!item && !action) return null;
+  const src = sourceToken(msg, item);
+  const listed = Array.isArray(check?.additionalData?.targets) ? check.additionalData.targets : null;
+  const targets = listed?.length ? listed.map((t) => ({ token: tokenFromUuid(t.uuid), result: t.result === "hit" || t.result === "miss" ? t.result : "none" })).filter((t) => t.token) : [...game.user?.targets ?? []].map((t) => ({ token: t, result: "none" }));
+  const damageType = check?.additionalData?.damage?.type ?? null;
+  const offensive = ["accuracy", "magic"].includes(check?.type ?? "") || !!damageType;
+  const spec = item ? fuaSpec(item, { offensive, hasTargets: targets.length > 0, damageType }) : null;
+  const info = describeItem(item, { actor: item?.actor ?? src?.actor, check, targets: targets.length, fua: spec ? { style: spec.style, projectile: spec.projectile ?? null } : null });
+  if (!src && !targets.length) return null;
+  return {
+    scene: canvas.scene.id,
+    source: src?.id ?? null,
+    info,
+    itemClip: itemClipOf(item),
+    critical: !!check?.critical,
+    fumble: !!check?.fumble,
+    seed: Math.floor(Math.random() * 1e9),
+    targets: targets.filter((t) => t.token !== src).map((t) => ({ id: t.token.id, result: t.result })),
+    fua: spec ? { style: spec.style ?? null, projectile: !!spec.projectile, heavy: spec.impact?.power === "heavy" || info.kind === "heroic" || info.kind === "zeroPower" } : null
+  };
+}
+function guarding(actor) {
+  return !!actor?.statuses?.has?.("guard");
+}
+async function animatorFor(tokenId) {
+  if (!tokenId) return null;
+  const token = canvas.tokens?.get(tokenId);
+  if (!token) return null;
+  if (!tokenAnimators.get(tokenId)) await tokenAnimators.refresh(token);
+  return tokenAnimators.get(tokenId) ?? null;
+}
+function clipsFor(a, info, itemClip) {
+  const res = resolveClip(info, { item: itemClip ? { "*": itemClip } : null, actor: actorOverrides(a?.token?.actor), world: mappingTable(), template: a?.template ?? null });
+  return res.candidates;
+}
+async function react(tokenId, o) {
+  const a = await animatorFor(tokenId);
+  if (!a || a.defeatedBy) return null;
+  const actor = a.token?.actor;
+  const res = resolveReaction({ result: o.result, critical: o.critical, guarding: guarding(actor) }, { actor: actorOverrides(actor), world: mappingTable(), template: a.template });
+  return res.candidates.length ? a.playFirst(res.candidates, { seed: o.seed, variation: 1 }) : null;
+}
+async function runPlan(plan) {
+  if (plan.scene !== canvas?.scene?.id || !tokenAnimators.enabled()) return;
+  const src = await animatorFor(plan.source);
+  const reactionsOn = setting("reactions") !== false;
+  const fua = fuaPlaying() && plan.fua && plan.fua.style !== "none";
+  let played = null;
+  let reacted = false;
+  const reactAll = () => {
+    if (reacted || !reactionsOn) return;
+    reacted = true;
+    plan.targets.forEach((t, i) => {
+      if (t.result === "none") return;
+      setTimeout(() => void react(t.id, { result: t.result, critical: plan.critical, seed: plan.seed + i + 1 }), i * 90);
+    });
+  };
+  if (src && !src.defeatedBy) {
+    const candidates = clipsFor(src, plan.info, plan.itemClip);
+    const firstPlayable = candidates.find((c) => src.canPlay(c)) ?? null;
+    const clip2 = firstPlayable ? getClip(firstPlayable) : null;
+    if (clip2) {
+      const target = fua ? estimateFuaContact(plan.fua.style, { projectile: plan.fua.projectile, heavy: plan.fua.heavy, dash: dashes() }) : null;
+      const timing = target !== null ? timingForContact(clip2, target) : void 0;
+      played = src.playFirst([clip2.id], {
+        seed: plan.seed,
+        variation: 1,
+        timing,
+        intensity: plan.critical ? 1.15 : 1,
+        onEvent: (name) => {
+          if (name === "contact" && !fua) reactAll();
+        }
+      });
+    }
+  }
+  if (!plan.targets.length) return;
+  const own = played ? getClip(played) : null;
+  if (fua || !own || contactTime(own) === null) {
+    const delay = fua ? estimateFuaContact(plan.fua.style, { projectile: plan.fua.projectile, heavy: plan.fua.heavy, dash: dashes() }) : 0.35;
+    setTimeout(reactAll, delay * 1e3);
+  }
+}
+function dashes() {
+  try {
+    return game.settings.get("fu-animations", "moveMelee") !== false;
+  } catch {
+    return true;
+  }
+}
+function defeatClips(a) {
+  return resolveReaction({ result: "hit", defeated: true }, { actor: actorOverrides(a.token?.actor), world: mappingTable(), template: a.template }).candidates;
+}
+function isDown(actor) {
+  const v = Number(val(actor?.system?.resources?.hp));
+  return Number.isFinite(v) && v <= 0;
+}
+function syncDefeat(a, instant = false) {
+  if (setting("defeat") === false) return a.setDefeated(null);
+  const down = isDown(a.token?.actor);
+  if (down && !a.defeatedBy) a.setDefeated(defeatClips(a), instant);
+  else if (!down && a.defeatedBy) a.setDefeated(null);
+}
+function onCombatSocket(msg) {
+  if (msg?.type === "action" && msg.plan) {
+    void runPlan(msg.plan);
+    return true;
+  }
+  if (msg?.type === "react") {
+    if (msg.scene === canvas?.scene?.id) for (const id of msg.tokens ?? []) void react(id, { result: msg.result ?? "hit", critical: msg.critical, seed: msg.seed });
+    return true;
+  }
+  return false;
+}
+function registerCombatHooks() {
+  Hooks.on("createChatMessage", (msg) => {
+    if (setting("combat") === false) return;
+    const authorId = msg.author?.id ?? msg.user?.id ?? msg.author;
+    if (authorId !== game.user?.id) return;
+    let plan = null;
+    try {
+      plan = planFromMessage(msg);
+    } catch (e) {
+      console.warn(`${MODULE_ID} | could not read the chat card`, e);
+    }
+    if (!plan) return;
+    game.socket?.emit(SOCKET, { type: "action", plan });
+    void runPlan(plan);
+  });
+  Hooks.on("updateActor", (actor, changes) => {
+    if (foundry.utils.getProperty?.(changes, "system.resources.hp") === void 0) return;
+    for (const a of tokenAnimators.all()) if (a.token?.actor === actor || a.token?.actor?.id === actor?.id) syncDefeat(a);
+  });
+  tokenAnimators.created.push((a) => syncDefeat(a, true));
+}
+
+// src/ui/dom.ts
+function h(tag, props = null, ...children) {
+  const el = document.createElement(tag);
+  if (props) {
+    for (const [k4, v] of Object.entries(props)) {
+      if (v === void 0 || v === null || v === false) continue;
+      if (k4 === "class") el.className = String(v);
+      else if (k4 === "style") el.setAttribute("style", String(v));
+      else if (k4 === "dataset") Object.assign(el.dataset, v);
+      else if (k4.startsWith("on") && typeof v === "function") el.addEventListener(k4.slice(2).toLowerCase(), v);
+      else if (k4 === "html") el.innerHTML = String(v);
+      else if (k4 in el && typeof v !== "string") el[k4] = v;
+      else el.setAttribute(k4, v === true ? "" : String(v));
+    }
+  }
+  append(el, children);
+  return el;
+}
+function append(el, children) {
+  for (const c of children) {
+    if (c === null || c === void 0 || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+}
+function clear(el) {
+  while (el.firstChild) el.firstChild.remove();
+}
+var PATHS = {
+  bone: "M4 12 12 4M3 11a2 2 0 1 0 2 2M11 3a2 2 0 1 0 2 2",
+  add: "M8 3v10M3 8h10",
+  trash: "M3 4h10M6 4V2.5h4V4M4.5 4l.7 9h5.6l.7-9",
+  undo: "M5 3 2 6l3 3M2 6h7a4 4 0 0 1 0 8H6",
+  redo: "M11 3l3 3-3 3M14 6H7a4 4 0 0 0 0 8h3",
+  play: "M5 3v10l8-5z",
+  pause: "M5 3v10M11 3v10",
+  stop: "M4 4h8v8H4z",
+  loop: "M3 7a4 4 0 0 1 4-4h5l-2-2M13 9a4 4 0 0 1-4 4H4l2 2",
+  save: "M3 3h8l2 2v8H3zM5 3v3h5V3M5 13V9h6v4",
+  open: "M2 4h5l1 2h6v7H2z",
+  import: "M8 2v8M5 7l3 3 3-3M3 12v2h10v-2",
+  export: "M8 10V2M5 5l3-3 3 3M3 12v2h10v-2",
+  image: "M2 3h12v10H2zM2 11l4-4 3 3 2-2 3 3M10.5 6.5h.01",
+  fit: "M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4",
+  eye: "M1 8s3-5 7-5 7 5 7 5-3 5-7 5-7-5-7-5zM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4",
+  brush: "M10 2l4 4-6 6-4-4zM4 8l-2 6 6-2",
+  bucket: "M3 7l5-5 5 5-5 5zM13 9s1.5 2 1.5 3a1.5 1.5 0 0 1-3 0c0-1 1.5-3 1.5-3",
+  wand: "M2 14 10 6M9 2v2M13 6h-2M12 3l-1.5 1.5M6 3l1 1",
+  reset: "M3 8a5 5 0 1 0 1.5-3.5M3 2v3h3",
+  dice: "M3 3h10v10H3zM6 6h.01M10 10h.01M8 8h.01",
+  user: "M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6M2 14c0-3 3-4 6-4s6 1 6 4",
+  up: "M8 13V3M4 7l4-4 4 4",
+  down: "M8 3v10M4 9l4 4 4-4",
+  warn: "M8 2 1 14h14zM8 6v4M8 12h.01"
+};
+function icon(name, title) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("class", "fusa-icon");
+  svg.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p.setAttribute("d", PATHS[name] ?? PATHS.bone);
+  svg.append(p);
+  if (title) {
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    t.textContent = title;
+    svg.append(t);
+  }
+  return svg;
+}
+function ibtn(name, title, onClick, extra = {}) {
+  return h("button", { type: "button", title, "aria-label": title, onclick: onClick, ...extra, class: `fusa-ibtn ${extra.class ?? ""}`.trim() }, icon(name));
+}
+function slider(label, value, min, max, step, onInput, fmt = (v) => String(v)) {
+  const out = h("output", null, fmt(value));
+  const input = h("input", { type: "range", min: String(min), max: String(max), step: String(step), value: String(value) });
+  input.addEventListener("input", () => {
+    const v = Number(input.value);
+    out.textContent = fmt(v);
+    onInput(v);
+  });
+  return h("label", { class: "fusa-slider" }, h("span", null, label), input, out);
+}
+
+// src/ui/mapping-view.ts
+var MappingView = class {
+  root;
+  host;
+  table;
+  filter = "";
+  saving = Promise.resolve();
+  constructor(root, host) {
+    this.root = root;
+    this.host = host;
+    this.table = parseTable(host.load());
+    root.classList.add("fusa-studio", "fusa-mapping");
+    this.render();
+  }
+  /** Reload from the host (the setting changed elsewhere). */
+  refresh() {
+    this.table = parseTable(this.host.load());
+    this.render();
+  }
+  clipName(id) {
+    if (id === NONE) return "No animation";
+    return this.host.clips().find((c) => c.id === id)?.name ?? `${id} (missing)`;
+  }
+  fallback(kind, key) {
+    return this.host.inherited?.(kind, key) ?? { prefix: "Built-in", clip: kind === "rules" ? DEFAULT_RULES[key] : void 0 };
+  }
+  select(current, inherited, onChange) {
+    const sel = h("select", { class: "fusa-map-select", onchange: () => onChange(sel.value) });
+    sel.append(h("option", { value: "" }, inherited.clip ? `${inherited.prefix}: ${this.clipName(inherited.clip)}` : "Automatic"));
+    sel.append(h("option", { value: NONE }, "No animation"));
+    const byCat = /* @__PURE__ */ new Map();
+    for (const c of this.host.clips()) {
+      const list = byCat.get(c.category) ?? [];
+      list.push(c);
+      byCat.set(c.category, list);
+    }
+    for (const [cat, list] of byCat) {
+      const g = h("optgroup", { label: CATEGORY_LABELS[cat] ?? cat });
+      for (const c of list.sort((a, b) => a.name.localeCompare(b.name))) g.append(h("option", { value: c.id }, c.name));
+      sel.append(g);
+    }
+    sel.value = current ?? "";
+    if (current && sel.value !== current) {
+      sel.append(h("option", { value: current }, `${current} (missing)`));
+      sel.value = current;
+    }
+    return sel;
+  }
+  set(kind, key, clip2) {
+    if (clip2) this.table[kind][key] = clip2;
+    else delete this.table[kind][key];
+    this.persist();
+    this.render();
+  }
+  persist() {
+    const snapshot = parseTable(this.table);
+    this.saving = this.saving.then(() => this.host.save(snapshot)).catch((e) => console.warn("fu-sprite-animator | could not save the mapping", e));
+  }
+  /** Resolves when every change so far is saved (tests). */
+  flush() {
+    return this.saving;
+  }
+  render() {
+    const root = this.root;
+    clear(root);
+    const changed = Object.keys(this.table.rules).length + Object.keys(this.table.abilities).length;
+    const search = h("input", {
+      type: "search",
+      class: "fusa-map-search",
+      placeholder: "Filter\u2026",
+      value: this.filter,
+      oninput: () => {
+        this.filter = search.value;
+        this.renderBody(body);
+      }
+    });
+    const reset = h(
+      "button",
+      {
+        class: "fusa-btn subtle small",
+        disabled: changed === 0,
+        onclick: async () => {
+          if (!await this.host.confirm("Reset ability animations", "Go back to the built-in choices for every action and remove the per-ability entries?")) return;
+          this.table = { rules: {}, abilities: {} };
+          this.persist();
+          this.render();
+        }
+      },
+      "Reset all"
+    );
+    const body = h("div", { class: "fusa-map-body" });
+    root.append(
+      h(
+        "div",
+        { class: "fusa-map-head" },
+        h("p", { class: "fusa-map-hint" }, this.host.hint ?? "Which animation a character plays for each kind of action. Per character: the actor sheet\u2019s header menu \u2192 Sprite animation choices. Per item: the item sheet\u2019s header menu \u2192 Sprite animation. A character whose rig cannot play a choice (for example a wolf and a bow shot) plays the closest one it can."),
+        h("div", { class: "fusa-map-tools" }, search, reset)
+      ),
+      body
+    );
+    this.renderBody(body);
+  }
+  renderBody(body) {
+    clear(body);
+    const f = this.filter.trim().toLowerCase();
+    const match = (...s) => !f || s.some((x) => x.toLowerCase().includes(f));
+    for (const g of RULE_GROUPS) {
+      const rows = g.keys.filter(([k4, label]) => match(k4, label, this.clipName(this.table.rules[k4] ?? this.fallback("rules", k4).clip ?? "")));
+      if (!rows.length) continue;
+      const sec2 = h("section", { class: "fusa-map-group" }, h("h3", null, g.title));
+      for (const [key, label] of rows) {
+        const own = this.table.rules[key];
+        sec2.append(h("label", { class: `fusa-map-row${own ? " changed" : ""}`, dataset: { key } }, h("span", null, label), this.select(own, this.fallback("rules", key), (v) => this.set("rules", key, v))));
+      }
+      body.append(sec2);
+    }
+    const known = new Set(RULE_GROUPS.flatMap((g) => g.keys.map(([k4]) => k4)));
+    const extra = Object.keys(this.table.rules).filter((k4) => !known.has(k4) && match(k4));
+    if (extra.length) {
+      const sec2 = h("section", { class: "fusa-map-group" }, h("h3", null, "Other rules"));
+      for (const key of extra.sort()) sec2.append(this.entryRow("rules", key, key));
+      body.append(sec2);
+    }
+    const abilities = Object.keys(this.table.abilities).filter((k4) => match(k4, this.host.abilityLabel?.(k4) ?? ""));
+    const sec = h("section", { class: "fusa-map-group" }, h("h3", null, "Single abilities"));
+    if (!abilities.length) sec.append(h("p", { class: "fusa-map-hint" }, "None yet. To give one ability its own animation in the whole world, open the item\u2019s sheet \u2192 header menu \u2192 Sprite animation \u2192 \u201Cevery character\u201D."));
+    for (const key of abilities.sort()) sec.append(this.entryRow("abilities", key, this.host.abilityLabel?.(key) ?? key));
+    body.append(sec);
+  }
+  entryRow(kind, key, label) {
+    return h(
+      "div",
+      { class: "fusa-map-row changed", dataset: { key } },
+      h("span", { title: key }, label),
+      this.select(this.table[kind][key], this.fallback(kind, key), (v) => this.set(kind, key, v)),
+      h("button", { class: "fusa-btn subtle small", title: "Remove", onclick: () => this.set(kind, key, "") }, "\u2715")
+    );
+  }
+};
+
+// src/foundry/mapping-app.ts
+var esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+async function confirmDialog(title, text) {
+  return !!await foundry.applications.api.DialogV2.confirm({ window: { title }, content: `<p>${esc(text)}</p>`, rejectClose: false });
+}
+function abilityLabel(key) {
+  const items = [...game.items ?? []];
+  const hit = items.find((i) => abilityKeyOf(i) === key);
+  if (hit) return `${hit.name} (${hit.type})`;
+  const m = /^([a-zA-Z]+):(.+)$/.exec(key);
+  return m ? `${m[2]} (${m[1]})` : null;
+}
+var { ApplicationV2 } = foundry.applications.api;
+var MappingApp = class _MappingApp extends ApplicationV2 {
+  static DEFAULT_OPTIONS = {
+    id: "fusa-mapping",
+    classes: ["fusa-app"],
+    window: { title: "Sprite animations for abilities", icon: "fa-solid fa-person-running", resizable: true },
+    position: { width: 620, height: 720 }
+  };
+  view = null;
+  static open() {
+    const existing = foundry.applications.instances.get("fusa-mapping");
+    const app = existing ?? new _MappingApp();
+    void app.render({ force: true });
+    return app;
+  }
+  async _renderHTML() {
+    const div = document.createElement("div");
+    div.style.cssText = "position:absolute;inset:0;";
+    return div;
+  }
+  _replaceHTML(result, content) {
+    if (this.view) return;
+    content.style.position = "relative";
+    content.replaceChildren(result);
+    this.view = new MappingView(result, {
+      load: () => mappingTable(),
+      save: (t) => setMappingTable(t),
+      clips: () => listClips().filter((c) => !c.loop || c.category !== "idle"),
+      confirm: confirmDialog,
+      abilityLabel
+    });
+  }
+  _onClose(options) {
+    this.view = null;
+    super._onClose?.(options);
+  }
+};
+var ActorMappingApp = class _ActorMappingApp extends ApplicationV2 {
+  static DEFAULT_OPTIONS = {
+    classes: ["fusa-app"],
+    window: { title: "Sprite animation choices", icon: "fa-solid fa-person-running", resizable: true },
+    position: { width: 620, height: 720 }
+  };
+  view = null;
+  actor = null;
+  constructor(options) {
+    super(options);
+  }
+  static open(actor) {
+    const profile = actor?.getFlag?.(MODULE_ID, "profile");
+    if (!profile?.rig) {
+      ui.notifications.warn(`${actor?.name ?? "This actor"} has no sprite rig yet: open the Studio and use \u201CUse this rig for an actor\u201D first.`);
+      return null;
+    }
+    const id = `fusa-actor-mapping-${actor.id}`;
+    const existing = foundry.applications.instances.get(id);
+    const app = existing ?? new _ActorMappingApp({ id, window: { title: `Sprite animation choices: ${actor.name}`, icon: "fa-solid fa-person-running", resizable: true } });
+    app.actor = actor;
+    void app.render({ force: true });
+    return app;
+  }
+  async _renderHTML() {
+    const div = document.createElement("div");
+    div.style.cssText = "position:absolute;inset:0;";
+    return div;
+  }
+  _replaceHTML(result, content) {
+    if (this.view) return;
+    content.style.position = "relative";
+    content.replaceChildren(result);
+    const actor = this.actor;
+    const known = new Set(Object.keys(DEFAULT_RULES));
+    const isRule = (k4) => known.has(k4.split("@")[0]);
+    this.view = new MappingView(result, {
+      hint: `Choices for ${actor.name} only. \u201CWorld\u201D follows Settings \u2192 Sprite animations for abilities. A choice the rig cannot play falls back to the closest animation it can.`,
+      load: () => {
+        const map = actor.getFlag(MODULE_ID, "profile")?.map ?? {};
+        const t = { rules: {}, abilities: {} };
+        for (const [k4, v] of Object.entries(map)) t[isRule(k4) ? "rules" : "abilities"][k4] = v;
+        return t;
+      },
+      save: async (t) => {
+        const profile = actor.getFlag(MODULE_ID, "profile");
+        if (!profile) return;
+        const map = { ...t.rules, ...t.abilities };
+        await actor.setFlag(MODULE_ID, "profile", { ...profile, map });
+      },
+      inherited: (kind, key) => {
+        const w = mappingTable();
+        return { prefix: "World", clip: kind === "rules" ? w.rules[key] ?? DEFAULT_RULES[key] : w.abilities[key] };
+      },
+      clips: () => listClips().filter((c) => !c.loop || c.category !== "idle"),
+      confirm: confirmDialog,
+      abilityLabel
+    });
+  }
+  _onClose(options) {
+    this.view = null;
+    super._onClose?.(options);
+  }
+};
+function refreshMappingApp() {
+  foundry.applications.instances.get("fusa-mapping")?.view?.refresh();
+}
+async function itemDialog(item) {
+  const info = describeItem(item, { actor: item.actor });
+  const world = mappingTable();
+  const key = abilityKeyOf(item);
+  const auto = resolveClip(info, { world: { ...world, abilities: {} } });
+  const autoName = auto.clip ? getClip(auto.clip)?.name ?? auto.clip : "No animation";
+  const own = item.getFlag(MODULE_ID, ITEM_FLAG);
+  const worldOwn = key ? world.abilities[key] : void 0;
+  const current = own ?? worldOwn ?? "";
+  const opts = [`<option value="">Automatic: ${esc(autoName)}${auto.key ? ` (${esc(ruleLabel(auto.key))})` : ""}</option>`, `<option value="${NONE}" ${current === NONE ? "selected" : ""}>No animation</option>`];
+  const groups = /* @__PURE__ */ new Map();
+  for (const c of listClips()) {
+    if (c.loop && c.category === "idle") continue;
+    const list = groups.get(c.category) ?? [];
+    list.push(`<option value="${esc(c.id)}" ${current === c.id ? "selected" : ""}>${esc(c.name)}</option>`);
+    groups.set(c.category, list);
+  }
+  for (const [cat, list] of groups) opts.push(`<optgroup label="${esc(cat)}">${list.join("")}</optgroup>`);
+  const content = `<div class="fusa-assign">
+		<p>Which animation characters with a sprite rig play when <b>${esc(item.name)}</b> is used.</p>
+		<div class="form-group"><label>Animation</label><select name="clip">${opts.join("")}</select></div>
+		<div class="form-group"><label>Applies to</label><select name="scope">
+			<option value="item" ${worldOwn && !own ? "" : "selected"}>This item only</option>
+			<option value="world" ${worldOwn && !own ? "selected" : ""} ${key ? "" : "disabled"}>Every \u201C${esc(item.name)}\u201D in the world</option>
+		</select></div>
+		<p class="hint">Automatic follows the world list (Settings \u2192 Sprite animations for abilities). A rig that cannot play the choice plays the closest animation it can.</p>
+	</div>`;
+  const result = await foundry.applications.api.DialogV2.prompt({
+    window: { title: `Sprite animation: ${item.name}` },
+    content,
+    ok: { label: "Save", callback: (_e, button) => new FormData(button.form) },
+    rejectClose: false
+  });
+  if (!result) return;
+  const form = result;
+  const clip2 = String(form.get("clip") ?? "");
+  const scope = String(form.get("scope") ?? "item");
+  if (scope === "world" && key) {
+    const t = mappingTable();
+    if (clip2) t.abilities[key] = clip2;
+    else delete t.abilities[key];
+    await setMappingTable(t);
+    if (own) await item.unsetFlag(MODULE_ID, ITEM_FLAG);
+  } else if (clip2) await item.setFlag(MODULE_ID, ITEM_FLAG, clip2);
+  else if (own) await item.unsetFlag(MODULE_ID, ITEM_FLAG);
+  ui.notifications.info(`${item.name}: ${clip2 ? clip2 === NONE ? "no animation" : getClip(clip2)?.name ?? clip2 : "automatic animation"}.`);
 }
 
 // src/foundry/selftest.ts
@@ -3376,17 +5160,17 @@ function report(out) {
 // src/presets/edit.ts
 var CHANNELS = ["rotate", "translate", "scale", "layer"];
 var EPS = 1e-3;
-function cloneClip(clip, id, name) {
-  const c = JSON.parse(JSON.stringify(clip));
+function cloneClip(clip2, id, name) {
+  const c = JSON.parse(JSON.stringify(clip2));
   c.id = id;
   c.name = name;
   return c;
 }
-function track(clip, role) {
-  return clip.tracks[role] ??= {};
+function track(clip2, role) {
+  return clip2.tracks[role] ??= {};
 }
 function upsert(keys, key) {
-  const i = keys.findIndex((k3) => Math.abs(k3.t - key.t) < EPS);
+  const i = keys.findIndex((k4) => Math.abs(k4.t - key.t) < EPS);
   if (i >= 0) {
     keys[i] = { ...keys[i], ...key };
     return i;
@@ -3395,89 +5179,89 @@ function upsert(keys, key) {
   keys.sort((a, b) => a.t - b.t);
   return keys.indexOf(key);
 }
-var clampT = (clip, t) => Math.max(0, Math.min(clip.duration, Math.round(t * 1e3) / 1e3));
-function setRotateKey(clip, role, t, v, ease) {
-  const tr = track(clip, role);
+var clampT = (clip2, t) => Math.max(0, Math.min(clip2.duration, Math.round(t * 1e3) / 1e3));
+function setRotateKey(clip2, role, t, v, ease) {
+  const tr = track(clip2, role);
   tr.rotate ??= [];
-  const k3 = { t: clampT(clip, t), v: Math.round(v * 100) / 100 };
-  if (ease) k3.e = ease;
-  return upsert(tr.rotate, k3);
+  const k4 = { t: clampT(clip2, t), v: Math.round(v * 100) / 100 };
+  if (ease) k4.e = ease;
+  return upsert(tr.rotate, k4);
 }
-function setVectorKey(clip, role, channel, t, x, y, ease) {
-  const tr = track(clip, role);
+function setVectorKey(clip2, role, channel, t, x, y, ease) {
+  const tr = track(clip2, role);
   const keys = tr[channel] ??= [];
-  const k3 = { t: clampT(clip, t), x: Math.round(x * 1e4) / 1e4, y: Math.round(y * 1e4) / 1e4 };
-  if (ease) k3.e = ease;
-  return upsert(keys, k3);
+  const k4 = { t: clampT(clip2, t), x: Math.round(x * 1e4) / 1e4, y: Math.round(y * 1e4) / 1e4 };
+  if (ease) k4.e = ease;
+  return upsert(keys, k4);
 }
-function setLayerKey(clip, role, t, behind, front) {
-  const tr = track(clip, role);
+function setLayerKey(clip2, role, t, behind, front) {
+  const tr = track(clip2, role);
   tr.layer ??= [];
-  const k3 = { t: clampT(clip, t) };
-  if (behind) k3.behind = behind;
-  else if (front) k3.front = front;
-  const i = tr.layer.findIndex((x) => Math.abs(x.t - k3.t) < EPS);
+  const k4 = { t: clampT(clip2, t) };
+  if (behind) k4.behind = behind;
+  else if (front) k4.front = front;
+  const i = tr.layer.findIndex((x) => Math.abs(x.t - k4.t) < EPS);
   if (i >= 0) {
-    tr.layer[i] = k3;
+    tr.layer[i] = k4;
     return i;
   }
-  tr.layer.push(k3);
+  tr.layer.push(k4);
   tr.layer.sort((a, b) => a.t - b.t);
-  return tr.layer.indexOf(k3);
+  return tr.layer.indexOf(k4);
 }
-function keysOf(clip, role, channel) {
-  return clip.tracks[role]?.[channel];
+function keysOf(clip2, role, channel) {
+  return clip2.tracks[role]?.[channel];
 }
-function removeKey(clip, role, channel, index2) {
-  const keys = keysOf(clip, role, channel);
+function removeKey(clip2, role, channel, index2) {
+  const keys = keysOf(clip2, role, channel);
   if (!keys || index2 < 0 || index2 >= keys.length) return;
   keys.splice(index2, 1);
-  const tr = clip.tracks[role];
+  const tr = clip2.tracks[role];
   if (!keys.length) delete tr[channel];
-  if (!tr.rotate && !tr.translate && !tr.scale && !tr.layer) delete clip.tracks[role];
+  if (!tr.rotate && !tr.translate && !tr.scale && !tr.layer) delete clip2.tracks[role];
 }
-function moveKey(clip, role, channel, index2, t) {
-  const keys = keysOf(clip, role, channel);
+function moveKey(clip2, role, channel, index2, t) {
+  const keys = keysOf(clip2, role, channel);
   if (!keys?.[index2]) return index2;
-  const k3 = keys[index2];
-  k3.t = clampT(clip, t);
+  const k4 = keys[index2];
+  k4.t = clampT(clip2, t);
   keys.sort((a, b) => a.t - b.t);
-  return keys.indexOf(k3);
+  return keys.indexOf(k4);
 }
-function setKeyEase(clip, role, channel, index2, ease) {
-  const k3 = keysOf(clip, role, channel)?.[index2];
-  if (!k3) return;
-  if (ease && ease !== "linear") k3.e = ease;
-  else delete k3.e;
+function setKeyEase(clip2, role, channel, index2, ease) {
+  const k4 = keysOf(clip2, role, channel)?.[index2];
+  if (!k4) return;
+  if (ease && ease !== "linear") k4.e = ease;
+  else delete k4.e;
 }
-function addEvent(clip, t, name) {
-  clip.events ??= [];
-  clip.events.push({ t: clampT(clip, t), name: name.trim() || "event" });
-  clip.events.sort((a, b) => a.t - b.t);
+function addEvent(clip2, t, name) {
+  clip2.events ??= [];
+  clip2.events.push({ t: clampT(clip2, t), name: name.trim() || "event" });
+  clip2.events.sort((a, b) => a.t - b.t);
 }
-function removeEvent(clip, index2) {
-  clip.events?.splice(index2, 1);
+function removeEvent(clip2, index2) {
+  clip2.events?.splice(index2, 1);
 }
-function setDuration(clip, duration) {
-  clip.duration = Math.max(0.05, Math.round(duration * 1e3) / 1e3);
-  for (const tr of Object.values(clip.tracks)) for (const ch of CHANNELS) for (const k3 of tr[ch] ?? []) k3.t = Math.min(k3.t, clip.duration);
-  for (const e of clip.events ?? []) e.t = Math.min(e.t, clip.duration);
-  const ph = clip.phases;
+function setDuration(clip2, duration) {
+  clip2.duration = Math.max(0.05, Math.round(duration * 1e3) / 1e3);
+  for (const tr of Object.values(clip2.tracks)) for (const ch of CHANNELS) for (const k4 of tr[ch] ?? []) k4.t = Math.min(k4.t, clip2.duration);
+  for (const e of clip2.events ?? []) e.t = Math.min(e.t, clip2.duration);
+  const ph = clip2.phases;
   if (ph) {
     for (const key of ["anticipation", "action", "recovery"]) {
       const r = ph[key];
-      if (r) ph[key] = [Math.min(r[0], clip.duration), Math.min(r[1], clip.duration)];
+      if (r) ph[key] = [Math.min(r[0], clip2.duration), Math.min(r[1], clip2.duration)];
     }
-    if (ph.impact !== void 0) ph.impact = Math.min(ph.impact, clip.duration);
+    if (ph.impact !== void 0) ph.impact = Math.min(ph.impact, clip2.duration);
   }
 }
-function keyFromPose(clip, role, sk, t, facing, bodyHeight) {
+function keyFromPose(clip2, role, sk, t, facing, bodyHeight) {
   const i = sk.roles.get(role);
   if (i === void 0) return null;
   const mirror = facing === "left";
   const local = sk.local[i];
   const setup = sk.setup[i];
-  const tr = clip.tracks[role];
+  const tr = clip2.tracks[role];
   let rotate;
   if (tr?.space === "world") {
     let angle = 0;
@@ -3786,89 +5570,6 @@ function removeBackground(img, bg, tolerance = 24) {
   return { image: { width: w, height: h2, data: out }, cleared };
 }
 
-// src/ui/dom.ts
-function h(tag, props = null, ...children) {
-  const el = document.createElement(tag);
-  if (props) {
-    for (const [k3, v] of Object.entries(props)) {
-      if (v === void 0 || v === null || v === false) continue;
-      if (k3 === "class") el.className = String(v);
-      else if (k3 === "style") el.setAttribute("style", String(v));
-      else if (k3 === "dataset") Object.assign(el.dataset, v);
-      else if (k3.startsWith("on") && typeof v === "function") el.addEventListener(k3.slice(2).toLowerCase(), v);
-      else if (k3 === "html") el.innerHTML = String(v);
-      else if (k3 in el && typeof v !== "string") el[k3] = v;
-      else el.setAttribute(k3, v === true ? "" : String(v));
-    }
-  }
-  append(el, children);
-  return el;
-}
-function append(el, children) {
-  for (const c of children) {
-    if (c === null || c === void 0 || c === false) continue;
-    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  }
-}
-function clear(el) {
-  while (el.firstChild) el.firstChild.remove();
-}
-var PATHS = {
-  bone: "M4 12 12 4M3 11a2 2 0 1 0 2 2M11 3a2 2 0 1 0 2 2",
-  add: "M8 3v10M3 8h10",
-  trash: "M3 4h10M6 4V2.5h4V4M4.5 4l.7 9h5.6l.7-9",
-  undo: "M5 3 2 6l3 3M2 6h7a4 4 0 0 1 0 8H6",
-  redo: "M11 3l3 3-3 3M14 6H7a4 4 0 0 0 0 8h3",
-  play: "M5 3v10l8-5z",
-  pause: "M5 3v10M11 3v10",
-  stop: "M4 4h8v8H4z",
-  loop: "M3 7a4 4 0 0 1 4-4h5l-2-2M13 9a4 4 0 0 1-4 4H4l2 2",
-  save: "M3 3h8l2 2v8H3zM5 3v3h5V3M5 13V9h6v4",
-  open: "M2 4h5l1 2h6v7H2z",
-  import: "M8 2v8M5 7l3 3 3-3M3 12v2h10v-2",
-  export: "M8 10V2M5 5l3-3 3 3M3 12v2h10v-2",
-  image: "M2 3h12v10H2zM2 11l4-4 3 3 2-2 3 3M10.5 6.5h.01",
-  fit: "M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4",
-  eye: "M1 8s3-5 7-5 7 5 7 5-3 5-7 5-7-5-7-5zM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4",
-  brush: "M10 2l4 4-6 6-4-4zM4 8l-2 6 6-2",
-  bucket: "M3 7l5-5 5 5-5 5zM13 9s1.5 2 1.5 3a1.5 1.5 0 0 1-3 0c0-1 1.5-3 1.5-3",
-  wand: "M2 14 10 6M9 2v2M13 6h-2M12 3l-1.5 1.5M6 3l1 1",
-  reset: "M3 8a5 5 0 1 0 1.5-3.5M3 2v3h3",
-  dice: "M3 3h10v10H3zM6 6h.01M10 10h.01M8 8h.01",
-  user: "M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6M2 14c0-3 3-4 6-4s6 1 6 4",
-  up: "M8 13V3M4 7l4-4 4 4",
-  down: "M8 3v10M4 9l4 4 4-4",
-  warn: "M8 2 1 14h14zM8 6v4M8 12h.01"
-};
-function icon(name, title) {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("class", "fusa-icon");
-  svg.setAttribute("aria-hidden", "true");
-  const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  p.setAttribute("d", PATHS[name] ?? PATHS.bone);
-  svg.append(p);
-  if (title) {
-    const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    t.textContent = title;
-    svg.append(t);
-  }
-  return svg;
-}
-function ibtn(name, title, onClick, extra = {}) {
-  return h("button", { type: "button", title, "aria-label": title, onclick: onClick, ...extra, class: `fusa-ibtn ${extra.class ?? ""}`.trim() }, icon(name));
-}
-function slider(label, value, min, max, step, onInput, fmt = (v) => String(v)) {
-  const out = h("output", null, fmt(value));
-  const input = h("input", { type: "range", min: String(min), max: String(max), step: String(step), value: String(value) });
-  input.addEventListener("input", () => {
-    const v = Number(input.value);
-    out.textContent = fmt(v);
-    onInput(v);
-  });
-  return h("label", { class: "fusa-slider" }, h("span", null, label), input, out);
-}
-
 // src/ui/timeline.ts
 var PHASE_COLOURS = { anticipation: "rgba(90,169,255,0.28)", action: "rgba(242,196,90,0.38)", recovery: "rgba(122,208,143,0.24)" };
 var RULER = 18;
@@ -3900,10 +5601,10 @@ var Timeline = class {
   get duration() {
     return this.warp?.duration ?? this.clip?.duration ?? 1;
   }
-  set(clip, warp, time, rows = this.rows) {
+  set(clip2, warp, time, rows = this.rows) {
     const rowsKey = JSON.stringify(rows);
-    const changed = clip !== this.clip || warp !== this.warp || Math.abs(time - this.time) > 1e-4 || rowsKey !== JSON.stringify(this.rows);
-    this.clip = clip;
+    const changed = clip2 !== this.clip || warp !== this.warp || Math.abs(time - this.time) > 1e-4 || rowsKey !== JSON.stringify(this.rows);
+    this.clip = clip2;
     this.warp = warp;
     this.time = time;
     this.rows = rows;
@@ -4026,9 +5727,9 @@ var Timeline = class {
       g.stroke();
       if (major) g.fillText(`${t.toFixed(1)}s`, x + 3, 10);
     }
-    for (const ev of this.clip?.events ?? []) {
-      const x = X(this.toPlay(ev.t));
-      g.fillStyle = ev.name === "contact" ? "#ff6b6b" : "#f2c45a";
+    for (const ev2 of this.clip?.events ?? []) {
+      const x = X(this.toPlay(ev2.t));
+      g.fillStyle = ev2.name === "contact" ? "#ff6b6b" : "#f2c45a";
       g.beginPath();
       g.moveTo(x, RULER + 1);
       g.lineTo(x + 4, RULER + 5);
@@ -4385,7 +6086,7 @@ var MODES = [
   { id: "pose", label: "Pose", hint: "Drag any bone to rotate it and see the art move. Shift-drag the root to move the whole body. Nothing here is saved." },
   { id: "animate", label: "Animate", hint: "Pick an animation below. Space plays and pauses. Adjust speed, intensity and phase timing." }
 ];
-var IDLE_IDS = ["idle-breathing", "combat-stance"];
+var IDLE_IDS = ["idle-breathing", "combat-stance", "magical-idle", "heavy-weapon-idle", "walk", "run"];
 var Studio = class {
   root;
   host;
@@ -4564,7 +6265,7 @@ var Studio = class {
     e.classList.toggle("show", !!p && !!this.rig);
     if (!p || !this.rig) return;
     const dots = (v) => "\u25CF".repeat(Math.max(1, Math.round(v * 3))) + "\u25CB".repeat(3 - Math.max(1, Math.round(v * 3)));
-    const groups = Object.entries(p.report.confidence).map(([k3, v]) => h("span", { class: "conf", title: `${Math.round(v * 100)}%` }, `${k3} ${v > 0 ? dots(v) : "\u2014"}`));
+    const groups = Object.entries(p.report.confidence).map(([k4, v]) => h("span", { class: "conf", title: `${Math.round(v * 100)}%` }, `${k4} ${v > 0 ? dots(v) : "\u2014"}`));
     e.append(
       h("div", { class: "fusa-banner-text" }, h("b", null, p.report.method === "landmarks" ? "Automatic rig" : "Rig from proportions"), h("span", null, `Faces ${this.rig.facing}.`), ...groups, ...p.report.notes.map((n) => h("small", null, n))),
       h(
@@ -4674,10 +6375,10 @@ var Studio = class {
         this.commit();
       } else this.renderTree();
     };
-    input.addEventListener("keydown", (ev) => {
-      ev.stopPropagation();
-      if (ev.key === "Enter") done(true);
-      if (ev.key === "Escape") done(false);
+    input.addEventListener("keydown", (ev2) => {
+      ev2.stopPropagation();
+      if (ev2.key === "Enter") done(true);
+      if (ev2.key === "Escape") done(false);
     });
     input.addEventListener("blur", () => done(true));
   }
@@ -4829,7 +6530,7 @@ var Studio = class {
       slider("Wind-up", this.timing.anticipation, 0.5, 2, 0.05, (v) => (this.timing.anticipation = v, this.retime()), (v) => `${v.toFixed(2)}\xD7`),
       slider("Strike", this.timing.action, 0.5, 2, 0.05, (v) => (this.timing.action = v, this.retime()), (v) => `${v.toFixed(2)}\xD7`),
       slider("Recovery", this.timing.recovery, 0.5, 2, 0.05, (v) => (this.timing.recovery = v, this.retime()), (v) => `${v.toFixed(2)}\xD7`),
-      h("label", { class: "fusa-check", title: "Each play varies a little (amplitude and speed), so repeated attacks do not look identical." }, h("input", { type: "checkbox", checked: this.variation > 0, onchange: (ev) => (this.variation = ev.target.checked ? 1 : 0, this.restart()) }), "Vary"),
+      h("label", { class: "fusa-check", title: "Each play varies a little (amplitude and speed), so repeated attacks do not look identical." }, h("input", { type: "checkbox", checked: this.variation > 0, onchange: (ev2) => (this.variation = ev2.target.checked ? 1 : 0, this.restart()) }), "Vary"),
       ibtn("dice", "Another variation", () => (this.seed++, this.variation ||= 1, this.restart()), { disabled }),
       h("span", { class: "grow" }),
       h("button", { type: "button", class: `fusa-btn small ${this.onion ? "on" : ""}`, title: "Show faint frames just before and after the play head", disabled, onclick: () => this.setOnion(!this.onion) }, icon("eye"), "Ghosts"),
@@ -5167,7 +6868,7 @@ var Studio = class {
     }
     if (this.mode === "paint" && d.kind === "hint") {
       const steps = Math.max(1, Math.ceil(Math.hypot(x - d.lastX, y - d.lastY) / Math.max(0.5, this.brushSize / 2)));
-      for (let k3 = 1; k3 <= steps; k3++) this.hintAt(d.lastX + (x - d.lastX) * k3 / steps, d.lastY + (y - d.lastY) * k3 / steps, Number(d.id));
+      for (let k4 = 1; k4 <= steps; k4++) this.hintAt(d.lastX + (x - d.lastX) * k4 / steps, d.lastY + (y - d.lastY) * k4 / steps, Number(d.id));
       d.lastX = x;
       d.lastY = y;
       return;
@@ -5187,10 +6888,10 @@ var Studio = class {
       const keyRole = (bi, channel) => {
         const role = sk.bones[bi].role;
         if (!c || !role) return;
-        const k3 = keyFromPose(c, role, sk, this.actionTime, rig.facing, rig.metrics.bodyHeight);
-        if (!k3) return;
-        if (channel === "rotate") setRotateKey(c, role, this.actionTime, k3.rotate);
-        else setVectorKey(c, role, "translate", this.actionTime, k3.translate[0], k3.translate[1]);
+        const k4 = keyFromPose(c, role, sk, this.actionTime, rig.facing, rig.metrics.bodyHeight);
+        if (!k4) return;
+        if (channel === "rotate") setRotateKey(c, role, this.actionTime, k4.rotate);
+        else setVectorKey(c, role, "translate", this.actionTime, k4.translate[0], k4.translate[1]);
       };
       if (d.kind === "key-rotate") {
         const w = sk.world[i];
@@ -5354,25 +7055,25 @@ var Studio = class {
     v.player.clear();
     v.skeleton.resetPose();
     const base2 = getClip(this.baseId);
-    const clip = getClip(this.clipId);
+    const clip2 = getClip(this.clipId);
     const plain = this.editing;
     if (base2 && !plain) v.player.play(base2, { track: 0, mixIn: 0 });
-    if (clip) {
-      v.player.play(clip, {
+    if (clip2) {
+      v.player.play(clip2, {
         track: 1,
-        mixIn: plain ? 0 : clip.loop ? 0.2 : 0.08,
+        mixIn: plain ? 0 : clip2.loop ? 0.2 : 0.08,
         speed: plain ? 1 : this.speed,
         intensity: plain ? 1 : this.intensity,
         timing: plain ? void 0 : this.timing,
         variation: plain ? 0 : this.variation,
         seed: this.seed,
-        loop: clip.loop,
+        loop: clip2.loop,
         onEvent: (name) => {
           this.lastEvent = `\u25CF ${name}`;
           this.renderStatusSoon();
         }
       });
-      this.warp = new TimeWarp(clip, plain ? {} : this.timing);
+      this.warp = new TimeWarp(clip2, plain ? {} : this.timing);
     }
     this.actionTime = 0;
     if (at > 0) this.seek(at);
@@ -5411,8 +7112,8 @@ var Studio = class {
     this.renderTransport();
   }
   retime() {
-    const clip = getClip(this.clipId);
-    if (clip) this.warp = new TimeWarp(clip, this.timing);
+    const clip2 = getClip(this.clipId);
+    if (clip2) this.warp = new TimeWarp(clip2, this.timing);
     this.restart();
   }
   replayIfPaused() {
@@ -5447,9 +7148,9 @@ var Studio = class {
     this.startClips(on ? this.actionTime : 0);
     this.renderAll();
   }
-  persistClip(clip, now = false) {
+  persistClip(clip2, now = false) {
     clearTimeout(this.clipSaveTimer);
-    const save = () => void this.host.saveClip?.(JSON.parse(JSON.stringify(clip))).catch((err) => this.host.notify(`Could not save the animation: ${err.message}`, "error"));
+    const save = () => void this.host.saveClip?.(JSON.parse(JSON.stringify(clip2))).catch((err) => this.host.notify(`Could not save the animation: ${err.message}`, "error"));
     if (now) save();
     else this.clipSaveTimer = window.setTimeout(save, 1200);
   }
@@ -5483,7 +7184,7 @@ var Studio = class {
       role,
       rows: CHANNELS.map((ch) => ({
         label: CHANNEL_LABEL[ch],
-        keys: (tr?.[ch] ?? []).map((k3) => k3.t),
+        keys: (tr?.[ch] ?? []).map((k4) => k4.t),
         selected: this.selectedKey && this.selectedKey.role === role && this.selectedKey.channel === ch ? this.selectedKey.index : void 0,
         colour: colours[ch]
       }))
@@ -5516,17 +7217,17 @@ var Studio = class {
     const c = this.editClip();
     const b = this.boneOf(this.selected);
     if (!c || !b?.role || !this.view || !this.rig) return;
-    const k3 = keyFromPose(c, b.role, this.view.skeleton, this.actionTime, this.rig.facing, this.rig.metrics.bodyHeight);
-    if (!k3) return;
-    if (channel === "rotate") setRotateKey(c, b.role, this.actionTime, k3.rotate);
-    else setVectorKey(c, b.role, "translate", this.actionTime, k3.translate[0], k3.translate[1]);
+    const k4 = keyFromPose(c, b.role, this.view.skeleton, this.actionTime, this.rig.facing, this.rig.metrics.bodyHeight);
+    if (!k4) return;
+    if (channel === "rotate") setRotateKey(c, b.role, this.actionTime, k4.rotate);
+    else setVectorKey(c, b.role, "translate", this.actionTime, k4.translate[0], k4.translate[1]);
     this.clipChanged();
   }
   deleteSelectedKey() {
     const c = this.editClip();
-    const k3 = this.selectedKey;
-    if (!c || !k3) return;
-    removeKey(c, k3.role, k3.channel, k3.index);
+    const k4 = this.selectedKey;
+    if (!c || !k4) return;
+    removeKey(c, k4.role, k4.channel, k4.index);
     this.selectedKey = null;
     this.clipChanged();
   }
@@ -5538,7 +7239,7 @@ var Studio = class {
     }
     const name = h("input", { type: "text", value: c.name });
     name.addEventListener("change", () => (c.name = name.value.trim() || c.name, this.clipChanged()));
-    const cats = h("select", null, ...Object.keys(CATEGORY_LABELS).map((k3) => h("option", { value: k3, selected: k3 === c.category }, CATEGORY_LABELS[k3])));
+    const cats = h("select", null, ...Object.keys(CATEGORY_LABELS).map((k4) => h("option", { value: k4, selected: k4 === c.category }, CATEGORY_LABELS[k4])));
     cats.addEventListener("change", () => (c.category = cats.value, this.clipChanged()));
     const dur = h("input", { type: "number", min: "0.05", max: "10", step: "0.05", value: String(c.duration) });
     dur.addEventListener("change", () => (setDuration(c, Number(dur.value) || c.duration), this.clipChanged()));
@@ -5554,7 +7255,7 @@ var Studio = class {
       const tr = c.tracks[role];
       const space = h("div", { class: "fusa-seg" }, ...["offset", "world"].map((sp) => h("button", { type: "button", class: (tr?.space ?? "offset") === sp ? "active" : "", disabled: !!tr?.rotate?.length, title: sp === "offset" ? "Turn relative to the rig\u2019s own pose" : "Point at an on-screen direction, whatever the rig\u2019s pose (strikes). Only before the first turn key.", onclick: () => ((c.tracks[role] ??= {}).space = sp, this.clipChanged()) }, sp === "offset" ? "Relative" : "Screen angle")));
       const roles = [...new Set(rig.bones.map((x) => x.role).filter((r) => !!r && r !== role))];
-      const curLayer = [...tr?.layer ?? []].filter((k3) => k3.t <= this.actionTime + 1e-6).pop();
+      const curLayer = [...tr?.layer ?? []].filter((k4) => k4.t <= this.actionTime + 1e-6).pop();
       const layer = h("select", null, h("option", { value: "" }, "normal order"), ...roles.map((r) => h("option", { value: `behind:${r}`, selected: curLayer?.behind === r }, `behind ${r}`)), ...roles.map((r) => h("option", { value: `front:${r}`, selected: curLayer?.front === r }, `in front of ${r}`)));
       layer.addEventListener("change", () => {
         const [kind, target] = layer.value.split(":");
@@ -5588,7 +7289,7 @@ var Studio = class {
     const evName = h("input", { type: "text", placeholder: "contact", value: "" });
     e.append(
       h("div", { class: "fusa-insp-title" }, "Events"),
-      ...(c.events ?? []).map((ev, i) => h("div", { class: "fusa-event-row" }, h("span", null, `${ev.t.toFixed(2)}s`), h("b", null, ev.name), ibtn("trash", "Remove", () => (removeEvent(c, i), this.clipChanged())))),
+      ...(c.events ?? []).map((ev2, i) => h("div", { class: "fusa-event-row" }, h("span", null, `${ev2.t.toFixed(2)}s`), h("b", null, ev2.name), ibtn("trash", "Remove", () => (removeEvent(c, i), this.clipChanged())))),
       h("div", { class: "fusa-row" }, evName, h("button", { type: "button", class: "fusa-btn small", onclick: () => (addEvent(c, this.actionTime, evName.value || "contact"), this.clipChanged()) }, "Add at play head"))
     );
     const ph = c.phases ??= {};
@@ -5661,14 +7362,14 @@ var Studio = class {
       for (const g of this.ghosts) g.destroy();
       this.ghosts = [new RigView(this.asset), new RigView(this.asset)];
     }
-    const clip = getClip(this.clipId);
+    const clip2 = getClip(this.clipId);
     const base2 = getClip(this.baseId);
     const offsets = [-0.1, 0.1];
     this.ghosts.forEach((g, i) => {
       g.player.clear();
       g.skeleton.resetPose();
       if (base2 && !this.editing) g.player.play(base2, { track: 0, mixIn: 0 });
-      if (clip) g.player.play(clip, { track: 1, mixIn: 0, intensity: this.editing ? 1 : this.intensity, timing: this.editing ? void 0 : this.timing, variation: 0 });
+      if (clip2) g.player.play(clip2, { track: 1, mixIn: 0, intensity: this.editing ? 1 : this.intensity, timing: this.editing ? void 0 : this.timing, variation: 0 });
       g.player.seek(1, Math.max(0, this.actionTime + offsets[i]));
       g.player.update(0);
       g.render(this.viewport.app.renderer);
@@ -5882,16 +7583,16 @@ var Studio = class {
 };
 
 // src/foundry/studio-app.ts
-var esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-async function confirmDialog(title, text) {
-  return !!await foundry.applications.api.DialogV2.confirm({ window: { title }, content: `<p>${esc(text)}</p>`, rejectClose: false });
+var esc2 = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+async function confirmDialog2(title, text) {
+  return !!await foundry.applications.api.DialogV2.confirm({ window: { title }, content: `<p>${esc2(text)}</p>`, rejectClose: false });
 }
 async function assignRigToActor(rig, preselect) {
   const actors = [...game.actors ?? []].filter((a) => a.isOwner).sort((a, b) => a.name.localeCompare(b.name));
   if (!actors.length) return ui.notifications.warn("There are no actors to give this animation to.");
-  const options = actors.map((a) => `<option value="${a.id}" ${a.id === preselect ? "selected" : ""}>${esc(a.name)}</option>`).join("");
+  const options = actors.map((a) => `<option value="${a.id}" ${a.id === preselect ? "selected" : ""}>${esc2(a.name)}</option>`).join("");
   const content = `<div class="fusa-assign">
-		<p>Tokens of this actor will show <b>${esc(rig.name)}</b> animated: idling on the map and playing attacks, spells and reactions.</p>
+		<p>Tokens of this actor will show <b>${esc2(rig.name)}</b> animated: idling on the map and playing attacks, spells and reactions.</p>
 		<div class="form-group"><label>Actor</label><select name="actor">${options}</select></div>
 		<div class="form-group"><label>Idle</label><select name="idle"><option value="idle-breathing">Breathing</option><option value="combat-stance">Combat stance</option><option value="">None (still until an action)</option></select></div>
 		<div class="form-group"><label><input type="checkbox" name="token" checked> Use this sprite as the actor's token image</label></div>
@@ -5926,15 +7627,15 @@ function makeHost(app) {
     pickTextFile: (accept) => pickTextFile(accept),
     storeImage: (name, data) => storeImage(name, data),
     notify: (m, t = "info") => ui.notifications?.[t === "warn" ? "warn" : t === "error" ? "error" : "info"](m),
-    confirm: confirmDialog,
+    confirm: confirmDialog2,
     assignToActor: (rig) => assignRigToActor(rig, app.actorId ?? void 0),
     listClips: async () => Object.values(worldClips()),
-    saveClip: (clip) => saveClip(clip),
+    saveClip: (clip2) => saveClip(clip2),
     deleteClip: (id) => deleteClip(id)
   };
 }
-var { ApplicationV2 } = foundry.applications.api;
-var StudioApp = class _StudioApp extends ApplicationV2 {
+var { ApplicationV2: ApplicationV22 } = foundry.applications.api;
+var StudioApp = class _StudioApp extends ApplicationV22 {
   static DEFAULT_OPTIONS = {
     id: "fusa-studio",
     classes: ["fusa-app"],
@@ -5978,7 +7679,7 @@ var StudioApp = class _StudioApp extends ApplicationV2 {
     this.studio = new Studio(result, makeHost(this));
   }
   async close(options) {
-    if (this.studio?.hasUnsavedChanges && !await confirmDialog("Close the Studio?", "This rig has unsaved changes. Close anyway?")) return this;
+    if (this.studio?.hasUnsavedChanges && !await confirmDialog2("Close the Studio?", "This rig has unsaved changes. Close anyway?")) return this;
     return super.close(options);
   }
   _onClose(options) {
@@ -6024,7 +7725,7 @@ function onSocket(msg) {
 function createApi() {
   return {
     /** API version (semver of this object's shape). */
-    version: "0.1.0",
+    version: "0.2.0",
     /** Play a clip on every token of an actor/token on this scene. Resolves to how many tokens played it locally. */
     async play(target, clipId, options = {}) {
       if (!getClip(clipId)) throw new Error(`Unknown animation "${clipId}". See SpriteAnimator.clips().`);
@@ -6040,6 +7741,14 @@ function createApi() {
     stop(target) {
       for (const t of tokensFor(target)) tokenAnimators.get(t.id)?.stop();
     },
+    /** What the first animated token of this actor/token shows: base loop (or defeated pose) and current action. */
+    current(target) {
+      for (const t of tokensFor(target)) {
+        const a = tokenAnimators.get(t.id);
+        if (a) return a.current();
+      }
+      return null;
+    },
     /** Is this token/actor animated right now? */
     isAnimated(target) {
       return tokensFor(target).some((t) => !!tokenAnimators.get(t.id));
@@ -6053,8 +7762,8 @@ function createApi() {
       return c ? JSON.parse(JSON.stringify(c)) : void 0;
     },
     /** Add (or override) a clip at runtime, e.g. from another module. Same format as ANIMATION_FORMAT.md. */
-    registerClip(clip) {
-      registerClip(clip);
+    registerClip(clip2) {
+      registerClip(clip2);
     },
     getProfile(actor) {
       return actor.mesh ? profileOf(actor) : actor.getFlag?.(MODULE_ID, "profile") ?? null;
@@ -6072,6 +7781,66 @@ function createApi() {
     },
     async assign(rigId, actorId) {
       await assignRigToActor(await loadRig(rigId), actorId);
+    },
+    /**
+     * Which clip an item would play for a character (no animation is played). `actor` defaults to
+     * the item's owner; its rig's template and its own choices are taken into account.
+     */
+    resolveClip(item, o = {}) {
+      const it = item;
+      const actor = o.actor ?? it?.actor;
+      const token = actor ? tokensFor(actor)[0] : null;
+      const template = token ? tokenAnimators.get(token.id)?.template ?? null : null;
+      const own = it?.getFlag?.(MODULE_ID, ITEM_FLAG);
+      return resolveClip(describeItem(item, { actor, targets: o.targets }), {
+        item: typeof own === "string" && own ? { "*": own } : null,
+        actor: actor?.getFlag?.(MODULE_ID, "profile")?.map ?? null,
+        world: mappingTable(),
+        template
+      });
+    },
+    /** How Project FU data is read for an item (for debugging a mapping). */
+    describe(item, o = {}) {
+      return describeItem(item, { actor: o.actor ?? item?.actor });
+    },
+    /** The world's ability → animation table. */
+    mapping: {
+      get: () => mappingTable(),
+      set: (table) => setMappingTable(table),
+      defaults: () => ({ ...DEFAULT_RULES }),
+      open: () => MappingApp.open()
+    },
+    /**
+     * Play an item's animation as if its card was posted: the user's tokens act, the targets react.
+     * targets: tokens/actors with an optional result ('hit' | 'miss').
+     */
+    async playAction(item, o = {}) {
+      const it = item;
+      const src = tokensFor(o.source ?? it?.actor)[0] ?? null;
+      const targets = (o.targets ?? []).flatMap((t) => tokensFor(t.target).slice(0, 1).map((tok) => ({ id: tok.id, result: t.result ?? "hit" })));
+      const own = it?.getFlag?.(MODULE_ID, ITEM_FLAG);
+      const plan = {
+        scene: canvas.scene?.id,
+        source: src?.id ?? null,
+        info: describeItem(item, { actor: it?.actor ?? src?.actor, targets: targets.length }),
+        itemClip: typeof own === "string" && own ? own : null,
+        critical: !!o.critical,
+        fumble: false,
+        seed: Math.floor(Math.random() * 1e9),
+        targets,
+        fua: null
+      };
+      if (o.broadcast !== false) game.socket?.emit(SOCKET, { type: "action", plan });
+      await runPlan(plan);
+    },
+    /** Play a reaction on a token or an actor's tokens: 'hit' (critical: true for a heavy one) or 'miss'. */
+    async react(target, result = "hit", o = {}) {
+      const ids = tokensFor(target).map((t) => t.id);
+      const seed = Math.floor(Math.random() * 1e9);
+      if (o.broadcast !== false && ids.length) game.socket?.emit(SOCKET, { type: "react", scene: canvas.scene?.id, tokens: ids, result, critical: !!o.critical, seed });
+      let n = 0;
+      for (const id of ids) if (await react(id, { result, critical: o.critical, seed })) n++;
+      return n;
     },
     /** Checks that need a real Foundry: PixiJS version, token texture strategy, rendering, cleanup. */
     selfTest
@@ -6109,6 +7878,37 @@ Hooks.once("init", () => {
     default: "padded",
     onChange: () => tokenAnimators.reset()
   });
+  reg("combat", {
+    name: "Animate actions from chat cards",
+    hint: "When an attack, spell, skill or item card is posted, characters with a sprite animation play the matching animation (see \u201CSprite animations for abilities\u201D).",
+    scope: "world",
+    type: Boolean,
+    default: true
+  });
+  reg("reactions", {
+    name: "Targets react",
+    hint: "Targets flinch when hit, recoil harder on critical hits, block while guarding and dodge when missed.",
+    scope: "world",
+    type: Boolean,
+    default: true
+  });
+  reg("defeat", {
+    name: "Defeated pose at 0 HP",
+    hint: "Characters at 0 HP fall and stay down until they have HP again.",
+    scope: "world",
+    type: Boolean,
+    default: true,
+    onChange: () => tokenAnimators.reset()
+  });
+  game.settings.register(MODULE_ID, "mapping", { scope: "world", config: false, type: Object, default: { rules: {}, abilities: {} }, onChange: () => refreshMappingApp() });
+  game.settings.registerMenu(MODULE_ID, "mapping", {
+    name: "Sprite animations for abilities",
+    label: "Open the list",
+    hint: "Which animation plays for each weapon category, kind of spell, skill, item, basic action and reaction.",
+    icon: "fa-solid fa-list",
+    type: MappingApp,
+    restricted: true
+  });
   game.settings.registerMenu(MODULE_ID, "studio", {
     name: "Sprite Animation Studio",
     label: "Open the Studio",
@@ -6122,15 +7922,16 @@ Hooks.once("init", () => {
   if (mod) mod.api = api;
   if (!("SpriteAnimator" in globalThis)) globalThis.SpriteAnimator = api;
   registerTokenHooks();
+  registerCombatHooks();
 });
 var worldClipIds = /* @__PURE__ */ new Set();
 function syncWorldClips() {
   const clips = worldClips();
   for (const id of worldClipIds) if (!clips[id]) unregisterClip(id);
   worldClipIds.clear();
-  for (const [id, clip] of Object.entries(clips)) {
+  for (const [id, clip2] of Object.entries(clips)) {
     try {
-      registerClip(clip);
+      registerClip(clip2);
       worldClipIds.add(id);
     } catch (e) {
       console.warn(`${MODULE_ID} | world animation "${id}" is invalid`, e);
@@ -6139,7 +7940,9 @@ function syncWorldClips() {
 }
 Hooks.once("ready", () => {
   syncWorldClips();
-  game.socket?.on(SOCKET, onSocket);
+  game.socket?.on(SOCKET, (msg) => {
+    if (!onCombatSocket(msg)) onSocket(msg);
+  });
   Hooks.callAll(`${MODULE_ID}.ready`, game.modules.get(MODULE_ID)?.api);
 });
 Hooks.on("getSceneControlButtons", (controls) => {
@@ -6158,8 +7961,19 @@ Hooks.on("getHeaderControlsDocumentSheetV2", (app, controls) => {
   if (doc?.documentName !== "Actor" || !game.user?.isGM) return;
   app.options.actions ??= {};
   app.options.actions.fusaStudio ??= () => void StudioApp.open({ actor: doc });
+  app.options.actions.fusaActorMap ??= () => void ActorMappingApp.open(doc);
   if (controls.some((c) => c.action === "fusaStudio")) return;
   controls.push({ action: "fusaStudio", icon: "fa-solid fa-person-running", label: "Sprite animation", ownership: "OWNER" });
+  controls.push({ action: "fusaActorMap", icon: "fa-solid fa-list", label: "Sprite animation choices", ownership: "OWNER" });
+});
+var ANIMATABLE_ITEMS = /* @__PURE__ */ new Set(["weapon", "customWeapon", "shield", "basic", "spell", "skill", "heroic", "miscAbility", "classFeature", "optionalFeature", "consumable", "ritual"]);
+Hooks.on("getHeaderControlsDocumentSheetV2", (app, controls) => {
+  const doc = app.document;
+  if (doc?.documentName !== "Item" || !ANIMATABLE_ITEMS.has(doc.type ?? "") || !doc.isOwner) return;
+  app.options.actions ??= {};
+  app.options.actions.fusaItem ??= () => void itemDialog(app.document);
+  if (controls.some((c) => c.action === "fusaItem")) return;
+  controls.push({ action: "fusaItem", icon: "fa-solid fa-person-running", label: "Sprite animation", ownership: "OWNER" });
 });
 for (const hook of ["getActorContextOptions", "getActorDirectoryEntryContext"]) {
   Hooks.on(hook, (_app, options) => {

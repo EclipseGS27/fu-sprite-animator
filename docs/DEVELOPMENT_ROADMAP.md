@@ -39,12 +39,15 @@ self-test passes on the GM's Foundry v13 world (we cannot run Foundry in CI).
 - Export/import clips; Spine 4.2 JSON export for interop with Rigby2D/other tools.
 - **Deliverable**: a usable animation authoring environment.
 
-## Phase 5 — Fabula Ultima integration
-- Actor profiles UI; ability→clip mapping database (world defaults, weapon categories, per-actor,
-  per-item overrides) built on Project FU data and fu-animations' `api.resolve()`.
-- Combat triggers from chat cards: attacker clip, target hit/miss/crit reactions, defeat.
-- Optional `fu-animations.beat` hook (small PR to fu-animations) to land contact frames together.
-- Public API documented and versioned.
+## Phase 5 — Fabula Ultima integration ✅ (built and mock-tested; in-Foundry run pending)
+- The rest of the preset library (30 clips) with rest keys and draw-order keys.
+- Ability→clip mapping (world rules and per-ability entries, per-actor and per-item overrides,
+  template-specific keys, fallbacks for rigs that lack roles) built on Project FU data and
+  fu-animations' `api.resolve()` — see ABILITY_MAPPING.md.
+- Combat triggers from chat cards: attacker clip, target hit/miss/crit/guarding reactions, held
+  defeat at 0 HP; timing estimated to land with fu-animations' hits.
+- Still open: a `fu-animations.contact` hook (one line in fu-animations, proposed, not made unasked)
+  to replace the timing estimate.
 - **Deliverable**: abilities trigger the right animation automatically.
 
 ## Phase 6 — Creature support

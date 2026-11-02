@@ -183,3 +183,17 @@
 .fusa-studio[data-mode='animate'] .fusa-timeline { min-height: 96px; }
 .fusa-studio.editing { grid-template-rows: 54px minmax(0, 1fr) 268px; }
 .fusa-studio.editing .fusa-timeline { min-height: 112px; }
+
+/* Ability animations (mapping editor) */
+.fusa-studio.fusa-mapping { display: flex; flex-direction: column; height: 100%; min-height: 0; user-select: text; }
+.fusa-map-head { padding: 12px 16px 10px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.fusa-map-hint { margin: 0; color: var(--ink2); font-size: 12px; }
+.fusa-map-tools { display: flex; gap: 8px; align-items: center; }
+.fusa-map-search { flex: 1; height: 28px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg0); color: var(--ink); }
+.fusa-map-body { overflow: auto; padding: 4px 16px 16px; flex: 1; min-height: 0; }
+.fusa-map-group h3 { font-family: var(--head); text-transform: uppercase; letter-spacing: 0.06em; font-size: 13px; color: var(--gold); margin: 14px 0 6px; border: none; }
+.fusa-map-row { display: grid; grid-template-columns: minmax(0, 1fr) 230px auto; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 4px; }
+.fusa-map-row:hover { background: var(--bg2); }
+.fusa-map-row.changed > span::after { content: ' •'; color: var(--gold); }
+.fusa-map-row > span { color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fusa-map-select { height: 26px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg1); color: var(--ink); min-width: 0; }

@@ -7,8 +7,9 @@ never resized, recoloured or repainted.
 
 ![The Studio animating a sword slash](docs/studio.png)
 
-**Status: Phase 2 prototype.** Tested in Node and headless Chromium (WebGL, PixiJS 7.4.3) and
-against a Foundry mock; **not yet run in a real Foundry world** — see
+**Status: Phases 2–5 built** (prototype, automatic rigging, animation editor, Fabula Ultima
+combat integration). Tested in Node and headless Chromium (WebGL, PixiJS 7.4.3) and against a
+Foundry mock; **not yet run in a real Foundry world** — see
 [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md) and the checklist in [docs/TESTING.md](docs/TESTING.md).
 
 ## Install
@@ -20,28 +21,39 @@ Requires Foundry v13 and Project FU 4.14+. Works alongside
 
 ## Quick start
 1. Token controls → running-figure button (GM) opens the Studio.
-2. **Choose sprite**. A humanoid skeleton is placed on the character.
+2. **Choose sprite**. The Studio finds the head, legs, hands and weapon and proposes a skeleton
+   (keep it, or start from plain proportions). Solid backgrounds are made transparent on a copy.
 3. **Rig** (1): drag joints onto shoulders, elbows, hips, knees; the weapon bone along the blade.
 4. Press the **wand** to reassign pixels, then **Paint** (2) to fix regions.
-5. **Pose** (3): drag limbs to check. **Animate** (4): play the sword slash.
-6. **Save**, then **Use this rig for an actor**. Its tokens idle and can act:
-   `SpriteAnimator.play(canvas.tokens.controlled[0], 'sword-slash')`.
+5. **Pose** (3): drag limbs to check. **Animate** (4): try the animations; **Edit keys** to make
+   your own.
+6. **Save**, then **Use this rig for an actor**. Its tokens idle on the map, and attacks, spells,
+   skills and items used from the character sheet play the matching animation; targets flinch,
+   block or dodge; characters at 0 HP fall.
 
-Full walkthrough: [docs/RIGGING_GUIDE.md](docs/RIGGING_GUIDE.md).
+Full walkthrough: [docs/RIGGING_GUIDE.md](docs/RIGGING_GUIDE.md) · which animation plays when:
+[docs/ABILITY_MAPPING.md](docs/ABILITY_MAPPING.md).
 
-## What's in Phase 2
-- Studio: Rig, Paint, Pose and Animate modes; bone tree; inspector; rig check; animation library;
-  speed, intensity, per-phase timing and variation; timeline with phases and events; undo/redo;
-  save, open, export and import.
-- Runtime: bone hierarchy, keyframes with easing, world-angle strikes that work with any rest
-  pose, layered tracks, crossfades, events, bending meshes, hidden-region fill, pixel snapping.
-- Animations: idle breathing, combat stance, sword slash, heavy slash, magic cast, light hit,
-  heavy hit.
-- Tokens: animated in place through their texture only, so dashes, flashes and condition tints
-  from other modules keep working. Public API and socket sync.
+## What's in it
+- **Studio**: automatic rig proposal; Rig, Paint, Pose and Animate modes; bone tree; inspector;
+  rig check; undo/redo; save, open, export and import.
+- **Animation editor**: pose a bone to key it, key rows on the timeline, easing, two-bone IK,
+  onion skin, draw-order keys, events and phases; your own clips are saved in the world.
+- **37 built-in animations**: idles (breathing, combat stance, magical, heavy weapon), movement
+  (walk, run, jump, dash, teleport), attacks (sword, heavy, thrust, spear, dual-wield, bow, staff,
+  unarmed, firearm, throw), magic (cast, channel, charge, projectile, area, healing, summoning),
+  defence (block, dodge, parry, counterattack, guard), reactions (light and heavy hit, stagger,
+  knockback, knockdown, defeat).
+- **Fabula Ultima**: chat cards trigger the attacker's animation and the targets' reactions,
+  chosen from Project FU data (weapon category, offensive/healing/area spells, skills, Zero
+  Powers, Guard…) through an editable table — world, per character, per item.
+- **Runtime**: world-angle strikes that work with any rest pose, layered tracks, crossfades,
+  events, bending meshes, hidden-region fill, pixel snapping.
+- **Tokens**: animated in place through their texture only, so dashes, flashes and condition
+  tints from other modules (fu-animations) keep working. Public API and socket sync.
 
-Not yet: automatic combat triggers from abilities (Phase 5), keyframe editing (Phase 4), creature
-templates (Phase 6). See [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
+Not yet: creature templates and creature animations (Phase 6; custom rigs work today), release
+polish (Phase 7). See [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
 
 ## Documentation
 [Project knowledge and research](docs/PROJECT_KNOWLEDGE.md) ·
@@ -49,6 +61,7 @@ templates (Phase 6). See [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.
 [Animation format](docs/ANIMATION_FORMAT.md) ·
 [Rigging guide](docs/RIGGING_GUIDE.md) ·
 [Foundry integration](docs/FOUNDRY_INTEGRATION.md) ·
+[Abilities → animations](docs/ABILITY_MAPPING.md) ·
 [API](docs/API.md) ·
 [Testing](docs/TESTING.md) ·
 [Troubleshooting](docs/TROUBLESHOOTING.md) ·

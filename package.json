@@ -1,6 +1,6 @@
 {
   "name": "fu-sprite-animator",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Fabula Ultima Sprite Animator: 2D skeletal animation of flat character sprites for Foundry VTT v13.",
   "type": "module",

@@ -1,6 +1,10 @@
 import type { PlayOptions } from '../core/player';
 import type { ClipDocument, PhaseTiming } from '../core/types';
 import { getClip, listClips, registerClip } from '../presets';
+import { DEFAULT_RULES, resolveClip as resolveMapping, type MappingTable, type ReactionOutcome, type Resolution } from '../mapping';
+import { describeItem } from '../mapping/projectfu';
+import { ITEM_FLAG, mappingTable, react, runPlan, setMappingTable, type ActionPlan } from './combat';
+import { MappingApp } from './mapping-app';
 import { MODULE_ID, SOCKET, type AnimationProfile } from './constants';
 import { selfTest } from './selftest';
 import * as storage from './storage';
@@ -68,7 +72,7 @@ export function onSocket(msg: { type?: string; scene?: string; tokens?: string[]
 export function createApi() {
 	return {
 		/** API version (semver of this object's shape). */
-		version: '0.1.0',
+		version: '0.2.0',
 
 		/** Play a clip on every token of an actor/token on this scene. Resolves to how many tokens played it locally. */
 		async play(target: unknown, clipId: string, options: ApiPlayOptions = {}): Promise<number> {
@@ -85,6 +89,15 @@ export function createApi() {
 		/** Stop the current action on those tokens (they ease back to their idle). */
 		stop(target: unknown): void {
 			for (const t of tokensFor(target)) tokenAnimators.get(t.id)?.stop();
+		},
+
+		/** What the first animated token of this actor/token shows: base loop (or defeated pose) and current action. */
+		current(target: unknown): { base: string | null; action: string | null } | null {
+			for (const t of tokensFor(target)) {
+				const a = tokenAnimators.get(t.id);
+				if (a) return a.current();
+			}
+			return null;
 		},
 
 		/** Is this token/actor animated right now? */
@@ -127,6 +140,71 @@ export function createApi() {
 
 		async assign(rigId: string, actorId?: string): Promise<void> {
 			await assignRigToActor(await storage.loadRig(rigId), actorId);
+		},
+
+		/**
+		 * Which clip an item would play for a character (no animation is played). `actor` defaults to
+		 * the item's owner; its rig's template and its own choices are taken into account.
+		 */
+		resolveClip(item: unknown, o: { actor?: unknown; targets?: number } = {}): Resolution {
+			const it = item as { actor?: unknown; getFlag?: (s: string, k: string) => unknown };
+			const actor = (o.actor ?? it?.actor) as { getFlag?: (s: string, k: string) => AnimationProfile | undefined } | undefined;
+			const token = actor ? tokensFor(actor)[0] : null;
+			const template = token ? (tokenAnimators.get(token.id)?.template ?? null) : null;
+			const own = it?.getFlag?.(MODULE_ID, ITEM_FLAG);
+			return resolveMapping(describeItem(item, { actor, targets: o.targets }), {
+				item: typeof own === 'string' && own ? { '*': own } : null,
+				actor: actor?.getFlag?.(MODULE_ID, 'profile')?.map ?? null,
+				world: mappingTable(),
+				template,
+			});
+		},
+
+		/** How Project FU data is read for an item (for debugging a mapping). */
+		describe(item: unknown, o: { actor?: unknown } = {}) {
+			return describeItem(item, { actor: o.actor ?? (item as { actor?: unknown })?.actor });
+		},
+
+		/** The world's ability → animation table. */
+		mapping: {
+			get: (): MappingTable => mappingTable(),
+			set: (table: MappingTable): Promise<void> => setMappingTable(table),
+			defaults: (): Record<string, string> => ({ ...DEFAULT_RULES }),
+			open: () => MappingApp.open(),
+		},
+
+		/**
+		 * Play an item's animation as if its card was posted: the user's tokens act, the targets react.
+		 * targets: tokens/actors with an optional result ('hit' | 'miss').
+		 */
+		async playAction(item: unknown, o: { source?: unknown; targets?: { target: unknown; result?: ReactionOutcome }[]; critical?: boolean; broadcast?: boolean } = {}): Promise<void> {
+			const it = item as { actor?: unknown; getFlag?: (s: string, k: string) => unknown };
+			const src = tokensFor(o.source ?? it?.actor)[0] ?? null;
+			const targets = (o.targets ?? []).flatMap((t) => tokensFor(t.target).slice(0, 1).map((tok: Token) => ({ id: tok.id as string, result: t.result ?? 'hit' })));
+			const own = it?.getFlag?.(MODULE_ID, ITEM_FLAG);
+			const plan: ActionPlan = {
+				scene: canvas.scene?.id,
+				source: src?.id ?? null,
+				info: describeItem(item, { actor: it?.actor ?? src?.actor, targets: targets.length }),
+				itemClip: typeof own === 'string' && own ? own : null,
+				critical: !!o.critical,
+				fumble: false,
+				seed: Math.floor(Math.random() * 1e9),
+				targets,
+				fua: null,
+			};
+			if (o.broadcast !== false) game.socket?.emit(SOCKET, { type: 'action', plan });
+			await runPlan(plan);
+		},
+
+		/** Play a reaction on a token or an actor's tokens: 'hit' (critical: true for a heavy one) or 'miss'. */
+		async react(target: unknown, result: ReactionOutcome = 'hit', o: { critical?: boolean; broadcast?: boolean } = {}): Promise<number> {
+			const ids: string[] = tokensFor(target).map((t: Token) => t.id);
+			const seed = Math.floor(Math.random() * 1e9);
+			if (o.broadcast !== false && ids.length) game.socket?.emit(SOCKET, { type: 'react', scene: canvas.scene?.id, tokens: ids, result, critical: !!o.critical, seed });
+			let n = 0;
+			for (const id of ids) if (await react(id, { result, critical: o.critical, seed })) n++;
+			return n;
 		},
 
 		/** Checks that need a real Foundry: PixiJS version, token texture strategy, rendering, cleanup. */

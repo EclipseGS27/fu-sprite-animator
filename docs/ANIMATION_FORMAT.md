@@ -92,6 +92,9 @@ character faces the other way. Creature templates (Phase 6) add their own roles
   `space: "world"` — the absolute screen angle the bone should point at. The first key is taken the
   short way round from the setup pose; later keys continue numerically, so `-200 → 42` sweeps
   *up and over*, `160 → 42` would sweep *down and under*.
+  A key with `"rest": true` holds the bone's **own drawn angle** instead of `v` (`v` stays as a
+  typical value for tools). Built-in world tracks start and end on rest keys, so an attack
+  begins and finishes exactly on the sprite's pose whatever angle its weapon was drawn at.
 - **translate**: offsets in **body heights** (`metrics.bodyHeight`) in the parent's space.
 - **scale**: multipliers of the setup scale.
 - **phases** let the GM retime anticipation/action/recovery independently (piecewise time warp).
@@ -100,7 +103,8 @@ character faces the other way. Creature templates (Phase 6) add their own roles
   `{ "t": 0.2, "front": "torso" }` just in front of the torso's, `{ "t": 0.37 }` restores the
   rig's own order. The sword slash uses them so the sword arm passes behind the head while
   winding up.
-- **events** fire once as the play head passes them; tokens forward them to
+- **events** fire once as the play head passes them (an event at `t: 0` fires on the first
+  frame); tokens forward them to
   `Hooks.callAll('fu-sprite-animator.event', { token, clip, event })`.
 - **additive** clips add their offsets on top of lower tracks instead of overriding.
 - Roles a rig lacks are ignored (the Studio's rig check lists them).

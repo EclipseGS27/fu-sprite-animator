@@ -14,8 +14,8 @@ Foundry's own PixiJS, not an imported engine (see PROJECT_KNOWLEDGE.md §3–4 f
 │ src/foundry   module entry, settings, storage, token bridge, combat hook,  │
 │               public API (game.modules.get('fu-sprite-animator').api)      │
 ├──────────────────────────────┬─────────────────────────────────────────────┤
-│ src/ui   Studio (plain DOM)  │ src/mapping   ability → clip rules (Ph. 5)  │
-│          ApplicationV2 shell │                                             │
+│ src/ui   Studio, mapping     │ src/mapping   Project FU data → rule keys → │
+│          editor (plain DOM)  │   clip (pure; world/actor/item/template)    │
 ├──────────────────────────────┴─────────────────────────────────────────────┤
 │ src/render   PIXI v7 adapter: atlas texture, part meshes, render-to-texture │
 ├────────────────────────────────────────────────────────────────────────────┤
@@ -87,9 +87,13 @@ Foundry `ApplicationV2` — the same view also mounts in a plain browser page fo
   anchor do not change). Driven by documented hooks: `drawToken`, `refreshToken`, `destroyToken`,
   `canvasReady`, `canvasTearDown`. One shared ticker callback for all animated tokens.
 - **API**: `SpriteAnimator.play(actorOrToken, clipId, options)` etc. (API.md).
-- **Combat (Phase 5)**: listens to `createChatMessage` like fu-animations, classifies with
-  `fu-animations.api.resolve()` when present (else its own rules), plays the attacker's clip and the
-  targets' reactions; mapping database editable per world, per actor and per item.
+- **Combat** (`src/foundry/combat.ts`): the posting client turns a Project FU chat card into a
+  plan (an `AbilityInfo` from `src/mapping/projectfu.ts`, the item's own choice, targets with
+  hit/miss, critical) and broadcasts it; each client resolves clips for its own tokens with
+  `src/mapping` (item → actor → world ability → world rule → built-in; template-specific keys;
+  fallbacks for rigs lacking roles) and plays the attacker's clip and, at contact, the targets'
+  reactions. `updateActor` holds a defeat pose at 0 HP. Editors: `MappingApp` (world),
+  `ActorMappingApp` (per actor), item dialog (per item or per ability name). ABILITY_MAPPING.md.
 
 ## Performance rules
 

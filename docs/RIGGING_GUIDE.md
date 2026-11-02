@@ -114,6 +114,16 @@ Your animations are saved in the world automatically and work on every rig with 
 - **Export** writes one `.fusa.json` file with the rig and the image; **Import** brings it into
   another world.
 
+## 9. In combat
+Once an actor uses the rig, its attacks, spells, skills and items play the matching animation
+when their card is posted, and its targets react: a flinch when hit, a bigger one on critical
+hits, a block while guarding, a dodge on a miss. At 0 HP the character falls and stays down
+until healed. To change what plays:
+- for everyone: Settings → *Sprite animations for abilities* (e.g. all spears → Thrust);
+- for one character: actor sheet header → *Sprite animation choices*;
+- for one item: item sheet header → *Sprite animation*.
+Details in [ABILITY_MAPPING.md](ABILITY_MAPPING.md).
+
 ## Pixel-art tips
 - Rotations of a few degrees move pixels in steps, like hand-made pixel art. That is intended.
 - Keep animations modest (Intensity 70–100 %) for small sprites (under 40 px).

@@ -79,6 +79,186 @@ check(['release', 'contact', 'end'].every((e) => r.events.includes(e)), 'clip ev
 check(r.restored, 'removing the profile restores the token image');
 check(r.closed, 'Studio window closes and cleans up');
 for (const t of r.selftest) check(t.ok || t.name === 'Animated tokens on this scene', `self-test: ${t.name}`, t.detail);
+
+// ---- Phase 5: chat cards → attacker clip, target reactions, defeat, mapping ----
+const c = await page.evaluate(async () => {
+	const out = {};
+	const api = game.modules.get('fu-sprite-animator').api;
+	const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+	const rig = api.rigs()[0].id;
+	const hero = mockMakeActor('hero', 'Hero');
+	const foe = mockMakeActor('foe', 'Foe', 30);
+	await mockMakeToken('t2', hero, '../sprites/warrior.png', 700, 250, 200);
+	await mockMakeToken('t3', foe, '../sprites/warrior.png', 1000, 250, 200);
+	await api.setProfile(hero, { rig, enabled: true, idle: 'combat-stance' });
+	await api.setProfile(foe, { rig, enabled: true, idle: 'idle-breathing' });
+	await wait(500);
+	const sword = mockMakeItem('sword', hero, { type: 'weapon', name: 'Bronze Sword', system: { category: { value: 'sword' }, type: { value: 'melee' } } });
+	const spellItem = mockMakeItem('flare', hero, { type: 'spell', name: 'Flare', system: { isOffensive: { value: true }, targeting: { rule: 'single' } } });
+	const card = (item, result, extra = {}) => mockChatCard('t2', { itemUuid: item.uuid, type: 'accuracy', critical: false, additionalData: { targets: [{ uuid: 'Scene.scene-1.Token.t3', result }] }, ...extra });
+	const seen = [];
+	Hooks.on('fu-sprite-animator.event', (e) => seen.push(`${e.token.id}:${e.clip}:${e.event}`));
+	const emitted = () => game.socket.emitted.filter((e) => e[1]?.type === 'action').length;
+
+	// 1. a sword attack that hits
+	let before = emitted();
+	Hooks.callAll('createChatMessage', card(sword, 'hit'));
+	await wait(120);
+	out.attack = api.current(hero)?.action;
+	out.broadcast = emitted() === before + 1;
+	await wait(700);
+	out.hitReaction = seen.find((s) => s.startsWith('t3:'))?.split(':')[1] ?? api.current(foe)?.action;
+	out.contactFirst = seen.indexOf('t2:sword-slash:contact') >= 0;
+	await wait(1200);
+	// 2. a miss: the target dodges
+	seen.length = 0;
+	Hooks.callAll('createChatMessage', card(sword, 'miss'));
+	await wait(700);
+	out.missReaction = api.current(foe)?.action;
+	await wait(1200);
+	// 3. a critical hit
+	Hooks.callAll('createChatMessage', card(sword, 'hit', { critical: true }));
+	await wait(700);
+	out.critReaction = api.current(foe)?.action;
+	await wait(1500);
+	// 4. an offensive spell
+	Hooks.callAll('createChatMessage', card(spellItem, 'hit', { type: 'magic' }));
+	await wait(120);
+	out.spell = api.current(hero)?.action;
+	await wait(2000);
+	// 5. the foe guards (a card with no item), then is hit while guarding
+	Hooks.callAll('createChatMessage', { author: { id: 'user-1' }, speaker: { token: 't3', scene: 'scene-1' }, getFlag: (s, k) => (s === 'projectfu' && k === 'Check' ? { additionalData: { ruleDefinedAction: 'guard' } } : undefined) });
+	await wait(120);
+	out.guard = api.current(foe)?.action;
+	await wait(1500);
+	foe.statuses.add('guard');
+	Hooks.callAll('createChatMessage', card(sword, 'hit'));
+	await wait(700);
+	out.guardedReaction = api.current(foe)?.action;
+	foe.statuses.delete('guard');
+	await wait(1500);
+	// 6. the item's own choice, then the world table
+	await sword.setFlag('fu-sprite-animator', 'clip', 'thrust');
+	Hooks.callAll('createChatMessage', card(sword, 'hit'));
+	await wait(120);
+	out.itemOverride = api.current(hero)?.action;
+	out.resolved = api.resolveClip(sword).source;
+	await wait(1500);
+	await sword.unsetFlag('fu-sprite-animator', 'clip');
+	await api.mapping.set({ rules: { 'weapon:sword': 'heavy-slash' }, abilities: {} });
+	Hooks.callAll('createChatMessage', card(sword, 'hit'));
+	await wait(120);
+	out.worldRule = api.current(hero)?.action;
+	await wait(2200);
+	await api.mapping.set({ rules: {}, abilities: {} });
+	// 7. another client's card arrives through the socket
+	const plan = game.socket.emitted.filter((e) => e[1]?.type === 'action').at(-1)[1].plan;
+	game.socket.handler({ type: 'action', plan: { ...plan, info: { ...plan.info, weaponCategory: 'spear', key: null } } });
+	await wait(120);
+	out.remote = api.current(hero)?.action;
+	await wait(1800);
+	// 8. 0 HP: the foe falls and stays down; reactions do not play on it; back up with HP
+	await foe.update({ 'system.resources.hp.value': 0 });
+	await wait(1600);
+	out.defeated = api.current(foe);
+	Hooks.callAll('createChatMessage', card(sword, 'hit'));
+	await wait(800);
+	out.downReaction = api.current(foe)?.action;
+	await wait(1500);
+	await foe.update({ 'system.resources.hp.value': 12 });
+	await wait(200);
+	out.revived = api.current(foe)?.base;
+	// 9. api.react and api.playAction
+	out.react = await api.react(foe, 'hit', { critical: true });
+	out.reactClip = api.current(foe)?.action;
+	await wait(1500);
+	await api.playAction(spellItem, { targets: [{ target: foe, result: 'miss' }] });
+	await wait(120);
+	out.playAction = api.current(hero)?.action;
+	await wait(2000);
+	// 10. with fu-animations active: its classification is used and our strike waits for its dash
+	game.modules.set('fu-animations', { id: 'fu-animations', active: true, api: { resolve: () => ({ spec: { style: 'melee' }, source: 'default' }) } });
+	game.settings.register('fu-animations', 'enabled', { default: true });
+	game.settings.register('fu-animations', 'moveMelee', { default: true });
+	const t0 = performance.now();
+	const times = {};
+	const id = Hooks.on('fu-sprite-animator.event', (e) => {
+		const k = `${e.token.id}:${e.event}`;
+		if (!(k in times)) times[k] = (performance.now() - t0) / 1000;
+	});
+	Hooks.callAll('createChatMessage', card(sword, 'hit'));
+	await wait(2000);
+	Hooks.off('fu-sprite-animator.event', id);
+	out.fuaContact = times['t2:contact'];
+	out.fuaReaction = Math.min(...Object.entries(times).filter(([k]) => k.startsWith('t3:')).map(([, v]) => v));
+	game.modules.delete('fu-animations');
+	// 11. mapping editor window and the item header control
+	const app = api.mapping.open();
+	await wait(100);
+	const sel = app.element.querySelector('[data-key="weapon:bow"] select');
+	out.editorRows = app.element.querySelectorAll('.fusa-map-row').length;
+	sel.value = 'throw';
+	sel.dispatchEvent(new Event('change'));
+	await app.view.flush();
+	out.editorSaved = api.mapping.get().rules['weapon:bow'];
+	await app.close();
+	const controls = [];
+	Hooks.callAll('getHeaderControlsDocumentSheetV2', { document: sword, options: {} }, controls);
+	out.itemControl = controls.some((x) => x.action === 'fusaItem');
+	// 12. one actor's own choices: the hero thrusts with swords, the foe still slashes
+	const actorControls = [];
+	const sheet = { document: hero, options: {} };
+	Hooks.callAll('getHeaderControlsDocumentSheetV2', sheet, actorControls);
+	out.actorControl = actorControls.some((x) => x.action === 'fusaActorMap');
+	sheet.options.actions.fusaActorMap();
+	await wait(150);
+	const actorApp = foundry.applications.instances.get('fusa-actor-mapping-hero');
+	const swordSel = actorApp.element.querySelector('[data-key="weapon:sword"] select');
+	out.actorInherits = swordSel.options[0].textContent;
+	swordSel.value = 'thrust';
+	swordSel.dispatchEvent(new Event('change'));
+	await actorApp.view.flush();
+	await actorApp.close();
+	out.actorMap = hero.getFlag('fu-sprite-animator', 'profile')?.map?.['weapon:sword'];
+	const foeSword = mockMakeItem('foesword', foe, { type: 'weapon', name: 'Rusty Sword', system: { category: { value: 'sword' }, type: { value: 'melee' } } });
+	Hooks.callAll('createChatMessage', card(sword, 'none'));
+	await wait(120);
+	out.actorChoice = api.current(hero)?.action;
+	await wait(1500);
+	Hooks.callAll('createChatMessage', mockChatCard('t3', { itemUuid: foeSword.uuid, type: 'accuracy', additionalData: { targets: [] } }));
+	await wait(120);
+	out.otherActor = api.current(foe)?.action;
+	// 13. a token drawn while its actor is at 0 HP starts in the held defeat pose
+	const fallen = mockMakeActor('fallen', 'Fallen', 20);
+	fallen.system.resources.hp.value = 0;
+	await mockMakeToken('t4', fallen, '../sprites/warrior.png', 400, 600, 160);
+	await api.setProfile(fallen, { rig, enabled: true, idle: 'idle-breathing' });
+	await wait(400);
+	out.drawnDown = api.current(fallen);
+	return out;
+});
+check(c.attack === 'sword-slash' && c.broadcast, 'a sword card: the attacker plays Sword slash, broadcast to other clients', c.attack);
+check(c.hitReaction === 'light-hit', 'the hit target flinches (Light hit)', c.hitReaction);
+check(c.missReaction === 'dodge', 'a miss: the target dodges', c.missReaction);
+check(c.critReaction === 'heavy-hit', 'a critical hit: Heavy hit', c.critReaction);
+check(c.spell === 'magic-cast', 'an offensive spell: Magic cast', c.spell);
+check(c.guard === 'guard', 'the Guard action plays Guard', c.guard);
+check(c.guardedReaction === 'block', 'hit while guarding: Block', c.guardedReaction);
+check(c.itemOverride === 'thrust' && c.resolved === 'item', 'the item’s own choice wins', `${c.itemOverride} (${c.resolved})`);
+check(c.worldRule === 'heavy-slash', 'the world table changes every sword', c.worldRule);
+check(c.remote === 'spear-attack', 'a card from another client plays here', c.remote);
+check(c.defeated?.base === 'defeat' && !c.defeated?.action, 'at 0 HP the character falls and stays down', JSON.stringify(c.defeated));
+check(!c.downReaction, 'no hit reactions while down', c.downReaction);
+check(c.revived === 'idle-breathing', 'back above 0 HP: back to its idle', c.revived);
+check(c.react === 1 && c.reactClip === 'heavy-hit', 'api.react', c.reactClip);
+check(c.playAction === 'magic-cast', 'api.playAction', c.playAction);
+check(Math.abs(c.fuaContact - 0.45) < 0.12, 'with fu-animations: the strike lands when its dash arrives (≈0.45 s)', `${c.fuaContact?.toFixed(2)} s`);
+check(c.fuaReaction >= 0.4 && c.fuaReaction < 0.7, 'with fu-animations: the target reacts at its hit, not before', `${c.fuaReaction?.toFixed(2)} s`);
+check(c.editorRows > 30 && c.editorSaved === 'throw', 'mapping editor lists the rules and saves a change', `${c.editorRows} rows`);
+check(c.itemControl, '"Sprite animation" in item sheet headers');
+check(c.drawnDown?.base === 'defeat' && !c.drawnDown?.action, 'a token drawn at 0 HP starts down', JSON.stringify(c.drawnDown));
+check(c.actorControl && c.actorInherits === 'World: Sword slash', 'per-actor choices window, inheriting the world’s', c.actorInherits);
+check(c.actorMap === 'thrust' && c.actorChoice === 'thrust' && c.otherActor === 'sword-slash', 'an actor’s own choice applies to it only', `${c.actorChoice} / ${c.otherActor}`);
 await page.screenshot({ path: OUT + 'foundry_mock.png' });
 check(errors.length === 0, 'no page errors', errors.join(' | '));
 console.log('notifications:', r.log.join(' | '));

@@ -6,7 +6,9 @@
 | Unit (Node, vitest) | `npm test` | Math, skeleton, easing, clip sampling, time warp, player (layers, crossfades, events, variations), RLE, ownership, hidden-region fill, atlas, rig editing (joint/tip/subtree, add/delete/reparent), validation, undo, document parsing, presets on every test rig (left and right facing), auto-assignment accuracy floors, **rest pose bit-identical to the source on all 8 test sprites** (CPU reference renderer), no new colours when posed, no holes when the arm leaves the torso. |
 | GPU render (headless Chromium + WebGL + PixiJS 7.4.3) | `npm run test:render` | Rest pose pixel-exact **on the GPU** for all pixel-art sprites (illustration: opaque pixels exact, edge drift ≤ 8/255 from linear filtering); GPU frames match the CPU reference (< 3 % pixels) for slash, heavy slash, cast; trimmed texture keeps sprite size and bounds; 1/10/25 animated views render and release every texture. Writes strips to `test/render/out/`. |
 | Studio end-to-end | `npm run test:ui` | Real mouse/keyboard: import, select, drag joint, drag tip, undo/redo (one step per drag), rename, add/delete/reparent bone, paint + undo, pose + reset (exact rest image), play animation (events), save/open, export/import bundle. |
-| Integration (Foundry mock) | `npm run test:integration` | The built bundle with a stand-in `game`/`Hooks`/`ApplicationV2`/FilePicker: API exposed, scene control, Studio saves to world storage, assigned token animated with size kept, `api.play` + socket broadcast, clip events as hooks, restore on removal, Studio cleanup, self-test passes. **A mock, not Foundry.** |
+| Integration (Foundry mock) | `npm run test:integration` | The built bundle with a stand-in `game`/`Hooks`/`ApplicationV2`/FilePicker: API exposed, scene control, Studio saves to world storage, assigned token animated with size kept, `api.play` + socket broadcast, clip events as hooks, restore on removal, Studio cleanup, self-test passes. Phase 5: Project FU chat cards (sword hit/miss/critical, offensive spell, Guard, hit while guarding) play the right attacker clip and target reaction; item, actor and world choices; a card from another client; 0 HP → held defeat, no reactions while down, back to idle when healed; `api.react`, `api.playAction`; with a stand-in fu-animations the strike and reactions land at its estimated hit time; mapping editor, per-actor editor, item header control. **A mock, not Foundry.** |
+| Mapping (Node) | `npm test` (mapping.test.ts) | Project FU items of every type read into the right rule keys and clips; resolution order; "none"; template-specific keys; fallbacks; reactions; every built-in choice is a real clip; timing to land contact at a given time. |
+| Clip review | `CLIPS=walk,run N=8 npx vitest run -c vitest.tools.config.ts test/tools/sheet.test.ts` | Contact sheet (one row per clip) on any test sprite for human review. |
 | Filmstrips (visual review) | `SPRITE=warrior CLIP=sword-slash GT=1 npm run film` | Frame strips of any clip on any test sprite for human review. |
 | Screenshots | `npm run screenshots` | Studio in each mode. |
 
@@ -18,7 +20,7 @@ creature), and an anti-aliased illustrated hero (smooth mode).
 ## In Foundry (manual — required before marking Foundry features "Tested")
 Run on Foundry v13 with Project FU and, ideally, fu-animations enabled.
 
-1. Enable the module, reload. No console errors. `SpriteAnimator.version` → `"0.1.0"`.
+1. Enable the module, reload. No console errors. `SpriteAnimator.version` → `"0.2.0"`.
 2. `await SpriteAnimator.selfTest()` → all checks pass. If "Room for weapons past the edge"
    fails, set *Token texture → Clipped* and note it.
 3. Token controls → running-figure button opens the Studio. Import one of your JRPG sprites.
@@ -34,5 +36,17 @@ Run on Foundry v13 with Project FU and, ideally, fu-animations enabled.
    *Most animated tokens* to confirm the cap works.
 9. Delete the token, change scenes, disable the profile: no errors, still images return.
 10. Export the rig, import it in another world.
+
+11. Combat (Phase 5): with two animated tokens, attack with a sword from the character sheet and
+    target the other token: the attacker slashes, the target flinches when the hit lands (with
+    fu-animations: when its dash arrives). A miss → dodge; a critical → heavy hit. Cast an
+    offensive spell, a healing spell, use Guard, use a potion. Check with a second browser that
+    both see the same.
+12. Settings → *Sprite animations for abilities*: change *Sword* to *Thrust*, attack again. Item
+    sheet header → *Sprite animation*: pick one for this item. Actor sheet header → *Sprite
+    animation choices*: change one for this actor only.
+13. Reduce a target to 0 HP: it falls and stays down (also after a scene reload); heal it: it
+    gets up. Note how well reactions line up with fu-animations' hits (cut-ins delay its hits;
+    our reactions are estimated — report how far off they feel).
 
 Record results in DEVELOPMENT_STATUS.md (date, Foundry build, browser, what passed).

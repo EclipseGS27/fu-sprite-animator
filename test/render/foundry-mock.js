@@ -118,7 +118,7 @@
 	const actors = new Map();
 	window.game = {
 		world: { id: 'mock-world' },
-		user: { isGM: true, can: () => true },
+		user: { id: 'user-1', isGM: true, can: () => true, targets: new Set() },
 		settings: {
 			register(mod, key, data) {
 				registered.set(`${mod}.${key}`, data);
@@ -150,15 +150,62 @@
 			apps: { FilePicker: { implementation: FilePicker } },
 			instances,
 		},
-		utils: { randomID: (n = 16) => Math.random().toString(36).slice(2, 2 + n).padEnd(n, '0'), fromUuidSync: () => null },
+		utils: {
+			randomID: (n = 16) => Math.random().toString(36).slice(2, 2 + n).padEnd(n, '0'),
+			fromUuidSync: (u) => window.fromUuidSync(u),
+			getProperty: (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj),
+		},
 		canvas: { primary: {} },
 	};
-	window.mockMakeActor = (id, name) => {
-		const a = flagsOf({ id, name, documentName: 'Actor', isOwner: true });
+	// documents reachable by uuid (items, tokens)
+	const uuids = (window.mockUuids = new Map());
+	window.fromUuidSync = (u) => uuids.get(u) ?? null;
+	const expand = (changes) => {
+		const out = {};
+		for (const [path, v] of Object.entries(changes)) {
+			const keys = path.split('.');
+			let o = out;
+			for (const k of keys.slice(0, -1)) o = o[k] ??= {};
+			o[keys.at(-1)] = v;
+		}
+		return out;
+	};
+	window.mockMakeActor = (id, name, hp = 40) => {
+		const a = flagsOf({ id, name, documentName: 'Actor', isOwner: true, statuses: new Set(), system: { resources: { hp: { value: hp, max: hp } }, equipped: {} }, items: Object.assign([], { get: (iid) => a.items.find((i) => i.id === iid) }) });
 		a.getActiveTokens = () => window.canvas.tokens.placeables.filter((t) => t.actor === a);
+		a.update = async (changes) => {
+			for (const [path, v] of Object.entries(changes)) {
+				const keys = path.split('.');
+				let o = a;
+				for (const k of keys.slice(0, -1)) o = o[k] ??= {};
+				o[keys.at(-1)] = v;
+			}
+			Hooks.callAll('updateActor', a, expand(changes));
+			return a;
+		};
 		actors.set(id, a);
 		return a;
 	};
+	window.mockMakeItem = (id, actor, data) => {
+		const it = flagsOf({ id, documentName: 'Item', isOwner: true, actor, uuid: `Actor.${actor?.id}.Item.${id}`, ...data });
+		it.setFlag = async function (scope, key, value) {
+			(this.flags[scope] ??= {})[key] = value;
+			return this;
+		};
+		it.unsetFlag = async function (scope, key) {
+			delete this.flags[scope]?.[key];
+			return this;
+		};
+		actor?.items.push(it);
+		uuids.set(it.uuid, it);
+		return it;
+	};
+	/** A Project FU chat card posted by this user. */
+	window.mockChatCard = (speakerToken, check, itemUuid = null) => ({
+		author: { id: 'user-1' },
+		speaker: { token: speakerToken, scene: 'scene-1' },
+		getFlag: (scope, key) => (scope !== 'projectfu' ? undefined : key === 'Check' ? check : key === 'Item' ? itemUuid : undefined),
+	});
 	window.mockMakeToken = async (id, actor, src, x, y, size) => {
 		const P = window.PIXI;
 		const texture = await P.Assets.load(src);
@@ -171,6 +218,7 @@
 		window.canvas.app.stage.addChild(mesh);
 		const token = { id, name: actor.name, actor, mesh, texture, visible: true, document: flagsOf({ documentName: 'Token', id }) };
 		window.canvas.tokens.placeables.push(token);
+		uuids.set(`Scene.scene-1.Token.${id}`, token.document);
 		return token;
 	};
 	window.canvas = {

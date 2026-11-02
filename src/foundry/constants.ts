@@ -1,3 +1,5 @@
+import type { MappingOverrides } from '../mapping';
+
 export const MODULE_ID = 'fu-sprite-animator';
 export const SOCKET = `module.${MODULE_ID}`;
 export const STUDIO_TITLE = 'Fabula Ultima — Sprite Animation Studio';
@@ -11,6 +13,8 @@ export interface AnimationProfile {
 	idle?: string;
 	/** Amplitude multiplier for every clip on this character. */
 	intensity?: number;
+	/** This character's own choices: rule or ability key → clip id (see docs/ABILITY_MAPPING.md). */
+	map?: MappingOverrides;
 }
 
 export function setting<T = unknown>(key: string): T | undefined {
