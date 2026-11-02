@@ -1,7 +1,9 @@
 import type { Facing } from '../core/types';
 import type { ImageDataLike, Rect } from './image';
 import { detectShadow } from './shadow';
-import { alphaMask, components, distanceTransform, pca, skeletonize } from './morph';
+import { detectionView, foregroundMask, restoreLandmarks } from './analysis';
+import { headNeck, interiorPath, jointOnPath } from './limbs';
+import { components, distanceTransform, pca, skeletonize } from './morph';
 
 export type Pt = [number, number];
 
@@ -421,7 +423,7 @@ export function detectWeapon(mask: Uint8Array, w: number, h: number, height: num
 				debug?.(`${at}: lies along the floor`);
 				continue;
 			}
-			if (tipY >= bottom - height * 0.04 && tipY > baseY) {
+			if (tipY >= bottom - Math.max(height * 0.04, dt[tip]! * 2.5) && tipY > baseY) {
 				debug?.(`${at}: ends on the ground`);
 				continue;
 			}
@@ -548,9 +550,15 @@ export function detectWeapon(mask: Uint8Array, w: number, h: number, height: num
  * clearly, and lowers that group's confidence.
  */
 export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = 'auto', fallback: Facing = 'right'): HumanoidLandmarks | null {
+	const view = detectionView(img);
+	const found = detectHumanoidNative(view.image, facingIn, fallback);
+	return found ? restoreLandmarks(found, view) : null;
+}
+
+function detectHumanoidNative(img: ImageDataLike, facingIn: Facing | 'auto', fallback: Facing): HumanoidLandmarks | null {
 	const { width: w, height: h } = img;
 	// the main body only: floating effects (sparks, glyphs, smoke) do not shape the skeleton
-	const full = alphaMask(img, 128);
+	const full = foregroundMask(img);
 	{
 		const comps = components(full, w, h).sort((a, b) => b.length - a.length);
 		const keep = new Uint8Array(full.length);
@@ -695,8 +703,11 @@ export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = '
 			headConf = clamp01((jump - 1) * 1.5);
 		} else notes.push('No clear neck: head size guessed from proportions.');
 	}
-	const neck: Pt = [centreAt(neckY), neckY + 0.5];
-	const topPt: Pt = [neck[0], top];
+	const bodyRadius = distanceTransform(mask, w, h);
+	const observedHead = headNeck(mask, bodyRadius, w, h, top, H, cx);
+	if (observedHead) { neckY = observedHead.neck[1] - 0.5; headConf = observedHead.confidence; }
+	const neck: Pt = observedHead?.neck ?? [centreAt(neckY), neckY + 0.5];
+	const topPt: Pt = [observedHead?.headX ?? neck[0], top];
 
 	// legs: the rows where the silhouette splits into two
 	const minRun = Math.max(1, Math.round(H * 0.03));
@@ -839,8 +850,8 @@ export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = '
 	let armConf = clamp01(Math.min(protrudeB, protrudeF) / (H * 0.06));
 	const shoulderY = neckY + H * 0.09;
 	const sC = centreAt(shoulderY);
-	const shoulderF: Pt = [sC + s * wc * 0.55, shoulderY];
-	const shoulderB: Pt = [sC - s * wc * 0.55, shoulderY];
+	const shoulderF: Pt = [sC + s * wc * 0.9, shoulderY];
+	const shoulderB: Pt = [sC - s * wc * 0.9, shoulderY];
 	let handF: Pt = front ?? [shoulderF[0] + s * wc, shoulderY + H * 0.2];
 	let handB: Pt = back ?? [shoulderB[0] - s * wc, shoulderY + H * 0.2];
 	if (weaponFound) {
@@ -870,14 +881,68 @@ export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = '
 		armConf = Math.min(armConf, 0.45);
 		notes.push('Possible two-handed grip: check both hands before animating.');
 	}
+	// Evaluate free silhouette branches as arm endpoints, using their attachment
+	// near the shoulder and their thickness. This allows raised and bent arms;
+	// a distant outline extremum alone is not evidence of a hand.
+	const limbRadius = bodyRadius;
+	const branches = skeletonBranches(pruneSkeleton(skeletonize(mask, w, h), w, h, Math.max(2, H * 0.025)) , w, h);
+	const armEnd = (shoulder: Pt, side: number): { point: Pt; confidence: number } | null => {
+		let best: { point: Pt; confidence: number; score: number } | null = null;
+		for (const branch of branches) {
+			if (branch.length < H * 0.12 || branch.length > H * 0.58) continue;
+			const i = branch.path[0]!, j = branch.path[branch.path.length - 1]!;
+			const end: Pt = [i % w + 0.5, Math.floor(i / w) + 0.5];
+			const base: Pt = [j % w + 0.5, Math.floor(j / w) + 0.5];
+			if (end[1] < top + H * 0.02 || end[1] > hipY + H * 0.08 || (end[0] - shoulder[0]) * side < -H * 0.04) continue;
+			const attachment = Math.hypot(base[0] - shoulder[0], base[1] - shoulder[1]);
+			let curvedEvidence = 0;
+			if (attachment > H * 0.14) {
+				const route = interiorPath(mask, limbRadius, w, h, shoulder, end);
+				const joint = route ? jointOnPath(route, shoulder, end, H) : null;
+				if (!route || route.length > H * 0.65 || !joint) continue;
+				// A hat/hair tip is reached through the head; a raised hand is
+				// reached around it through the arm. Do not turn the head into an arm.
+				if (route.some(p => p[1] < neckY - H * 0.025 && Math.abs(p[0] - neck[0]) < H * 0.09)) continue;
+				curvedEvidence = joint.confidence * 0.8;
+			}
+			const endpointGirth = median(branch.path.slice(0, Math.max(2, Math.round(H * 0.04))).map(i => limbRadius[i]!));
+			if (endpointGirth < Math.max(1, H * 0.012)) continue;
+			const girth = median(branch.path.slice(0, Math.max(3, Math.floor(branch.path.length * 0.5))).map(i => limbRadius[i]!));
+			if (girth < Math.max(1, H * 0.012) || girth > H * 0.09) continue;
+			const score = 1 - Math.min(attachment, H * 0.1) / (H * 0.2) - Math.abs(branch.length / H - 0.27);
+			const confidence = Math.max(clamp01(score) * 0.8, curvedEvidence);
+			if (!best || confidence > best.confidence) best = { point: end, confidence, score };
+		}
+		return best && best.confidence >= 0.35 ? best : null;
+	};
+	let traceBack = false, traceFront = false;
+	if (!weaponFound?.broad) {
+		const observedBack = armEnd(shoulderB, -s);
+		const observedFront = weaponFound ? null : armEnd(shoulderF, s);
+		if (observedBack) { handB = observedBack.point; traceBack = true; }
+		if (observedFront) { handF = observedFront.point; traceFront = true; }
+		armConf = Math.min(armConf, observedBack?.confidence ?? 0.35, weaponFound ? 0.65 : observedFront?.confidence ?? 0.35);
+	}
+
 	const handLen = H * 0.07;
-	const wrist = (shoulder: Pt, hand: Pt): Pt => {
+	const wrist = (shoulder: Pt, hand: Pt, observed: boolean): Pt => {
+		const route = observed ? interiorPath(mask, limbRadius, w, h, shoulder, hand) : null;
+		if (route) {
+			let length = 0;
+			for (let i = route.length - 2; i >= 0; i--) {
+				length += Math.hypot(route[i]![0] - route[i + 1]![0], route[i]![1] - route[i + 1]![1]);
+				if (length >= handLen) return route[i]!;
+			}
+		}
 		const d = Math.hypot(hand[0] - shoulder[0], hand[1] - shoulder[1]) || 1;
 		return lerp(hand, shoulder, Math.min(0.4, handLen / d));
 	};
-	const wristF = wrist(shoulderF, handF);
-	const wristB = wrist(shoulderB, handB);
-	const elbow = (shoulder: Pt, wr: Pt): Pt => {
+	const wristF = wrist(shoulderF, handF, traceFront);
+	const wristB = wrist(shoulderB, handB, traceBack);
+	const elbow = (shoulder: Pt, wr: Pt, observed: boolean): Pt => {
+		const route = observed ? interiorPath(mask, limbRadius, w, h, shoulder, wr) : null;
+		const joint = route ? jointOnPath(route, shoulder, wr, H) : null;
+		if (joint) return joint.point;
 		const m = lerp(shoulder, wr, 0.5);
 		return [m[0], m[1] + H * 0.015];
 	};
@@ -890,8 +955,8 @@ export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = '
 		ground: [pelvis[0], bottom + 1],
 		shoulderFront: shoulderF,
 		shoulderBack: shoulderB,
-		elbowFront: elbow(shoulderF, wristF),
-		elbowBack: elbow(shoulderB, wristB),
+		elbowFront: elbow(shoulderF, wristF, traceFront),
+		elbowBack: elbow(shoulderB, wristB, traceBack),
 		wristFront: wristF,
 		wristBack: wristB,
 		handFront: handF,

@@ -1,5 +1,6 @@
 import type { BoneData, Facing, PartData } from '../core/types';
 import type { BeastLandmarks } from '../sprite/creatures';
+import type { ShapeLandmarks } from '../sprite/shapes';
 import type { HumanoidLandmarks, Pt } from '../sprite/landmarks';
 import { HUMANOID, buildFromTemplate, type RigTemplate } from './templates';
 
@@ -71,3 +72,13 @@ export function beastFromLandmarks(L: BeastLandmarks, t: RigTemplate): { bones: 
 }
 
 export type { Facing };
+
+/** Fit a non-legged body plan to observed centreline anchors; missing limbs keep the template. */
+export function shapeFromLandmarks(L: ShapeLandmarks, t: RigTemplate): { bones: BoneData[]; parts: PartData[] } {
+	const s = L.facing === 'right' ? 1 : -1;
+	const prop = ([u, v]: [number, number]): Pt => [L.box.x + (s > 0 ? u : 1 - u) * L.box.width, L.box.y + v * L.box.height];
+	return buildFromTemplate(t, tb => {
+		const placed = L.placements[tb.id];
+		return placed ? { from: placed[0], to: placed[1] } : { from: prop(tb.from), to: prop(tb.to) };
+	});
+}

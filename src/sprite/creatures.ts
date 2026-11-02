@@ -2,7 +2,8 @@ import type { Facing } from '../core/types';
 import type { ImageDataLike } from './image';
 import { skeletonBranches, type Pt } from './landmarks';
 import { detectShadow } from './shadow';
-import { alphaMask, components, distanceTransform, skeletonize } from './morph';
+import { detectionView, foregroundMask, restoreLandmarks } from './analysis';
+import { components, distanceTransform, skeletonize } from './morph';
 
 /**
  * Landmarks of a four-legged (optionally winged) creature seen from the side: where the legs
@@ -57,9 +58,19 @@ const mid = (r: Run) => (r.x0 + r.x1) / 2;
 const width = (r: Run) => r.x1 - r.x0 + 1;
 
 export function detectBeast(img: ImageDataLike, facingIn: Facing | 'auto' = 'auto', o: { wings?: boolean; fallback?: Facing } = {}): BeastLandmarks | null {
+	const view = detectionView(img);
+	const found = detectBeastNative(view.image, facingIn, o);
+	if (!found) return null;
+	const restored = restoreLandmarks(found, view);
+	restored.belly = view.origin[1] + found.belly * view.scale;
+	restored.thickness = found.thickness * view.scale;
+	return restored;
+}
+
+function detectBeastNative(img: ImageDataLike, facingIn: Facing | 'auto', o: { wings?: boolean; fallback?: Facing }): BeastLandmarks | null {
 	const { width: w, height: h } = img;
 	// main body only: sparks and smoke do not count
-	const mask = alphaMask(img, 128);
+	const mask = foregroundMask(img);
 	{
 		const comps = components(mask, w, h).sort((a, b) => b.length - a.length);
 		const keep = new Uint8Array(mask.length);

@@ -35,7 +35,7 @@ Full walkthrough: [docs/RIGGING_GUIDE.md](docs/RIGGING_GUIDE.md) · which animat
 [docs/ABILITY_MAPPING.md](docs/ABILITY_MAPPING.md).
 
 ## What's in it
-- **Studio**: automatic rig proposal; Rig, Paint, Pose and Animate modes; bone tree; inspector;
+- **Studio**: [body-plan-aware automatic rig proposals](docs/DETECTOR_REVIEW.md); Rig, Paint, Pose and Animate modes; bone tree; inspector;
   rig check; undo/redo; save, open, export and import.
 - **Animation editor**: pose a bone to key it, key rows on the timeline, easing, two-bone IK,
   onion skin, draw-order keys, events and phases; your own clips are saved in the world.

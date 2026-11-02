@@ -5,8 +5,9 @@ import { geodesicAssign } from '../sprite/geodesic';
 import { mainBounds } from '../sprite/morph';
 import { detectShadow } from '../sprite/shadow';
 import { detectHumanoid, type HumanoidLandmarks } from '../sprite/landmarks';
-import { beastFromLandmarks, humanoidFromLandmarks } from './autorig';
+import { beastFromLandmarks, humanoidFromLandmarks, shapeFromLandmarks } from './autorig';
 import { detectBeast, type BeastLandmarks } from '../sprite/creatures';
+import { detectShape, type ShapeLandmarks } from '../sprite/shapes';
 import { decodeRle, encodeRle } from '../sprite/rle';
 import { bonesToFrames, tipOf } from './frames';
 import { TEMPLATES, fitTemplate } from './templates';
@@ -72,7 +73,12 @@ export function createRig(o: CreateRigOptions): RigDocument {
 		beast = detectBeast(o.image, o.facing ?? 'auto', { wings: template.id === 'winged', fallback: o.facingFallback });
 		if (beast) facing = beast.facing;
 	}
-	const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : beast ? beastFromLandmarks(beast, template) : fitTemplate(template, fitBox, facing);
+	let shape: ShapeLandmarks | null = null;
+	if (o.detect !== false && ['floating', 'serpentine', 'blob', 'custom'].includes(template.id)) {
+		shape = detectShape(o.image, template.id as 'floating' | 'serpentine' | 'blob' | 'custom', o.facing ?? 'auto', o.facingFallback);
+		if (shape) facing = shape.facing;
+	}
+	const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : beast ? beastFromLandmarks(beast, template) : shape ? shapeFromLandmarks(shape, template) : fitTemplate(template, fitBox, facing);
 	const now = Date.now();
 	const rig: RigDocument = {
 		format: RIG_FORMAT,
@@ -92,24 +98,49 @@ export function createRig(o: CreateRigOptions): RigDocument {
 		revision: 1,
 	};
 	if (landmarks) rig.metrics.bodyHeight = landmarks.body.height;
+	if (beast) rig.metrics.bodyHeight = beast.box.height;
+	if (shape) rig.metrics.bodyHeight = shape.box.height;
 	// a ground shadow gets its own part on the root, drawn first, so it stays on the floor
 	if (detectShadow(o.image) && rig.bones.some((b) => b.id === 'root')) {
 		const shadow = defaultPartFor('part_shadow', 'Shadow', 'root', nextLabel(rig.parts));
 		rig.parts.unshift(shadow);
 	}
+	if (landmarks && !landmarks.weapon) {
+		const weaponPart = rig.parts.find(p => rig.bones.find(b => b.id === p.bone)?.role === 'weapon');
+		if (weaponPart) weaponPart.autoAssign = false;
+	}
 	if (o.assign !== false) {
 		const labels = assignPixels(rig, o.image);
-		// no weapon in the art: the template's weapon bone stays empty (its pixels belong to the hand)
-		if (landmarks && !landmarks.weapon) {
-			const label = (role: string) => rig.parts.find((p) => rig.bones.find((b) => b.id === p.bone)?.role === role)?.label;
-			const wl = label('weapon');
-			const hl = label('hand.front') ?? label('arm.lower.front');
-			if (wl && hl) for (let i = 0; i < labels.length; i++) if (labels[i] === wl) labels[i] = hl;
-		}
 		rig.ownership = encodeRle(labels);
 	}
-	const found = landmarks ?? beast;
+	const found = landmarks ?? beast ?? shape;
 	lastReport.set(rig, found ? { method: 'landmarks', confidence: found.confidence, notes: found.notes } : { method: 'proportions', confidence: {}, notes: [] });
+	const report = lastReport.get(rig)!;
+	report.confidence.body ??= report.method === 'landmarks' ? 0.55 : 0.2;
+	if (landmarks && !landmarks.weapon) report.notes.push('No weapon detected; its optional bone is available for manual rigging.');
+	// Confidence is geometric support, not a probability of anatomical correctness.
+	// Do not advertise a high score for a group whose bones mostly miss the art.
+	const frames = bonesToFrames(rig.bones);
+	const support = new Map<string, number[]>();
+	for (const bone of rig.bones) {
+		const role = bone.role ?? '';
+		const group = /^(arm|hand)/.test(role) ? 'arms' : /^(leg|foot)/.test(role) ? 'legs' : role.startsWith('wing') ? 'wings' : role.startsWith('tail') ? 'tail' : role === 'head' ? 'head' : role === 'weapon' ? 'weapon' : ['torso', 'pelvis', 'neck'].includes(role) ? 'body' : '';
+		if (!group || report.confidence[group] === undefined || role === 'weapon' && landmarks && !landmarks.weapon) continue;
+		const f = frames.get(bone.id)!, tip = tipOf(f);
+		let visible = 0;
+		for (let k = 1; k < 16; k++) {
+			const x = Math.floor(f.x + (tip[0] - f.x) * k / 16), y = Math.floor(f.y + (tip[1] - f.y) * k / 16);
+			if (x >= 0 && y >= 0 && x < o.image.width && y < o.image.height && o.image.data[(y * o.image.width + x) * 4 + 3]) visible++;
+		}
+		const values = support.get(group) ?? [];
+		values.push(visible / 15); support.set(group, values);
+	}
+	const unsupported: string[] = [];
+	for (const [group, values] of support) if (values.reduce((a, b) => a + b, 0) / values.length < 0.45) {
+		report.confidence[group] = Math.min(report.confidence[group]!, 0.2);
+		unsupported.push(group);
+	}
+	if (unsupported.length) report.notes.push(`Check ${unsupported.join(', ')}: limited silhouette support for the proposed bones.`);
 	return rig;
 }
 
@@ -140,7 +171,7 @@ export function segmentsFor(rig: RigDocument): BoneSegment[] {
 	const out: BoneSegment[] = [];
 	for (const p of rig.parts) {
 		const f = frames.get(p.bone);
-		if (!f || p.hidden) continue;
+		if (!f || p.hidden || p.autoAssign === false) continue;
 		const [bx, by] = tipOf(f);
 		out.push({ label: p.label, ax: f.x, ay: f.y, bx, by, bias: (p.reach ?? 0) * H });
 	}
@@ -218,6 +249,7 @@ export function parseRig(input: unknown): RigDocument {
 		stiffness: Math.min(1, Math.max(0, num(p.stiffness, 0))),
 		cell: Math.max(0, Math.round(num(p.cell, 0))),
 		fill: p.fill !== false,
+		autoAssign: p.autoAssign === false ? false : undefined,
 		reach: typeof p.reach === 'number' ? p.reach : undefined,
 		hidden: p.hidden === true ? true : undefined,
 	}));
