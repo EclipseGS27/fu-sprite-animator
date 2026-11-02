@@ -69,7 +69,7 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
 	{ id: 'animate', label: 'Animate', hint: 'Pick an animation below. Space plays and pauses. Adjust speed, intensity and phase timing.' },
 ];
 
-const IDLE_IDS = ['idle-breathing', 'combat-stance'];
+const IDLE_IDS = ['idle-breathing', 'combat-stance', 'magical-idle', 'heavy-weapon-idle', 'walk', 'run'];
 
 /**
  * FABULA ULTIMA — SPRITE ANIMATION STUDIO.

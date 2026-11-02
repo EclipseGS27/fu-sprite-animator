@@ -130,6 +130,24 @@ describe('clips', () => {
 			}
 		}
 	});
+	it('rest keys start and end a world track exactly on the drawn pose, both facings', () => {
+		for (const mirror of [false, true]) {
+			for (const rest of [90, 170, -150, 300]) {
+				const sk = new Skeleton([bone('t', null, 0, 0, -90, 10, 'torso'), bone('a', 't', 10, 0, rest + 90, 10, 'arm')]);
+				const c = clip({ arm: { space: 'world', rotate: [{ t: 0, v: 0, rest: true }, { t: 0.5, v: -100 }, { t: 1, v: 0, rest: true }] } });
+				const out = new Float64Array(sk.size * STRIDE);
+				const mask = new Uint8Array(sk.size);
+				const ang = new Float64Array(sk.size);
+				const ctx = { skeleton: sk, bodyHeight: 50, mirror, intensity: 1 };
+				evaluateClip(c, 0, ctx, out, mask, ang);
+				expect(out[STRIDE]).toBeCloseTo(0, 6);
+				evaluateClip(c, 1, ctx, out, mask, ang);
+				expect(out[STRIDE]).toBeCloseTo(0, 6);
+				evaluateClip(c, 0.5, ctx, out, mask, ang);
+				expect(wrapDeg(ang[1]! - (mirror ? 280 : -100))).toBeCloseTo(0, 6);
+			}
+		}
+	});
 	it('world tracks mirror for left-facing rigs', () => {
 		const sk = new Skeleton([bone('a', null, 0, 0, 90, 10, 'arm')]);
 		const c = clip({ arm: { space: 'world', rotate: [{ t: 0, v: 0 }] } });

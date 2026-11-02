@@ -134,6 +134,11 @@ export interface Key {
 	t: number;
 	v: number;
 	e?: Ease;
+	/**
+	 * Hold the bone's own drawn angle here instead of v (v is kept as a fallback for tools).
+	 * Lets a world-space track start and end exactly on the sprite's pose, whatever it is.
+	 */
+	rest?: boolean;
 }
 
 export interface Key2 {

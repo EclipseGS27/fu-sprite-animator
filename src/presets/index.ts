@@ -1,11 +1,12 @@
 import type { ClipCategory, ClipDocument } from '../core/types';
 import { HUMANOID_CLIPS } from './humanoid';
+import { LIBRARY_CLIPS } from './library';
 
 /**
  * The clip library: built-in clips plus any registered at runtime (world clips, other modules).
  * Registered clips with the same id replace built-ins, so a world can override "sword-slash".
  */
-const builtIn = new Map<string, ClipDocument>(HUMANOID_CLIPS.map((c) => [c.id, c]));
+const builtIn = new Map<string, ClipDocument>([...HUMANOID_CLIPS, ...LIBRARY_CLIPS].map((c) => [c.id, c]));
 const registered = new Map<string, ClipDocument>();
 
 export const CATEGORY_LABELS: Record<ClipCategory, string> = {

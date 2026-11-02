@@ -17,19 +17,30 @@ function segmentIndex(keys: { t: number }[], t: number): number {
 	return lo;
 }
 
-/** Value of a key list at time t (clamped at both ends). */
-export function sampleKeys(keys: Key[] | undefined, t: number, fallback = 0): number {
+/**
+ * Value of a key list at time t (clamped at both ends). `rest` is the value of keys marked
+ * `rest` (the bone's own pose); without it those keys use their stored v.
+ */
+export function sampleKeys(keys: Key[] | undefined, t: number, fallback = 0, rest?: number): number {
 	if (!keys || keys.length === 0) return fallback;
+	const val = (key: Key) => (key.rest && rest !== undefined ? rest : key.v);
 	const first = keys[0]!;
-	if (keys.length === 1 || t <= first.t) return first.v;
+	if (keys.length === 1 || t <= first.t) return val(first);
 	const last = keys[keys.length - 1]!;
-	if (t >= last.t) return last.v;
+	if (t >= last.t) return val(last);
 	const i = segmentIndex(keys, t);
 	const a = keys[i]!;
 	const b = keys[i + 1]!;
 	const span = b.t - a.t;
 	const k = span > 0 ? easeFn(a.e)((t - a.t) / span) : 1;
-	return a.v + (b.v - a.v) * k;
+	return val(a) + (val(b) - val(a)) * k;
+}
+
+/** The authored-space angle of a bone's drawn pose, on the same turn as the track's own keys. */
+function restAngle(keys: Key[], setupWorld: number, mirror: boolean): number {
+	const a = mirror ? 180 - setupWorld : setupWorld;
+	const ref = keys.find((key) => !key.rest);
+	return ref ? ref.v + wrapDeg(a - ref.v) : a;
 }
 
 export function sampleKeys2(keys: Key2[] | undefined, t: number, fx = 0, fy = 0): [number, number] {
@@ -152,13 +163,14 @@ export function evaluateClip(clip: ClipDocument, t: number, ctx: EvalContext, ou
 			if (track.rotate && track.rotate.length) {
 				if (track.space === 'world') {
 					const parentSetup = inherits ? sk.setupAngle[p]! : 0;
+					const rest = restAngle(track.rotate, parentSetup + s.rot, ctx.mirror);
 					// Pick the turn count once, so the first key is the short way round from the setup pose.
-					const first = mirrorAngle(track.rotate[0]!.v) - parentSetup - s.rot;
+					const first = mirrorAngle(sampleKeys(track.rotate, -1, 0, rest)) - parentSetup - s.rot;
 					const turns = wrapDeg(first) - first;
-					const d = mirrorAngle(sampleKeys(track.rotate, t)) - parentAngle - s.rot + turns;
+					const d = mirrorAngle(sampleKeys(track.rotate, t, 0, rest)) - parentAngle - s.rot + turns;
 					out[o] = d * k;
 				} else {
-					out[o] = sampleKeys(track.rotate, t) * k * sign;
+					out[o] = sampleKeys(track.rotate, t, 0, 0) * k * sign;
 				}
 			}
 		}
