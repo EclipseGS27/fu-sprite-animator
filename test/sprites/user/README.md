@@ -23,20 +23,27 @@ existing game characters: keep them out of any public release.
 | `wraith.png` | hooded wraith with trailing robes, crescent and crystals | 677×369, smoothed edges |
 | `chronomancer.png` | mage with an hourglass staff and floating glyphs | 677×369, smoothed edges |
 
-## What the automatic rig does with them (first run)
-Review images: `SPRITES=user/sword_blue_blade,user/dragon_green:winged OWN=1 npx vitest run -c vitest.tools.config.ts test/tools/landmarks.test.ts`
-and `npx vitest run -c vitest.tools.config.ts test/tools/user-report.test.ts`.
+## What the automatic rig does with them
+Review images: `SPRITES=user/sword_blue_blade,user/dragon_green:winged OWN=1 npx vitest run -c vitest.tools.config.ts test/tools/landmarks.test.ts`,
+`npx vitest run -c vitest.tools.config.ts test/tools/user-report.test.ts`, and for weapons
+`OUT=<dir>/ npx vitest run -c vitest.tools.config.ts test/tools/weapon-debug.test.ts`.
 
-- All 11 import losslessly with a usable rig and an exact rest pose; auto-rig takes 12–260 ms.
-- **Facing**: every humanoid is proposed as facing right; most of the party faces left. Facing comes
-  from the weapon side, and no weapon was found (below). Fix by hand: *Character faces → Left*.
-- **Weapons**: not detected on these 3/4-view sprites (glowing blade, ornamented staff, greatsword
-  over the shoulder, spear held across the body); the blades end up on an arm. Drag the *Weapon*
-  bone along the blade and paint the blade onto it.
-- **Ground shadows** (the dark ellipses under the party's feet) go to the legs and would move with
-  them; paint them onto the pelvis or torso.
-- **Robes and dresses**: legs placed by proportion (as designed).
-- **Dragon and wolf**: the beast detector did not find legs (diagonal legs, spread claws, wings
-  widening the silhouette), so both use template proportions; head, neck, wings and body land
-  roughly right, legs and tails need fitting. The wraith (floating) and chronomancer come out
-  closest to usable.
+**First run** (before tuning on these sprites): no weapon found on any party sprite, so all were
+proposed facing right; ground shadows went to the legs; no legs found on the real dragon and wolf.
+
+**After tuning** (2026-11-02, checked by `test/unit/user-sprites.test.ts`):
+- All 11 import losslessly with a usable rig and an exact rest pose.
+- **Weapons**: the glowing blade, the greatsword and the spear are found (the spear from its head
+  to the hand; the part crossing the body stays with the arms). No weapon is invented on the
+  brawler, the dress mage or the thief. Not found yet: the summoner's ringed staff and the
+  chronomancer's staff (both cross the body with ornaments at the top).
+- **Facing**: from the weapon when there is one — right for the blade and spear users (left).
+  The greatsword user is proposed facing right (his blade hangs on his right) though he faces left.
+  Without a weapon, the Studio uses the facing you chose last, says it is a guess, and the
+  proposal banner has a one-click *← Left / Right →* that rebuilds the skeleton facing that way.
+- **Ground shadows** are found under the six party sprites that have one and get their own
+  *Shadow* part on the root, so they stay on the floor instead of moving with the legs.
+- **Dragon and wolf**: legs are now found where the legs separate below the body (feet at
+  different heights, slanted legs); both face right. The dragon's near and far wings, head,
+  neck and curled tail land on the right areas; the wolf gets head, body, four legs and tail.
+- Robes and dresses: legs placed by proportion (as designed).

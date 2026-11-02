@@ -3301,6 +3301,45 @@ function components2(mask, w, h2) {
   }
   return out;
 }
+function pca(pixels, w) {
+  let cx = 0;
+  let cy = 0;
+  for (const i of pixels) {
+    cx += i % w + 0.5;
+    cy += Math.floor(i / w) + 0.5;
+  }
+  cx /= pixels.length || 1;
+  cy /= pixels.length || 1;
+  let xx = 0;
+  let yy = 0;
+  let xy = 0;
+  for (const i of pixels) {
+    const dx = i % w + 0.5 - cx;
+    const dy = Math.floor(i / w) + 0.5 - cy;
+    xx += dx * dx;
+    yy += dy * dy;
+    xy += dx * dy;
+  }
+  const th = 0.5 * Math.atan2(2 * xy, xx - yy);
+  const ux = Math.cos(th);
+  const uy = Math.sin(th);
+  let lo = Infinity;
+  let hi = -Infinity;
+  let plo = Infinity;
+  let phi = -Infinity;
+  for (const i of pixels) {
+    const dx = i % w + 0.5 - cx;
+    const dy = Math.floor(i / w) + 0.5 - cy;
+    const a = dx * ux + dy * uy;
+    const b = -dx * uy + dy * ux;
+    lo = Math.min(lo, a);
+    hi = Math.max(hi, a);
+    plo = Math.min(plo, b);
+    phi = Math.max(phi, b);
+  }
+  const thick = Math.max(1, phi - plo + 1);
+  return { cx, cy, ux, uy, lo, hi, thick, elong: (hi - lo + 1) / thick };
+}
 function skeletonize(mask, w, h2) {
   const m = mask.slice();
   const get = (x, y) => x < 0 || y < 0 || x >= w || y >= h2 ? 0 : m[y * w + x];
@@ -3357,6 +3396,79 @@ function mainBounds(img, alphaMin = 1) {
     }
   }
   return x1 < 0 ? null : { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 };
+}
+
+// src/sprite/shadow.ts
+function detectShadow(img) {
+  const { width: w, height: h2, data } = img;
+  let top = h2;
+  let bottom = -1;
+  let opaque = 0;
+  for (let i = 0; i < w * h2; i++) {
+    if (!data[i * 4 + 3]) continue;
+    opaque++;
+    const y = Math.floor(i / w);
+    if (y < top) top = y;
+    if (y > bottom) bottom = y;
+  }
+  if (bottom < 0) return null;
+  const H = bottom - top + 1;
+  const band = Math.max(3, Math.round(H * 0.15));
+  const dark = new Uint8Array(w * h2);
+  for (let y = bottom - band + 1; y <= bottom; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const a = data[i * 4 + 3];
+      if (!a) continue;
+      const r = data[i * 4];
+      const g = data[i * 4 + 1];
+      const b = data[i * 4 + 2];
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      if (max <= 40 && max - min <= 20 || a < 200 && max <= 90 && max - min <= 30) dark[i] = 1;
+    }
+  }
+  const rows = Math.max(2, Math.round(H * 0.03));
+  let bottomPx = 0;
+  let bottomDark = 0;
+  for (let y = bottom - rows + 1; y <= bottom; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!data[i * 4 + 3]) continue;
+      bottomPx++;
+      if (dark[i]) bottomDark++;
+    }
+  }
+  if (!bottomPx || bottomDark < bottomPx * 0.4) return null;
+  const out = new Uint8Array(w * h2);
+  let found = 0;
+  for (const comp of components2(dark, w, h2)) {
+    let x0 = w;
+    let x1 = -1;
+    let y0 = h2;
+    let y1 = -1;
+    for (const i of comp) {
+      const x = i % w;
+      const y = (i - x) / w;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+    const wide = x1 - x0 + 1 >= 3 * (y1 - y0 + 1);
+    if (!wide || y1 < bottom - rows || comp.length < opaque * 0.015) continue;
+    const inComp = new Set(comp);
+    let solid = 0;
+    for (const i of comp) {
+      const x = i % w;
+      const ok = [i - w, i + w, x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1].every((j) => j < 0 || j >= w * h2 || inComp.has(j) || !data[j * 4 + 3]);
+      if (ok) solid++;
+    }
+    if (solid < comp.length * 0.3) continue;
+    for (const i of comp) out[i] = 1;
+    found += comp.length;
+  }
+  return found ? out : null;
 }
 
 // src/sprite/landmarks.ts
@@ -3432,16 +3544,161 @@ function skeletonBranches(skel, w, h2) {
   }
   return out;
 }
-function detectWeapon(mask, w, h2, height) {
+function thinLine(mask, w, h2, dt, height, bottom, bodyCx, bodyCy, rgba, debug) {
+  const maxW = Math.max(3, Math.round(height * 0.036));
+  const keep = new Uint8Array(mask.length);
+  const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i] || dt[i] > maxW) continue;
+    const x = i % w;
+    const y = (i - x) / w;
+    for (const [dx, dy] of dirs) {
+      let run = 1;
+      for (let s2 = 1; s2 <= maxW && run <= maxW; s2++) {
+        const xx = x + dx * s2;
+        const yy = y + dy * s2;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h2 || !mask[yy * w + xx]) break;
+        run++;
+      }
+      for (let s2 = 1; s2 <= maxW && run <= maxW; s2++) {
+        const xx = x - dx * s2;
+        const yy = y - dy * s2;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h2 || !mask[yy * w + xx]) break;
+        run++;
+      }
+      if (run <= maxW) {
+        keep[i] = 1;
+        break;
+      }
+    }
+  }
+  let best = null;
+  for (const comp of components2(keep, w, h2)) {
+    if (comp.length < height * 0.12) continue;
+    const p = pca(comp, w);
+    let lo = Infinity;
+    let hi = -Infinity;
+    let near = 0;
+    for (const i of comp) {
+      const x = i % w + 0.5 - p.cx;
+      const y = Math.floor(i / w) + 0.5 - p.cy;
+      const along = x * p.ux + y * p.uy;
+      const across = Math.abs(-x * p.uy + y * p.ux);
+      if (across <= 2) {
+        near++;
+        lo = Math.min(lo, along);
+        hi = Math.max(hi, along);
+      }
+    }
+    let len = hi - lo;
+    let a = [p.cx + p.ux * lo, p.cy + p.uy * lo];
+    let b = [p.cx + p.ux * hi, p.cy + p.uy * hi];
+    const pixels = comp.slice();
+    const at = () => `line (${a.map(Math.round)})\u2013(${b.map(Math.round)}) len ${len.toFixed(0)}`;
+    if (len < height * 0.15 || near < comp.length * 0.55) {
+      if (len >= height * 0.15) debug?.(`${at()}: not straight enough (${Math.round(near / comp.length * 100)} % on the line)`);
+      continue;
+    }
+    if (rgba) {
+      const col = [0, 0, 0];
+      let n = 0;
+      for (const i of comp) {
+        const x = i % w + 0.5 - p.cx;
+        const y = Math.floor(i / w) + 0.5 - p.cy;
+        if (Math.abs(-x * p.uy + y * p.ux) > 1) continue;
+        for (let c = 0; c < 3; c++) col[c] += rgba[i * 4 + c];
+        n++;
+      }
+      for (let c = 0; c < 3; c++) col[c] /= n || 1;
+      const extend = (from, dir) => {
+        let t = from;
+        let gap = 0;
+        for (let s2 = from + dir; Math.abs(s2 - from) < height * 1.5; s2 += dir) {
+          let hit = false;
+          for (let o = -1; o <= 1; o++) {
+            const x = Math.floor(p.cx + p.ux * s2 - p.uy * o);
+            const y = Math.floor(p.cy + p.uy * s2 + p.ux * o);
+            if (x < 0 || y < 0 || x >= w || y >= h2) continue;
+            const j = y * w + x;
+            if (!mask[j]) continue;
+            const d = Math.abs(rgba[j * 4] - col[0]) + Math.abs(rgba[j * 4 + 1] - col[1]) + Math.abs(rgba[j * 4 + 2] - col[2]);
+            if (d < 60) {
+              hit = true;
+              pixels.push(j);
+            }
+          }
+          if (hit) {
+            t = s2;
+            gap = 0;
+          } else if (++gap > 3) break;
+        }
+        return t;
+      };
+      const lo2 = extend(lo, -1);
+      const hi2 = extend(hi, 1);
+      if (hi2 - lo2 > len) {
+        a = [p.cx + p.ux * lo2, p.cy + p.uy * lo2];
+        b = [p.cx + p.ux * hi2, p.cy + p.uy * hi2];
+        len = hi2 - lo2;
+      }
+    }
+    if (len < height * 0.3) {
+      debug?.(`${at()}: too short`);
+      continue;
+    }
+    if (Math.max(a[1], b[1]) >= bottom - height * 0.04 && Math.min(a[1], b[1]) >= bottom - height * 0.2) {
+      debug?.(`${at()}: lies along the floor`);
+      continue;
+    }
+    const da = Math.hypot(a[0] - bodyCx, a[1] - bodyCy);
+    const db = Math.hypot(b[0] - bodyCx, b[1] - bodyCy);
+    const [tip, hilt] = da >= db ? [a, b] : [b, a];
+    {
+      const L = Math.hypot(tip[0] - hilt[0], tip[1] - hilt[1]) || 1;
+      const ux = (tip[0] - hilt[0]) / L;
+      const uy = (tip[1] - hilt[1]) / L;
+      let solid = 0;
+      for (let s2 = 3; s2 <= 8; s2++) {
+        const x = Math.floor(tip[0] + ux * s2);
+        const y = Math.floor(tip[1] + uy * s2);
+        if (x >= 0 && y >= 0 && x < w && y < h2 && mask[y * w + x]) solid++;
+      }
+      if (solid >= 4) {
+        debug?.(`${at()}: its far end runs into the figure (hair or cloth)`);
+        continue;
+      }
+    }
+    debug?.(`${at()}: candidate (shaft)`);
+    if (!best || len > best.length) best = { pixels: [...new Set(pixels)], tip, hilt, length: len };
+  }
+  return best;
+}
+function pruneSkeleton(skel, w, h2, minLen, rounds = 3) {
+  const out = skel.slice();
+  for (let r = 0; r < rounds; r++) {
+    let removed = 0;
+    for (const b of skeletonBranches(out, w, h2)) {
+      if (b.length >= minLen) continue;
+      for (const i of b.path.slice(0, -1)) out[i] = 0;
+      removed++;
+    }
+    if (!removed) break;
+  }
+  return out;
+}
+function detectWeapon(mask, w, h2, height, debug, rgba) {
   const skel = skeletonize(mask, w, h2);
   const dt = distanceTransform(mask, w, h2);
   let best = null;
   let bestScore = 0;
   let medianThick = 0;
+  let coreThick = 0;
   {
     const all = [];
     for (let i = 0; i < skel.length; i++) if (skel[i]) all.push(dt[i]);
     medianThick = median(all);
+    all.sort((a, b) => a - b);
+    coreThick = all[Math.floor(all.length * 0.9)] ?? medianThick;
   }
   let bottom = 0;
   let bodyCx = 0;
@@ -3459,52 +3716,107 @@ function detectWeapon(mask, w, h2, height) {
   }
   bodyCx /= bodyN || 1;
   bodyCy /= bodyN || 1;
-  const straightPrefix = (b) => {
-    const px = (i) => i % w + 0.5;
-    const py = (i) => Math.floor(i / w) + 0.5;
-    const p0 = b.path[0];
-    let keep = 1;
-    for (let k4 = 2; k4 < b.path.length; k4++) {
-      const pk = b.path[k4];
+  const px = (i) => i % w + 0.5;
+  const py = (i) => Math.floor(i / w) + 0.5;
+  let lenient = false;
+  const straightFrom = (path, a) => {
+    const p0 = path[a];
+    const wobble = lenient ? 0.35 * median(path.slice(a, a + 24).map((i) => dt[i])) : 0;
+    let keep = a + 1;
+    for (let k4 = a + 2; k4 < path.length; k4++) {
+      const pk = path[k4];
       const L = Math.hypot(px(pk) - px(p0), py(pk) - py(p0)) || 1;
-      const tol = Math.max(1.25, L * 0.04);
+      const tol = Math.max(1.25, L * 0.04, wobble);
       let ok = true;
-      for (let j = 1; j < k4 && ok; j++) {
-        const q = b.path[j];
+      for (let j = a + 1; j < k4 && ok; j++) {
+        const q = path[j];
         const dev = Math.abs((px(pk) - px(p0)) * (py(p0) - py(q)) - (px(p0) - px(q)) * (py(pk) - py(p0))) / L;
         if (dev > tol) ok = false;
       }
       if (!ok) break;
       keep = k4 + 1;
     }
-    const path = b.path.slice(0, keep);
-    const last = path[path.length - 1];
-    const len = Math.hypot(px(last) - px(p0), py(last) - py(p0));
-    return { path, length: len, straightness: 1 };
+    return keep;
   };
-  for (const whole of skeletonBranches(skel, w, h2)) {
-    const b = straightPrefix(whole);
-    if (b.length < height * 0.3) continue;
-    const tip = b.path[0];
-    const tipY = Math.floor(tip / w);
-    const baseY = Math.floor(b.path[b.path.length - 1] / w);
-    if (tipY >= bottom - height * 0.04 && tipY > baseY) continue;
-    {
-      const tx0 = tip % w;
-      let solid = 0;
-      for (let y = tipY; y <= bottom; y++) if (mask[y * w + tx0]) solid++;
-      if (tipY > baseY && solid >= (bottom - tipY + 1) * 0.8) continue;
+  const straightPrefix = (b) => {
+    const reach = lenient ? Math.min(b.path.length - 1, Math.ceil(height * 0.22)) : 0;
+    let bestA = 0;
+    let bestK = 1;
+    let bestLen = 0;
+    for (let a = 0; a <= reach; a += a < 6 ? 1 : 2) {
+      let k4 = straightFrom(b.path, a);
+      const base2 = median(b.path.slice(a, Math.min(k4, a + 12)).map((i) => dt[i]));
+      if (lenient) {
+        for (let j = a + 4; j < k4; j++) if (dt[b.path[j]] > Math.max(2.5, base2 * 1.8)) {
+          k4 = j;
+          break;
+        }
+      }
+      const len = Math.hypot(px(b.path[k4 - 1]) - px(b.path[a]), py(b.path[k4 - 1]) - py(b.path[a]));
+      if (len > bestLen) {
+        bestLen = len;
+        bestA = a;
+        bestK = k4;
+      }
     }
-    const thick2 = median(b.path.map((i) => dt[i]));
-    const tx = tip % w + 0.5;
-    const far = Math.hypot(tx - bodyCx, tipY + 0.5 - bodyCy) >= height * 0.4;
-    if (!far) continue;
-    if (thick2 > Math.max(1.6, medianThick * 1.15) && b.length < height * 0.35) continue;
-    const score = b.length * b.straightness;
-    if (score > bestScore) {
-      bestScore = score;
-      best = b;
+    return { path: b.path.slice(0, bestK), length: bestLen, straightness: 1, from: bestA };
+  };
+  for (const pass of [false, true]) {
+    lenient = pass;
+    if (best) break;
+    for (const whole of skeletonBranches(lenient ? pruneSkeleton(skel, w, h2, Math.max(3, height * 0.05)) : skel, w, h2)) {
+      const b = straightPrefix(whole);
+      const tip = b.path[0];
+      const at = `(${tip % w},${Math.floor(tip / w)}) len ${b.length.toFixed(0)}/${whole.length.toFixed(0)}`;
+      if (b.length < height * 0.3) {
+        if (whole.length >= height * 0.2) debug?.(`${at}: straight part too short`);
+        continue;
+      }
+      const tipY = Math.floor(tip / w);
+      const baseY = Math.floor(b.path[b.path.length - 1] / w);
+      if (lenient && Math.min(tipY, baseY) >= bottom - height * 0.15) {
+        debug?.(`${at}: lies along the floor`);
+        continue;
+      }
+      if (tipY >= bottom - height * 0.04 && tipY > baseY) {
+        debug?.(`${at}: ends on the ground`);
+        continue;
+      }
+      {
+        const tx0 = tip % w;
+        let solid = 0;
+        for (let y = tipY; y <= bottom; y++) if (mask[y * w + tx0]) solid++;
+        if (tipY > baseY && solid >= (bottom - tipY + 1) * 0.8) {
+          debug?.(`${at}: stands on the ground`);
+          continue;
+        }
+      }
+      const thick2 = median(b.path.map((i) => dt[i]));
+      const tx = tip % w + 0.5;
+      const far = Math.hypot(tx - bodyCx, tipY + 0.5 - bodyCy) >= height * 0.4;
+      if (!far) {
+        debug?.(`${at}: too close to the body`);
+        continue;
+      }
+      if (thick2 > Math.max(1.6, medianThick * 1.15) && b.length < height * 0.35) {
+        debug?.(`${at}: thick ${thick2.toFixed(1)} vs median ${medianThick.toFixed(1)}`);
+        continue;
+      }
+      if (lenient && thick2 > coreThick * 0.6) {
+        debug?.(`${at}: as thick as the body (${thick2.toFixed(1)} vs core ${coreThick.toFixed(1)})`);
+        continue;
+      }
+      const score = b.length * b.straightness;
+      debug?.(`${at}: candidate${lenient ? " (second pass)" : ""}, score ${score.toFixed(0)}`);
+      if (score > bestScore) {
+        bestScore = score;
+        best = b;
+      }
     }
+  }
+  if (!best) {
+    const line = thinLine(mask, w, h2, dt, height, bottom, bodyCx, bodyCy, rgba ?? null, debug);
+    if (line) return line;
   }
   if (!best) return null;
   const thick = Math.max(1, median(best.path.map((i) => dt[i])));
@@ -3527,7 +3839,7 @@ function detectWeapon(mask, w, h2, height) {
   const hiltI = best.path[best.path.length - 1];
   return { pixels: [...pixels], tip: [tipI % w + 0.5, Math.floor(tipI / w) + 0.5], hilt: [hiltI % w + 0.5, Math.floor(hiltI / w) + 0.5], length: best.length };
 }
-function detectHumanoid(img, facingIn = "auto") {
+function detectHumanoid(img, facingIn = "auto", fallback = "right") {
   const { width: w, height: h2 } = img;
   const full = alphaMask(img, 128);
   {
@@ -3536,6 +3848,10 @@ function detectHumanoid(img, facingIn = "auto") {
     const main = comps[0]?.length ?? 0;
     for (const c of comps) if (c.length >= main * 0.15) for (const i of c) keep[i] = 1;
     full.set(keep);
+    const shadow = detectShadow(img);
+    if (shadow) {
+      for (let i = 0; i < full.length; i++) if (shadow[i]) full[i] = 0;
+    }
   }
   let anyPx = false;
   let fTop = h2;
@@ -3549,8 +3865,8 @@ function detectHumanoid(img, facingIn = "auto") {
   }
   if (!anyPx) return null;
   const notes = [];
-  const weaponFound = detectWeapon(full, w, h2, fBottom - fTop + 1);
-  let facing = facingIn === "auto" ? "right" : facingIn;
+  const weaponFound = detectWeapon(full, w, h2, fBottom - fTop + 1, void 0, img.data);
+  let facing = facingIn === "auto" ? fallback : facingIn;
   if (facingIn === "auto" && weaponFound) {
     let sum = 0;
     let n = 0;
@@ -3566,7 +3882,7 @@ function detectHumanoid(img, facingIn = "auto") {
     const lean = Math.abs(side) > (fBottom - fTop) * 0.05 ? side : dir;
     facing = lean >= 0 ? "right" : "left";
     notes.push(`Facing ${facing}: the weapon is on that side.`);
-  }
+  } else if (facingIn === "auto") notes.push(`Facing ${facing} is a guess (no weapon to tell by): flip it if the character looks the other way.`);
   const s = facing === "right" ? 1 : -1;
   const mask = full.slice();
   if (weaponFound) for (const i of weaponFound.pixels) mask[i] = 0;
@@ -4142,6 +4458,10 @@ function detectBeast(img, facingIn = "auto", o = {}) {
     const main = comps[0]?.length ?? 0;
     for (const c of comps) if (c.length >= main * 0.15) for (const i of c) keep[i] = 1;
     mask.set(keep);
+    const shadow = detectShadow(img);
+    if (shadow) {
+      for (let i = 0; i < mask.length; i++) if (shadow[i]) mask[i] = 0;
+    }
   }
   let top = h2, bottom = -1, left = w, right = -1;
   for (let i = 0; i < mask.length; i++) {
@@ -4181,6 +4501,43 @@ function detectBeast(img, facingIn = "auto", o = {}) {
     }
     if (solid && width(r) <= W * 0.3) legs.push({ top: [mid(r), belly], foot: [mid(r), bottom], pixels });
   }
+  if (legs.length < 2) {
+    legs.length = 0;
+    const avg = (v) => v.reduce((a, b) => a + b, 0) / (v.length || 1);
+    const legsBelow = (cut) => {
+      const found = [];
+      const below = new Uint8Array(mask.length);
+      for (let i = cut * w; i < mask.length; i++) below[i] = mask[i];
+      for (const comp of components2(below, w, h2)) {
+        let y0 = h2;
+        let y1 = -1;
+        let x0 = w;
+        let x1 = -1;
+        for (const i of comp) {
+          const x = i % w;
+          const y = (i - x) / w;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+        }
+        const tall = y1 - cut + 1;
+        if (y0 > cut + 1 || tall < H * 0.1 || x1 - x0 + 1 > tall * 1.3) continue;
+        const topXs = comp.filter((i) => Math.floor(i / w) <= cut + 2).map((i) => i % w);
+        const footXs = comp.filter((i) => Math.floor(i / w) === y1).map((i) => i % w);
+        found.push({ top: [avg(topXs), cut], foot: [avg(footXs), y1], pixels: comp.length });
+      }
+      return found;
+    };
+    const step = Math.max(2, Math.round(H * 0.02));
+    for (let cut = belly; cut <= bottom - H * 0.1; cut += step) {
+      if (W < (cut - top) * 1.4) continue;
+      const found = legsBelow(cut);
+      if (found.length > legs.length) legs.splice(0, legs.length, ...found);
+      if (legs.length >= 4) break;
+    }
+    if (legs.length >= 2) notes.push("Legs found below the belly line (feet at different heights).");
+  }
   if (legs.length < 2) return null;
   const xs = legs.map((l) => l.top[0]);
   const lo = Math.min(...xs);
@@ -4192,7 +4549,7 @@ function detectBeast(img, facingIn = "auto", o = {}) {
     if (n > 0) thick.push(n);
   }
   thick.sort((a, b) => a - b);
-  const thickness = Math.max(2, thick.length ? thick[thick.length >> 1] : H * 0.25);
+  const thickness = Math.min(Math.max(2, thick.length ? thick[thick.length >> 1] : H * 0.25), o.wings ? H * 0.33 : Infinity);
   const cy = belly - thickness / 2;
   const backY = belly - thickness;
   const dist = distanceTransform(mask, w, h2);
@@ -4207,17 +4564,12 @@ function detectBeast(img, facingIn = "auto", o = {}) {
   const used = /* @__PURE__ */ new Set();
   let wingEnds = [];
   if (o.wings) {
-    const high = free.filter((e) => e.end[1] < backY - thickness * 0.3).sort((a, b) => a.end[1] - b.end[1]);
-    if (high.length) {
-      const first = high[0];
-      const second = high.find((e) => Math.abs(e.end[0] - first.end[0]) >= W * 0.25);
-      wingEnds = second ? [first, second] : [first];
-    }
-    for (const e of high) used.add(e);
+    wingEnds = free.filter((e) => e.end[1] < backY - thickness * 0.3).sort((a, b) => a.end[1] - b.end[1]);
+    for (const e of wingEnds) used.add(e);
   }
   const rest = free.filter((e) => !used.has(e));
   const headEnd = rest.slice().sort((a, b) => b.girth - a.girth)[0] ?? null;
-  let facing = facingIn === "auto" ? "right" : facingIn;
+  let facing = facingIn === "auto" ? o.fallback ?? "right" : facingIn;
   if (facingIn === "auto" && headEnd) {
     facing = headEnd.end[0] >= (left + right) / 2 ? "right" : "left";
     notes.push(`Facing ${facing}: the head is the thickest end of the silhouette.`);
@@ -4260,6 +4612,13 @@ function detectBeast(img, facingIn = "auto", o = {}) {
   let wings = null;
   if (o.wings) {
     const lerpX = (t) => hipX + (shX - hipX) * t;
+    const high = wingEnds.filter((e) => Math.hypot(e.end[0] - tip[0], e.end[1] - tip[1]) > W * 0.2);
+    wingEnds = [];
+    if (high.length) {
+      const first = high[0];
+      const second = high.find((e) => Math.abs(e.end[0] - first.end[0]) >= W * 0.25);
+      wingEnds = second ? [first, second] : [first];
+    }
     if (wingEnds.length) {
       const [back, fwd] = wingEnds.slice().sort((a, b) => front(a.end[0]) - front(b.end[0]));
       wings = { near: { base: [lerpX(0.4), backY + 1], tip: back.end }, far: { base: [lerpX(0.65), backY + 1], tip: fwd ? fwd.end : [back.end[0] + s * W * 0.15, back.end[1]] } };
@@ -4268,7 +4627,16 @@ function detectBeast(img, facingIn = "auto", o = {}) {
   }
   let tail = null;
   const behindHip = rest.filter((e) => e !== headEnd && front(e.end[0]) < front(hipX) - W * 0.04);
-  const low = behindHip.filter((e) => e.end[1] >= backY);
+  let low = behindHip.filter((e) => e.end[1] >= (o.wings ? belly : backY));
+  if (o.wings) {
+    const wingish = low.filter((e) => e.half[1] < backY);
+    low = low.filter((e) => e.half[1] >= backY);
+    const back = wingish.sort((a, b) => front(a.end[0]) - front(b.end[0]))[0];
+    if (back && wings && front(back.end[0]) < front(wings.near.tip[0]) - W * 0.15) {
+      wings.far = { base: wings.far.base, tip: wings.near.tip };
+      wings.near = { base: wings.near.base, tip: back.end };
+    }
+  }
   const tails = (low.length || o.wings ? low : behindHip).sort((a, b) => Math.hypot(b.end[0] - hipX, b.end[1] - cy) - Math.hypot(a.end[0] - hipX, a.end[1] - cy));
   if (tails.length) {
     const t = tails[0];
@@ -4367,17 +4735,17 @@ function createRig(o) {
   const bounds = opaqueBounds(o.image) ?? full;
   const body = bodyBounds(o.image) ?? full;
   const template = TEMPLATES[o.template ?? "humanoid"] ?? TEMPLATES.humanoid;
-  let facing = o.facing ?? "right";
+  let facing = o.facing ?? o.facingFallback ?? "right";
   let landmarks = null;
   if (template.id === "humanoid" && o.detect !== false) {
-    landmarks = detectHumanoid(o.image, o.facing ?? "auto");
+    landmarks = detectHumanoid(o.image, o.facing ?? "auto", o.facingFallback);
     if (landmarks) facing = landmarks.facing;
   }
   const creature = template.id !== "humanoid" && template.id !== "custom";
   const fitBox = creature ? mainBounds(o.image) ?? bounds : body;
   let beast = null;
   if ((template.id === "quadruped" || template.id === "winged") && o.detect !== false) {
-    beast = detectBeast(o.image, o.facing ?? "auto", { wings: template.id === "winged" });
+    beast = detectBeast(o.image, o.facing ?? "auto", { wings: template.id === "winged", fallback: o.facingFallback });
     if (beast) facing = beast.facing;
   }
   const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : beast ? beastFromLandmarks(beast, template) : fitTemplate(template, fitBox, facing);
@@ -4400,7 +4768,22 @@ function createRig(o) {
     revision: 1
   };
   if (landmarks) rig.metrics.bodyHeight = landmarks.body.height;
-  if (o.assign !== false) rig.ownership = encodeRle(assignPixels(rig, o.image));
+  if (detectShadow(o.image) && rig.bones.some((b) => b.id === "root")) {
+    const shadow = defaultPartFor("part_shadow", "Shadow", "root", nextLabel(rig.parts));
+    rig.parts.unshift(shadow);
+  }
+  if (o.assign !== false) {
+    const labels = assignPixels(rig, o.image);
+    if (landmarks && !landmarks.weapon) {
+      const label = (role) => rig.parts.find((p) => rig.bones.find((b) => b.id === p.bone)?.role === role)?.label;
+      const wl = label("weapon");
+      const hl = label("hand.front") ?? label("arm.lower.front");
+      if (wl && hl) {
+        for (let i = 0; i < labels.length; i++) if (labels[i] === wl) labels[i] = hl;
+      }
+    }
+    rig.ownership = encodeRle(labels);
+  }
   const found = landmarks ?? beast;
   lastReport.set(rig, found ? { method: "landmarks", confidence: found.confidence, notes: found.notes } : { method: "proportions", confidence: {}, notes: [] });
   return rig;
@@ -4412,8 +4795,8 @@ function rigLabels(rig) {
 function rigHints(rig) {
   return rig.fillHints ? decodeRle(rig.fillHints, rig.image.width * rig.image.height) : null;
 }
-function proposeRig(image, template, facing, detect = true) {
-  const fresh = createRig({ name: "proposal", src: "", image, template, facing: facing === "auto" ? void 0 : facing, detect });
+function proposeRig(image, template, facing, detect = true, facingFallback) {
+  const fresh = createRig({ name: "proposal", src: "", image, template, facing: facing === "auto" ? void 0 : facing, detect, facingFallback });
   return { bones: fresh.bones, parts: fresh.parts, ownership: fresh.ownership, metrics: fresh.metrics, facing: fresh.facing, template: fresh.template, report: lastReport.get(fresh) };
 }
 function segmentsFor(rig) {
@@ -4429,7 +4812,18 @@ function segmentsFor(rig) {
   return out;
 }
 function assignPixels(rig, image) {
-  return geodesicAssign(image, segmentsFor(rig), { edgeWeight: 8 });
+  const root = rig.parts.find((p) => rig.bones.find((b) => b.id === p.bone)?.role === "root");
+  const labels = geodesicAssign(image, segmentsFor(rig).filter((s) => s.label !== root?.label), { edgeWeight: 8 });
+  if (root) {
+    const shadow = detectShadow(image);
+    if (shadow) {
+      for (let i = 0; i < labels.length; i++) if (shadow[i]) labels[i] = root.label;
+    }
+  }
+  return labels;
+}
+function defaultPartFor(id, name, bone2, label) {
+  return { id, name, bone: bone2, label, deform: "rigid", softness: 0, stiffness: 0, cell: 0, fill: false };
 }
 function nextLabel(parts) {
   const used = new Set(parts.map((p) => p.label));
@@ -7255,7 +7649,16 @@ var Studio = class {
     );
     kind.value = this.rig.template;
     e.append(
-      h("div", { class: "fusa-banner-text" }, h("b", null, p.report.method === "landmarks" ? "Automatic rig" : "Rig from proportions"), h("label", { class: "fusa-kind-label" }, "What is it? ", kind), h("span", null, `Faces ${this.rig.facing}.`), ...groups, ...p.report.notes.map((n) => h("small", null, n))),
+      h("div", { class: "fusa-banner-text" }, h("b", null, p.report.method === "landmarks" ? "Automatic rig" : "Rig from proportions"), h("label", { class: "fusa-kind-label" }, "What is it? ", kind), h(
+        "span",
+        { class: "fusa-faces" },
+        "Faces ",
+        h(
+          "span",
+          { class: "fusa-seg" },
+          ...["left", "right"].map((f) => h("button", { type: "button", class: this.rig.facing === f ? "active" : "", title: f === this.rig.facing ? "The way the character looks" : "It looks the other way: build the skeleton again facing this side", onclick: () => f !== this.rig.facing && void this.autoRig(p.report.method === "landmarks", f) }, f === "left" ? "\u2190 Left" : "Right \u2192"))
+        )
+      ), ...groups, ...p.report.notes.map((n) => h("small", null, n))),
       h(
         "div",
         { class: "fusa-banner-actions" },
@@ -7265,11 +7668,27 @@ var Studio = class {
       )
     );
   }
-  /** Find the joints again (or fit by proportions) and offer the result. */
-  async autoRig(detect = true) {
+  /** The facing the GM chose last: the guess for new sprites whose art does not tell. */
+  get lastFacing() {
+    try {
+      const f = globalThis.localStorage?.getItem("fu-sprite-animator.facing");
+      return f === "left" || f === "right" ? f : void 0;
+    } catch {
+      return void 0;
+    }
+  }
+  set lastFacing(f) {
+    try {
+      if (f) globalThis.localStorage?.setItem("fu-sprite-animator.facing", f);
+    } catch {
+    }
+  }
+  /** Find the joints again (or fit by proportions) and offer the result; `facing` forces a side. */
+  async autoRig(detect = true, facing = "auto") {
     if (!this.rig || !this.image) return;
     const previous = this.proposal?.previous ?? this.snapshot();
-    const p = proposeRig(this.image, this.rig.template, "auto", detect);
+    if (facing !== "auto") this.lastFacing = facing;
+    const p = proposeRig(this.image, this.rig.template, facing, detect, this.lastFacing);
     Object.assign(this.rig, { bones: p.bones, parts: p.parts, ownership: p.ownership, metrics: p.metrics, facing: p.facing });
     this.labels = rigLabels(this.rig);
     this.selected = null;
@@ -7459,7 +7878,7 @@ var Studio = class {
   renderRigSettings(e, rig) {
     const r = rig.render;
     const mode = h("div", { class: "fusa-seg" }, ...["pixel", "smooth"].map((m) => h("button", { type: "button", class: r.mode === m ? "active" : "", title: m === "pixel" ? "Nearest-neighbour: every original pixel stays a crisp square of its own colour." : "Smooth sampling for painted, high-resolution sprites.", onclick: () => (r.mode = m, r.snap = m === "pixel", this.commit()) }, m === "pixel" ? "Pixel art" : "Illustration")));
-    const facing = h("div", { class: "fusa-seg" }, ...["left", "right"].map((f) => h("button", { type: "button", class: rig.facing === f ? "active" : "", onclick: () => (rig.facing = f, this.commit()) }, f === "left" ? "\u2190 Left" : "Right \u2192")));
+    const facing = h("div", { class: "fusa-seg" }, ...["left", "right"].map((f) => h("button", { type: "button", class: rig.facing === f ? "active" : "", onclick: () => (rig.facing = f, this.lastFacing = f, this.commit()) }, f === "left" ? "\u2190 Left" : "Right \u2192")));
     e.append(
       h("div", { class: "fusa-insp-title" }, "Rig"),
       h("p", { class: "fusa-muted" }, `${rig.image.width}\xD7${rig.image.height}px sprite, body ${rig.metrics.bodyHeight}px tall, ${rig.bones.length} bones, ${rig.parts.length} parts. Select a bone to edit it.`),
@@ -7592,7 +8011,7 @@ This rig lacks: ${(c.requires ?? []).filter((r) => !this.rig.bones.some((b) => b
         data = (await loadImageData(src)).data;
       }
     }
-    const rig = createRig({ name: base2, src, image: data, template: "humanoid" });
+    const rig = createRig({ name: base2, src, image: data, template: "humanoid", facingFallback: this.lastFacing });
     this.setRig(rig, data, false);
   }
   /** Show a rig (and its image). */

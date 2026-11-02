@@ -1,6 +1,7 @@
 import type { Facing } from '../core/types';
 import type { ImageDataLike, Rect } from './image';
-import { alphaMask, components, distanceTransform, skeletonize } from './morph';
+import { detectShadow } from './shadow';
+import { alphaMask, components, distanceTransform, pca, skeletonize } from './morph';
 
 export type Pt = [number, number];
 
@@ -124,20 +125,184 @@ export function skeletonBranches(skel: Uint8Array, w: number, h: number): Branch
 }
 
 /**
+ * A spear or staff shaft that crosses in front of the body: its skeleton runs between junctions
+ * (the head and the hand), so the branch search cannot see it. Here: the thin parts of the
+ * silhouette (no wider than a shaft), grouped, and the longest group that lies on a straight line.
+ */
+function thinLine(mask: Uint8Array, w: number, h: number, dt: Float32Array, height: number, bottom: number, bodyCx: number, bodyCy: number, rgba: ArrayLike<number> | null, debug?: (msg: string) => void): { pixels: number[]; hilt: Pt; tip: Pt; length: number } | null {
+	// a shaft pixel has transparency close by on both sides in some direction; the outline of a
+	// big shape does not (inward the shape goes on). Shafts are narrower than limbs.
+	const maxW = Math.max(3, Math.round(height * 0.036));
+	const keep = new Uint8Array(mask.length);
+	const dirs: [number, number][] = [[1, 0], [0, 1], [1, 1], [1, -1]];
+	for (let i = 0; i < mask.length; i++) {
+		if (!mask[i] || dt[i]! > maxW) continue;
+		const x = i % w;
+		const y = (i - x) / w;
+		for (const [dx, dy] of dirs) {
+			let run = 1;
+			for (let s2 = 1; s2 <= maxW && run <= maxW; s2++) {
+				const xx = x + dx * s2;
+				const yy = y + dy * s2;
+				if (xx < 0 || yy < 0 || xx >= w || yy >= h || !mask[yy * w + xx]) break;
+				run++;
+			}
+			for (let s2 = 1; s2 <= maxW && run <= maxW; s2++) {
+				const xx = x - dx * s2;
+				const yy = y - dy * s2;
+				if (xx < 0 || yy < 0 || xx >= w || yy >= h || !mask[yy * w + xx]) break;
+				run++;
+			}
+			if (run <= maxW) {
+				keep[i] = 1;
+				break;
+			}
+		}
+	}
+	let best: { pixels: number[]; hilt: Pt; tip: Pt; length: number } | null = null;
+	for (const comp of components(keep, w, h)) {
+		if (comp.length < height * 0.12) continue;
+		const p = pca(comp, w);
+		// pixels close to the main line, and how far along it they reach
+		let lo = Infinity;
+		let hi = -Infinity;
+		let near = 0;
+		for (const i of comp) {
+			const x = (i % w) + 0.5 - p.cx;
+			const y = Math.floor(i / w) + 0.5 - p.cy;
+			const along = x * p.ux + y * p.uy;
+			const across = Math.abs(-x * p.uy + y * p.ux);
+			if (across <= 2) {
+				near++;
+				lo = Math.min(lo, along);
+				hi = Math.max(hi, along);
+			}
+		}
+		let len = hi - lo;
+		let a: Pt = [p.cx + p.ux * lo, p.cy + p.uy * lo];
+		let b: Pt = [p.cx + p.ux * hi, p.cy + p.uy * hi];
+		const pixels = comp.slice();
+		const at = () => `line (${a.map(Math.round)})–(${b.map(Math.round)}) len ${len.toFixed(0)}`;
+		if (len < height * 0.15 || near < comp.length * 0.55) {
+			if (len >= height * 0.15) debug?.(`${at()}: not straight enough (${Math.round((near / comp.length) * 100)} % on the line)`);
+			continue;
+		}
+		// the visible piece of a shaft that crosses the body: follow its colour along the same line
+		if (rgba) {
+			const col = [0, 0, 0];
+			let n = 0;
+			for (const i of comp) {
+				const x = (i % w) + 0.5 - p.cx;
+				const y = Math.floor(i / w) + 0.5 - p.cy;
+				if (Math.abs(-x * p.uy + y * p.ux) > 1) continue;
+				for (let c = 0; c < 3; c++) col[c] += rgba[i * 4 + c]!;
+				n++;
+			}
+			for (let c = 0; c < 3; c++) col[c] /= n || 1;
+			const extend = (from: number, dir: 1 | -1): number => {
+				let t = from;
+				let gap = 0;
+				for (let s2 = from + dir; Math.abs(s2 - from) < height * 1.5; s2 += dir) {
+					let hit = false;
+					for (let o = -1; o <= 1; o++) {
+						const x = Math.floor(p.cx + p.ux * s2 - p.uy * o);
+						const y = Math.floor(p.cy + p.uy * s2 + p.ux * o);
+						if (x < 0 || y < 0 || x >= w || y >= h) continue;
+						const j = y * w + x;
+						if (!mask[j]) continue;
+						const d = Math.abs(rgba[j * 4]! - col[0]!) + Math.abs(rgba[j * 4 + 1]! - col[1]!) + Math.abs(rgba[j * 4 + 2]! - col[2]!);
+						if (d < 60) {
+							hit = true;
+							pixels.push(j);
+						}
+					}
+					if (hit) {
+						t = s2;
+						gap = 0;
+					} else if (++gap > 3) break;
+				}
+				return t;
+			};
+			const lo2 = extend(lo, -1);
+			const hi2 = extend(hi, 1);
+			if (hi2 - lo2 > len) {
+				a = [p.cx + p.ux * lo2, p.cy + p.uy * lo2];
+				b = [p.cx + p.ux * hi2, p.cy + p.uy * hi2];
+				len = hi2 - lo2;
+			}
+		}
+		if (len < height * 0.3) {
+			debug?.(`${at()}: too short`);
+			continue;
+		}
+		if (Math.max(a[1], b[1]) >= bottom - height * 0.04 && Math.min(a[1], b[1]) >= bottom - height * 0.2) {
+			debug?.(`${at()}: lies along the floor`);
+			continue;
+		}
+		// the tip is the end further from the body
+		const da = Math.hypot(a[0] - bodyCx, a[1] - bodyCy);
+		const db = Math.hypot(b[0] - bodyCx, b[1] - bodyCy);
+		const [tip, hilt] = da >= db ? [a, b] : [b, a];
+		// a weapon's tip is free; a braid or ribbon runs on into the head or body beyond it
+		{
+			const L = Math.hypot(tip[0] - hilt[0], tip[1] - hilt[1]) || 1;
+			const ux = (tip[0] - hilt[0]) / L;
+			const uy = (tip[1] - hilt[1]) / L;
+			let solid = 0;
+			for (let s2 = 3; s2 <= 8; s2++) {
+				const x = Math.floor(tip[0] + ux * s2);
+				const y = Math.floor(tip[1] + uy * s2);
+				if (x >= 0 && y >= 0 && x < w && y < h && mask[y * w + x]) solid++;
+			}
+			if (solid >= 4) {
+				debug?.(`${at()}: its far end runs into the figure (hair or cloth)`);
+				continue;
+			}
+		}
+		debug?.(`${at()}: candidate (shaft)`);
+		if (!best || len > best.length) best = { pixels: [...new Set(pixels)], tip, hilt, length: len };
+	}
+	return best;
+}
+
+/**
+ * Remove the short spurs a jagged outline grows on a skeleton (real art is rarely smooth), so long
+ * limbs and blades stay one branch instead of being chopped at every bump. Spurs shorter than
+ * `minLen` are cut back to their junction, a few rounds over.
+ */
+export function pruneSkeleton(skel: Uint8Array, w: number, h: number, minLen: number, rounds = 3): Uint8Array {
+	const out = skel.slice();
+	for (let r = 0; r < rounds; r++) {
+		let removed = 0;
+		for (const b of skeletonBranches(out, w, h)) {
+			if (b.length >= minLen) continue;
+			// keep the junction pixel (the last one) so the main line stays connected
+			for (const i of b.path.slice(0, -1)) out[i] = 0;
+			removed++;
+		}
+		if (!removed) break;
+	}
+	return out;
+}
+
+/**
  * The long, straight part of the silhouette that ends in a free tip: a blade, staff or spear.
  * Found on the shape's skeleton (works for blades of any thickness), then the weapon's pixels
  * are the silhouette pixels around that branch that are no thicker than the branch itself.
  */
-export function detectWeapon(mask: Uint8Array, w: number, h: number, height: number): { pixels: number[]; hilt: Pt; tip: Pt; length: number } | null {
+export function detectWeapon(mask: Uint8Array, w: number, h: number, height: number, debug?: (msg: string) => void, rgba?: ArrayLike<number>): { pixels: number[]; hilt: Pt; tip: Pt; length: number } | null {
 	const skel = skeletonize(mask, w, h);
 	const dt = distanceTransform(mask, w, h);
 	let best: Branch | null = null;
 	let bestScore = 0;
 	let medianThick = 0;
+	let coreThick = 0;
 	{
 		const all: number[] = [];
 		for (let i = 0; i < skel.length; i++) if (skel[i]) all.push(dt[i]!);
 		medianThick = median(all);
+		all.sort((a, b) => a - b);
+		coreThick = all[Math.floor(all.length * 0.9)] ?? medianThick;
 	}
 	let bottom = 0;
 	let bodyCx = 0;
@@ -156,56 +321,121 @@ export function detectWeapon(mask: Uint8Array, w: number, h: number, height: num
 	}
 	bodyCx /= bodyN || 1;
 	bodyCy /= bodyN || 1;
-	const straightPrefix = (b: Branch): Branch => {
-		// the longest stretch from the free end that stays on a straight line (a blade ends where the hand begins)
-		const px = (i: number) => (i % w) + 0.5;
-		const py = (i: number) => Math.floor(i / w) + 0.5;
-		const p0 = b.path[0]!;
-		let keep = 1;
-		for (let k = 2; k < b.path.length; k++) {
-			const pk = b.path[k]!;
+	const px = (i: number) => (i % w) + 0.5;
+	const py = (i: number) => Math.floor(i / w) + 0.5;
+	/** How far path[a..k] strays from the line path[a]→path[k]. */
+	let lenient = false;
+	const straightFrom = (path: number[], a: number): number => {
+		const p0 = path[a]!;
+		// a wide blade's centre line wobbles with its jagged edges: allow a third of its half-width
+		const wobble = lenient ? 0.35 * median(path.slice(a, a + 24).map((i) => dt[i]!)) : 0;
+		let keep = a + 1;
+		for (let k = a + 2; k < path.length; k++) {
+			const pk = path[k]!;
 			const L = Math.hypot(px(pk) - px(p0), py(pk) - py(p0)) || 1;
-			const tol = Math.max(1.25, L * 0.04);
+			const tol = Math.max(1.25, L * 0.04, wobble);
 			let ok = true;
-			for (let j = 1; j < k && ok; j++) {
-				const q = b.path[j]!;
+			for (let j = a + 1; j < k && ok; j++) {
+				const q = path[j]!;
 				const dev = Math.abs((px(pk) - px(p0)) * (py(p0) - py(q)) - (px(p0) - px(q)) * (py(pk) - py(p0))) / L;
 				if (dev > tol) ok = false;
 			}
 			if (!ok) break;
 			keep = k + 1;
 		}
-		const path = b.path.slice(0, keep);
-		const last = path[path.length - 1]!;
-		const len = Math.hypot(px(last) - px(p0), py(last) - py(p0));
-		return { path, length: len, straightness: 1 };
+		return keep;
 	};
-	for (const whole of skeletonBranches(skel, w, h)) {
-		const b = straightPrefix(whole);
-		if (b.length < height * 0.3) continue;
-		const tip = b.path[0]!;
-		// legs end on the ground; a weapon's free end is not the lowest point of a vertical branch
-		const tipY = Math.floor(tip / w);
-		const baseY = Math.floor(b.path[b.path.length - 1]! / w);
-		if (tipY >= bottom - height * 0.04 && tipY > baseY) continue;
-		// standing on the ground (solid pixels straight down to the floor): a leg, not a weapon
-		{
-			const tx0 = tip % w;
-			let solid = 0;
-			for (let y = tipY; y <= bottom; y++) if (mask[y * w + tx0]) solid++;
-			if (tipY > baseY && solid >= (bottom - tipY + 1) * 0.8) continue;
+	/**
+	 * The longest straight stretch of a branch that starts near its free end: a blade or shaft. The
+	 * end itself may be hooked, forked or ornamented (spearheads, staff heads), so the stretch may
+	 * begin a little way in; the returned path still runs from the free end to the stretch's end.
+	 */
+	const straightPrefix = (b: Branch): Branch & { from: number } => {
+		const reach = lenient ? Math.min(b.path.length - 1, Math.ceil(height * 0.22)) : 0;
+		let bestA = 0;
+		let bestK = 1;
+		let bestLen = 0;
+		for (let a = 0; a <= reach; a += a < 6 ? 1 : 2) {
+			let k = straightFrom(b.path, a);
+			// a weapon stays about as thick as it starts; where the line runs into a much thicker
+			// shape it has reached the hand or the body, so it ends there
+			const base = median(b.path.slice(a, Math.min(k, a + 12)).map((i) => dt[i]!));
+			if (lenient) for (let j = a + 4; j < k; j++) if (dt[b.path[j]!]! > Math.max(2.5, base * 1.8)) {
+				k = j;
+				break;
+			}
+			const len = Math.hypot(px(b.path[k - 1]!) - px(b.path[a]!), py(b.path[k - 1]!) - py(b.path[a]!));
+			if (len > bestLen) {
+				bestLen = len;
+				bestA = a;
+				bestK = k;
+			}
 		}
-		const thick = median(b.path.map((i) => dt[i]!));
-		const tx = (tip % w) + 0.5;
-		const far = Math.hypot(tx - bodyCx, tipY + 0.5 - bodyCy) >= height * 0.4;
-		if (!far) continue; // a hand or a foot, not the end of a weapon
-		// thicker than a typical limb: a body part, unless it is long (a huge sword)
-		if (thick > Math.max(1.6, medianThick * 1.15) && b.length < height * 0.35) continue;
-		const score = b.length * b.straightness;
-		if (score > bestScore) {
-			bestScore = score;
-			best = b;
+		return { path: b.path.slice(0, bestK), length: bestLen, straightness: 1, from: bestA };
+	};
+	// pass 1: a clean straight line from the free end (crisp, generated or simple art);
+	// pass 2 (only if nothing was found): jagged outlines, hooked or ornamented tips (real art)
+	for (const pass of [false, true]) {
+		lenient = pass;
+		if (best) break;
+		for (const whole of skeletonBranches(lenient ? pruneSkeleton(skel, w, h, Math.max(3, height * 0.05)) : skel, w, h)) {
+			const b = straightPrefix(whole);
+			const tip = b.path[0]!;
+			const at = `(${tip % w},${Math.floor(tip / w)}) len ${b.length.toFixed(0)}/${whole.length.toFixed(0)}`;
+			if (b.length < height * 0.3) {
+				if (whole.length >= height * 0.2) debug?.(`${at}: straight part too short`);
+				continue;
+			}
+			// legs end on the ground; a weapon's free end is not the lowest point of a vertical branch
+			const tipY = Math.floor(tip / w);
+			const baseY = Math.floor(b.path[b.path.length - 1]! / w);
+			// lying along the floor (a tail, a cape's hem): not a weapon
+			if (lenient && Math.min(tipY, baseY) >= bottom - height * 0.15) {
+				debug?.(`${at}: lies along the floor`);
+				continue;
+			}
+			if (tipY >= bottom - height * 0.04 && tipY > baseY) {
+				debug?.(`${at}: ends on the ground`);
+				continue;
+			}
+			// standing on the ground (solid pixels straight down to the floor): a leg, not a weapon
+			{
+				const tx0 = tip % w;
+				let solid = 0;
+				for (let y = tipY; y <= bottom; y++) if (mask[y * w + tx0]) solid++;
+				if (tipY > baseY && solid >= (bottom - tipY + 1) * 0.8) {
+					debug?.(`${at}: stands on the ground`);
+					continue;
+				}
+			}
+			const thick = median(b.path.map((i) => dt[i]!));
+			const tx = (tip % w) + 0.5;
+			const far = Math.hypot(tx - bodyCx, tipY + 0.5 - bodyCy) >= height * 0.4;
+			if (!far) {
+				debug?.(`${at}: too close to the body`);
+				continue; // a hand or a foot, not the end of a weapon
+			}
+			// thicker than a typical limb: a body part, unless it is long (a huge sword)
+			if (thick > Math.max(1.6, medianThick * 1.15) && b.length < height * 0.35) {
+				debug?.(`${at}: thick ${thick.toFixed(1)} vs median ${medianThick.toFixed(1)}`);
+				continue;
+			}
+			// real art (second pass): a weapon is clearly thinner than the body's core
+			if (lenient && thick > coreThick * 0.6) {
+				debug?.(`${at}: as thick as the body (${thick.toFixed(1)} vs core ${coreThick.toFixed(1)})`);
+				continue;
+			}
+			const score = b.length * b.straightness;
+			debug?.(`${at}: candidate${lenient ? ' (second pass)' : ''}, score ${score.toFixed(0)}`);
+			if (score > bestScore) {
+				bestScore = score;
+				best = b;
+			}
 		}
+	}
+	if (!best) {
+		const line = thinLine(mask, w, h, dt, height, bottom, bodyCx, bodyCy, rgba ?? null, debug);
+		if (line) return line;
 	}
 	if (!best) return null;
 	// pixels of the weapon: within the branch's local thickness of its skeleton
@@ -235,7 +465,7 @@ export function detectWeapon(mask: Uint8Array, w: number, h: number, height: num
  * Every guess falls back to typical JRPG proportions when the silhouette does not show it
  * clearly, and lowers that group's confidence.
  */
-export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = 'auto'): HumanoidLandmarks | null {
+export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = 'auto', fallback: Facing = 'right'): HumanoidLandmarks | null {
 	const { width: w, height: h } = img;
 	// the main body only: floating effects (sparks, glyphs, smoke) do not shape the skeleton
 	const full = alphaMask(img, 128);
@@ -245,6 +475,9 @@ export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = '
 		const main = comps[0]?.length ?? 0;
 		for (const c of comps) if (c.length >= main * 0.15) for (const i of c) keep[i] = 1;
 		full.set(keep);
+		// a ground shadow under the feet is not part of the body
+		const shadow = detectShadow(img);
+		if (shadow) for (let i = 0; i < full.length; i++) if (shadow[i]) full[i] = 0;
 	}
 	let anyPx = false;
 	let fTop = h;
@@ -258,8 +491,8 @@ export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = '
 	}
 	if (!anyPx) return null;
 	const notes: string[] = [];
-	const weaponFound = detectWeapon(full, w, h, fBottom - fTop + 1);
-	let facing: Facing = facingIn === 'auto' ? 'right' : facingIn;
+	const weaponFound = detectWeapon(full, w, h, fBottom - fTop + 1, undefined, img.data);
+	let facing: Facing = facingIn === 'auto' ? fallback : facingIn;
 	if (facingIn === 'auto' && weaponFound) {
 		// the character faces the side its weapon is on (a vertical staff says nothing by its direction)
 		let sum = 0;
@@ -276,7 +509,7 @@ export function detectHumanoid(img: ImageDataLike, facingIn: Facing | 'auto' = '
 		const lean = Math.abs(side) > (fBottom - fTop) * 0.05 ? side : dir;
 		facing = lean >= 0 ? 'right' : 'left';
 		notes.push(`Facing ${facing}: the weapon is on that side.`);
-	}
+	} else if (facingIn === 'auto') notes.push(`Facing ${facing} is a guess (no weapon to tell by): flip it if the character looks the other way.`);
 	const s = facing === 'right' ? 1 : -1;
 	const mask = full.slice();
 	if (weaponFound) for (const i of weaponFound.pixels) mask[i] = 0;

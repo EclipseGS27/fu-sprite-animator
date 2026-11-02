@@ -1,6 +1,6 @@
 import { TimeWarp } from '../core/clip';
 import { wrapDeg } from '../core/math';
-import type { BoneData, ClipCategory, ClipDocument, Ease, PartData, PhaseTiming, RigDocument, TemplateId } from '../core/types';
+import type { BoneData, ClipCategory, ClipDocument, Ease, Facing, PartData, PhaseTiming, RigDocument, TemplateId } from '../core/types';
 import { CATEGORY_LABELS, defaultActionFor, defaultIdleFor, getClip, isBuiltIn, listClips, registerClip, unregisterClip } from '../presets';
 import { CHANNELS, addEvent, cloneClip, keyFromPose, moveKey as moveClipKey, removeEvent, removeKey, setDuration, setKeyEase, setLayerKey, setRotateKey, setVectorKey, uniqueClipId, type Channel } from '../presets/edit';
 import { EASE_NAMES } from '../core/easing';
@@ -274,7 +274,16 @@ export class Studio {
 		);
 		kind.value = this.rig.template;
 		e.append(
-			h('div', { class: 'fusa-banner-text' }, h('b', null, p.report.method === 'landmarks' ? 'Automatic rig' : 'Rig from proportions'), h('label', { class: 'fusa-kind-label' }, 'What is it? ', kind), h('span', null, `Faces ${this.rig.facing}.`), ...groups, ...p.report.notes.map((n) => h('small', null, n))),
+			h('div', { class: 'fusa-banner-text' }, h('b', null, p.report.method === 'landmarks' ? 'Automatic rig' : 'Rig from proportions'), h('label', { class: 'fusa-kind-label' }, 'What is it? ', kind), h(
+					'span',
+					{ class: 'fusa-faces' },
+					'Faces ',
+					h(
+						'span',
+						{ class: 'fusa-seg' },
+						...(['left', 'right'] as const).map((f) => h('button', { type: 'button', class: this.rig!.facing === f ? 'active' : '', title: f === this.rig!.facing ? 'The way the character looks' : 'It looks the other way: build the skeleton again facing this side', onclick: () => f !== this.rig!.facing && void this.autoRig(p.report.method === 'landmarks', f) }, f === 'left' ? '← Left' : 'Right →')),
+					),
+				), ...groups, ...p.report.notes.map((n) => h('small', null, n))),
 			h(
 				'div',
 				{ class: 'fusa-banner-actions' },
@@ -285,11 +294,30 @@ export class Studio {
 		);
 	}
 
-	/** Find the joints again (or fit by proportions) and offer the result. */
-	async autoRig(detect = true): Promise<void> {
+	/** The facing the GM chose last: the guess for new sprites whose art does not tell. */
+	private get lastFacing(): Facing | undefined {
+		try {
+			const f = globalThis.localStorage?.getItem('fu-sprite-animator.facing');
+			return f === 'left' || f === 'right' ? f : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	private set lastFacing(f: Facing | undefined) {
+		try {
+			if (f) globalThis.localStorage?.setItem('fu-sprite-animator.facing', f);
+		} catch {
+			/* private window: not remembered */
+		}
+	}
+
+	/** Find the joints again (or fit by proportions) and offer the result; `facing` forces a side. */
+	async autoRig(detect = true, facing: Facing | 'auto' = 'auto'): Promise<void> {
 		if (!this.rig || !this.image) return;
 		const previous = this.proposal?.previous ?? this.snapshot();
-		const p = proposeRig(this.image, this.rig.template, 'auto', detect);
+		if (facing !== 'auto') this.lastFacing = facing;
+		const p = proposeRig(this.image, this.rig.template, facing, detect, this.lastFacing);
 		Object.assign(this.rig, { bones: p.bones, parts: p.parts, ownership: p.ownership, metrics: p.metrics, facing: p.facing });
 		this.labels = rigLabels(this.rig);
 		this.selected = null;
@@ -486,7 +514,7 @@ export class Studio {
 	private renderRigSettings(e: HTMLElement, rig: RigDocument): void {
 		const r = rig.render;
 		const mode = h('div', { class: 'fusa-seg' }, ...(['pixel', 'smooth'] as const).map((m) => h('button', { type: 'button', class: r.mode === m ? 'active' : '', title: m === 'pixel' ? 'Nearest-neighbour: every original pixel stays a crisp square of its own colour.' : 'Smooth sampling for painted, high-resolution sprites.', onclick: () => ((r.mode = m), (r.snap = m === 'pixel'), this.commit()) }, m === 'pixel' ? 'Pixel art' : 'Illustration')));
-		const facing = h('div', { class: 'fusa-seg' }, ...(['left', 'right'] as const).map((f) => h('button', { type: 'button', class: rig.facing === f ? 'active' : '', onclick: () => ((rig.facing = f), this.commit()) }, f === 'left' ? '← Left' : 'Right →')));
+		const facing = h('div', { class: 'fusa-seg' }, ...(['left', 'right'] as const).map((f) => h('button', { type: 'button', class: rig.facing === f ? 'active' : '', onclick: () => ((rig.facing = f), (this.lastFacing = f), this.commit()) }, f === 'left' ? '← Left' : 'Right →')));
 		e.append(
 			h('div', { class: 'fusa-insp-title' }, 'Rig'),
 			h('p', { class: 'fusa-muted' }, `${rig.image.width}×${rig.image.height}px sprite, body ${rig.metrics.bodyHeight}px tall, ${rig.bones.length} bones, ${rig.parts.length} parts. Select a bone to edit it.`),
@@ -627,7 +655,7 @@ export class Studio {
 				data = (await loadImageData(src)).data;
 			}
 		}
-		const rig = createRig({ name: base, src, image: data, template: 'humanoid' });
+		const rig = createRig({ name: base, src, image: data, template: 'humanoid', facingFallback: this.lastFacing });
 		this.setRig(rig, data, false);
 	}
 

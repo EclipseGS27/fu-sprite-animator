@@ -3,6 +3,7 @@ import { bodyBounds, looksLikePixelArt, opaqueBounds, type ImageDataLike } from 
 import { type BoneSegment } from '../sprite/ownership';
 import { geodesicAssign } from '../sprite/geodesic';
 import { mainBounds } from '../sprite/morph';
+import { detectShadow } from '../sprite/shadow';
 import { detectHumanoid, type HumanoidLandmarks } from '../sprite/landmarks';
 import { beastFromLandmarks, humanoidFromLandmarks } from './autorig';
 import { detectBeast, type BeastLandmarks } from '../sprite/creatures';
@@ -33,6 +34,8 @@ export interface CreateRigOptions {
 	image: ImageDataLike;
 	template?: TemplateId;
 	facing?: Facing;
+	/** Facing to assume when the art does not tell (no weapon): e.g. the GM's last choice. */
+	facingFallback?: Facing;
 	/** Assign pixels to bones right away (default true). */
 	assign?: boolean;
 	/** Which way the character looks; default: guessed from the weapon (else right). */
@@ -55,10 +58,10 @@ export function createRig(o: CreateRigOptions): RigDocument {
 	const bounds = opaqueBounds(o.image) ?? full;
 	const body = bodyBounds(o.image) ?? full;
 	const template = TEMPLATES[o.template ?? 'humanoid'] ?? TEMPLATES.humanoid!;
-	let facing: Facing = o.facing ?? 'right';
+	let facing: Facing = o.facing ?? o.facingFallback ?? 'right';
 	let landmarks: HumanoidLandmarks | null = null;
 	if (template.id === 'humanoid' && o.detect !== false) {
-		landmarks = detectHumanoid(o.image, o.facing ?? 'auto');
+		landmarks = detectHumanoid(o.image, o.facing ?? 'auto', o.facingFallback);
 		if (landmarks) facing = landmarks.facing;
 	}
 	// creatures: the whole animal (tail, wings, trailing body) minus floating effects
@@ -66,7 +69,7 @@ export function createRig(o: CreateRigOptions): RigDocument {
 	const fitBox = creature ? (mainBounds(o.image) ?? bounds) : body;
 	let beast: BeastLandmarks | null = null;
 	if ((template.id === 'quadruped' || template.id === 'winged') && o.detect !== false) {
-		beast = detectBeast(o.image, o.facing ?? 'auto', { wings: template.id === 'winged' });
+		beast = detectBeast(o.image, o.facing ?? 'auto', { wings: template.id === 'winged', fallback: o.facingFallback });
 		if (beast) facing = beast.facing;
 	}
 	const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : beast ? beastFromLandmarks(beast, template) : fitTemplate(template, fitBox, facing);
@@ -89,7 +92,22 @@ export function createRig(o: CreateRigOptions): RigDocument {
 		revision: 1,
 	};
 	if (landmarks) rig.metrics.bodyHeight = landmarks.body.height;
-	if (o.assign !== false) rig.ownership = encodeRle(assignPixels(rig, o.image));
+	// a ground shadow gets its own part on the root, drawn first, so it stays on the floor
+	if (detectShadow(o.image) && rig.bones.some((b) => b.id === 'root')) {
+		const shadow = defaultPartFor('part_shadow', 'Shadow', 'root', nextLabel(rig.parts));
+		rig.parts.unshift(shadow);
+	}
+	if (o.assign !== false) {
+		const labels = assignPixels(rig, o.image);
+		// no weapon in the art: the template's weapon bone stays empty (its pixels belong to the hand)
+		if (landmarks && !landmarks.weapon) {
+			const label = (role: string) => rig.parts.find((p) => rig.bones.find((b) => b.id === p.bone)?.role === role)?.label;
+			const wl = label('weapon');
+			const hl = label('hand.front') ?? label('arm.lower.front');
+			if (wl && hl) for (let i = 0; i < labels.length; i++) if (labels[i] === wl) labels[i] = hl;
+		}
+		rig.ownership = encodeRle(labels);
+	}
 	const found = landmarks ?? beast;
 	lastReport.set(rig, found ? { method: 'landmarks', confidence: found.confidence, notes: found.notes } : { method: 'proportions', confidence: {}, notes: [] });
 	return rig;
@@ -110,8 +128,8 @@ export function rigHints(rig: RigDocument): Uint8Array | null {
  * Propose a fresh skeleton for an existing rig's image: detect landmarks (humanoid) or fit the
  * template, assign pixels. Returns the pieces to put into the rig and what was found.
  */
-export function proposeRig(image: ImageDataLike, template: TemplateId, facing: Facing | 'auto', detect = true): Pick<RigDocument, 'bones' | 'parts' | 'ownership' | 'metrics' | 'facing' | 'template'> & { report: RigReport } {
-	const fresh = createRig({ name: 'proposal', src: '', image, template, facing: facing === 'auto' ? undefined : facing, detect });
+export function proposeRig(image: ImageDataLike, template: TemplateId, facing: Facing | 'auto', detect = true, facingFallback?: Facing): Pick<RigDocument, 'bones' | 'parts' | 'ownership' | 'metrics' | 'facing' | 'template'> & { report: RigReport } {
+	const fresh = createRig({ name: 'proposal', src: '', image, template, facing: facing === 'auto' ? undefined : facing, detect, facingFallback });
 	return { bones: fresh.bones, parts: fresh.parts, ownership: fresh.ownership, metrics: fresh.metrics, facing: fresh.facing, template: fresh.template, report: lastReport.get(fresh)! };
 }
 
@@ -134,7 +152,18 @@ export function segmentsFor(rig: RigDocument): BoneSegment[] {
  * stopping at outlines and colour edges (edge-aware geodesic distance).
  */
 export function assignPixels(rig: RigDocument, image: ImageDataLike): Uint8Array {
-	return geodesicAssign(image, segmentsFor(rig), { edgeWeight: 8 });
+	// a part on the root is the ground shadow: it gets exactly the shadow's pixels
+	const root = rig.parts.find((p) => rig.bones.find((b) => b.id === p.bone)?.role === 'root');
+	const labels = geodesicAssign(image, segmentsFor(rig).filter((s) => s.label !== root?.label), { edgeWeight: 8 });
+	if (root) {
+		const shadow = detectShadow(image);
+		if (shadow) for (let i = 0; i < labels.length; i++) if (shadow[i]) labels[i] = root.label;
+	}
+	return labels;
+}
+
+function defaultPartFor(id: string, name: string, bone: string, label: number): PartData {
+	return { id, name, bone, label, deform: 'rigid', softness: 0, stiffness: 0, cell: 0, fill: false };
 }
 
 /** Next free part label (1–254). */

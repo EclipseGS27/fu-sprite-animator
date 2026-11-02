@@ -116,6 +116,7 @@ docs/TESTING.md is run in a real Foundry v13 world.
 | Self-test extended: Project FU system, weapon data read, fu-animations API, ability list valid | Implemented | passes in the mock (12 checks); awaits a Foundry run |
 | Accessibility: icon buttons labelled, mode tabs, pressed state on library cards, live banner, keyboard shortcuts | Implemented | not audited with a screen reader |
 | RotSprite-style smoother rotation for pixel art | Not Started | rotations snap to the pixel grid (intended look); would need a per-part upscaled atlas; rest pose exactness must be kept |
+| Real art: weapons on jagged/ornamented sprites (skeleton pruning, offset straight stretch, thin-shaft lines followed by colour), ground shadows, beast legs at different heights, wing vs tail on dragons | Tested | unit: user-sprites.test.ts on the owner's sprites; generated fixtures unchanged (accuracy floors pass) |
 | Real-GPU performance and 20+ tokens inside Foundry | Blocked | needs the GM's Foundry run (TESTING.md 8) |
 | Public release: license | Blocked | the owner has to choose a license (LICENSES_AND_DEPENDENCIES.md) |
 
@@ -136,10 +137,10 @@ docs/TESTING.md is run in a real Foundry v13 world.
   automatically by token movement yet.
 - Creatures: near and far legs that overlap in a side view share one place; curled tails that
   touch a leg are placed by proportion; serpents, spirits and blobs are placed by proportion.
-- **On the owner's real sprites** (test/sprites/user, first run 2026-11-02): all import losslessly
-  with exact rest poses, but the automatic rig needs more hand-fitting than on the generated
-  fixtures: no weapon is detected on 3/4-view party sprites, so they are all proposed facing right
-  (most face left); ground shadows go to the legs; the beast detector finds no legs on the real
-  dragon and wolf (proportions are used). See test/sprites/user/README.md.
+- **On the owner's real sprites** (test/sprites/user): all import losslessly with exact rest
+  poses. After tuning on them: blade, greatsword and spear found (two ornamented staffs not yet);
+  ground shadows get their own part; the real dragon and wolf get beast landmarks. Facing is
+  right for weapon users except a greatsword carried on the far side; without a weapon it is the
+  GM's last choice (one-click flip on the proposal). See test/sprites/user/README.md.
 - Bucket fill and right-click-to-parent are covered by unit tests of the underlying functions,
   not by the UI test.

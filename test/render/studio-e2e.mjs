@@ -181,7 +181,14 @@ await page.waitForFunction(() => window.studio.rig?.name === 'swordsman_white', 
 await tick(300);
 check(await page.evaluate(() => window.studio.rig.image.src.startsWith('data:image/png') && window.log.some((l) => l.includes('Solid background') === false)), 'a solid white background is replaced by a transparent copy');
 const banner = await page.evaluate(() => document.querySelector('.fusa-banner.show')?.textContent ?? '');
-check(/Automatic rig/.test(banner) && /Faces left/.test(banner), 'the automatic rig is offered with what it found', banner.slice(0, 90));
+const facingShown = await page.evaluate(() => document.querySelector('.fusa-banner.show .fusa-faces button.active')?.textContent ?? '');
+check(/Automatic rig/.test(banner) && /Left/.test(facingShown), 'the automatic rig is offered with what it found', `${banner.slice(0, 40)} · faces ${facingShown}`);
+// the facing switch on the banner rebuilds the skeleton facing the other way
+await page.evaluate(() => [...document.querySelectorAll('.fusa-banner.show .fusa-faces button')].find((b) => /Right/.test(b.textContent))?.click());
+await tick(400);
+check(await page.evaluate(() => window.studio.rig.facing === 'right' && document.querySelector('.fusa-banner.show .fusa-faces button.active')?.textContent.includes('Right')), 'one click on the banner flips the facing and rebuilds the skeleton');
+await page.evaluate(() => [...document.querySelectorAll('.fusa-banner.show .fusa-faces button')].find((b) => /Left/.test(b.textContent))?.click());
+await tick(400);
 const weaponAuto = await page.evaluate(() => JSON.stringify(window.studio.rig.bones.find((b) => b.id === 'weapon')));
 await page.click('.fusa-banner button:has-text("Use proportions instead")');
 await tick(200);

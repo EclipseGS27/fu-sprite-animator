@@ -200,3 +200,4 @@
 .fusa-card.unfit { opacity: 0.4; }
 .fusa-kind-label { color: var(--ink); }
 .fusa-kind { height: 24px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line2); background: var(--bg1); color: var(--ink); }
+.fusa-faces { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); } .fusa-faces .fusa-seg button { padding: 2px 8px; }

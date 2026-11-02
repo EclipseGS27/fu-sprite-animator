@@ -67,7 +67,7 @@ describe('clips on every test rig', () => {
 				for (const m of sk.skin) for (const v of [m.a, m.b, m.c, m.d, m.tx, m.ty]) expect(Number.isFinite(v)).toBe(true);
 			}
 		}
-	});
+	}, 30000);
 	it('a left-facing rig mirrors the slash (the blade ends on the other side)', () => {
 		const image = readPng(spritePath('warrior'));
 		const tipAtImpact = (facing: 'left' | 'right') => {

@@ -1,6 +1,7 @@
 import type { Facing } from '../core/types';
 import type { ImageDataLike } from './image';
 import { skeletonBranches, type Pt } from './landmarks';
+import { detectShadow } from './shadow';
 import { alphaMask, components, distanceTransform, skeletonize } from './morph';
 
 /**
@@ -55,7 +56,7 @@ function runsOf(mask: Uint8Array, w: number, y: number): Run[] {
 const mid = (r: Run) => (r.x0 + r.x1) / 2;
 const width = (r: Run) => r.x1 - r.x0 + 1;
 
-export function detectBeast(img: ImageDataLike, facingIn: Facing | 'auto' = 'auto', o: { wings?: boolean } = {}): BeastLandmarks | null {
+export function detectBeast(img: ImageDataLike, facingIn: Facing | 'auto' = 'auto', o: { wings?: boolean; fallback?: Facing } = {}): BeastLandmarks | null {
 	const { width: w, height: h } = img;
 	// main body only: sparks and smoke do not count
 	const mask = alphaMask(img, 128);
@@ -65,6 +66,9 @@ export function detectBeast(img: ImageDataLike, facingIn: Facing | 'auto' = 'aut
 		const main = comps[0]?.length ?? 0;
 		for (const c of comps) if (c.length >= main * 0.15) for (const i of c) keep[i] = 1;
 		mask.set(keep);
+		// a ground shadow under the feet is not part of the body
+		const shadow = detectShadow(img);
+		if (shadow) for (let i = 0; i < mask.length; i++) if (shadow[i]) mask[i] = 0;
 	}
 	let top = h, bottom = -1, left = w, right = -1;
 	for (let i = 0; i < mask.length; i++) {
@@ -108,6 +112,49 @@ export function detectBeast(img: ImageDataLike, facingIn: Facing | 'auto' = 'aut
 		}
 		if (solid && width(r) <= W * 0.3) legs.push({ top: [mid(r), belly], foot: [mid(r), bottom], pixels });
 	}
+	if (legs.length < 2) {
+		// real art: feet at different heights (perspective) and slanted legs. The legs are the
+		// pieces hanging below the belly line, each taller than wide, with its own lowest point.
+		legs.length = 0;
+		// the legs separate somewhere below the belly row: try levels going down, keep the one
+		// that leaves the most leg-shaped pieces hanging below it
+		const avg = (v: number[]) => v.reduce((a, b) => a + b, 0) / (v.length || 1);
+		const legsBelow = (cut: number): Leg[] => {
+			const found: Leg[] = [];
+			const below = new Uint8Array(mask.length);
+			for (let i = cut * w; i < mask.length; i++) below[i] = mask[i]!;
+			for (const comp of components(below, w, h)) {
+				let y0 = h;
+				let y1 = -1;
+				let x0 = w;
+				let x1 = -1;
+				for (const i of comp) {
+					const x = i % w;
+					const y = (i - x) / w;
+					if (y < y0) y0 = y;
+					if (y > y1) y1 = y;
+					if (x < x0) x0 = x;
+					if (x > x1) x1 = x;
+				}
+				const tall = y1 - cut + 1;
+				if (y0 > cut + 1 || tall < H * 0.1 || x1 - x0 + 1 > tall * 1.3) continue;
+				const topXs = comp.filter((i) => Math.floor(i / w) <= cut + 2).map((i) => i % w);
+				const footXs = comp.filter((i) => Math.floor(i / w) === y1).map((i) => i % w);
+				found.push({ top: [avg(topXs), cut], foot: [avg(footXs), y1], pixels: comp.length });
+			}
+			return found;
+		};
+		const step = Math.max(2, Math.round(H * 0.02));
+		for (let cut = belly; cut <= bottom - H * 0.1; cut += step) {
+			// a four-legged body is clearly wider than it is tall above the legs (a spirit's
+			// trailing wisps are not legs)
+			if (W < (cut - top) * 1.4) continue;
+			const found = legsBelow(cut);
+			if (found.length > legs.length) legs.splice(0, legs.length, ...found);
+			if (legs.length >= 4) break;
+		}
+		if (legs.length >= 2) notes.push('Legs found below the belly line (feet at different heights).');
+	}
 	if (legs.length < 2) return null;
 
 	/* ---- body: thickness above the belly between the outermost legs ---- */
@@ -121,7 +168,8 @@ export function detectBeast(img: ImageDataLike, facingIn: Facing | 'auto' = 'aut
 		if (n > 0) thick.push(n);
 	}
 	thick.sort((a, b) => a - b);
-	const thickness = Math.max(2, thick.length ? thick[thick.length >> 1]! : H * 0.25);
+	// wings standing on the back make the body look as tall as the whole sprite: cap it
+	const thickness = Math.min(Math.max(2, thick.length ? thick[thick.length >> 1]! : H * 0.25), o.wings ? H * 0.33 : Infinity);
 	const cy = belly - thickness / 2;
 	const backY = belly - thickness;
 
@@ -144,20 +192,15 @@ export function detectBeast(img: ImageDataLike, facingIn: Facing | 'auto' = 'aut
 	let wingEnds: (typeof free)[number][] = [];
 	if (o.wings) {
 		// the highest end, then the highest one well apart from it (one wing can have several points)
-		const high = free.filter((e) => e.end[1] < backY - thickness * 0.3).sort((a, b) => a.end[1] - b.end[1]);
-		if (high.length) {
-			const first = high[0]!;
-			const second = high.find((e) => Math.abs(e.end[0] - first.end[0]) >= W * 0.25);
-			wingEnds = second ? [first, second] : [first];
-		}
-		// every point of the wings is wing, not head or tail
-		for (const e of high) used.add(e);
+		wingEnds = free.filter((e) => e.end[1] < backY - thickness * 0.3).sort((a, b) => a.end[1] - b.end[1]);
+		// every high point is wing (or horn), not head or tail; the tips are picked once the snout is known
+		for (const e of wingEnds) used.add(e);
 	}
 
 	/* ---- head: the thickest remaining end; it also says which way the creature faces ---- */
 	const rest = free.filter((e) => !used.has(e));
 	const headEnd = rest.slice().sort((a, b) => b.girth - a.girth)[0] ?? null;
-	let facing: Facing = facingIn === 'auto' ? 'right' : facingIn;
+	let facing: Facing = facingIn === 'auto' ? (o.fallback ?? 'right') : facingIn;
 	if (facingIn === 'auto' && headEnd) {
 		facing = headEnd.end[0] >= (left + right) / 2 ? 'right' : 'left';
 		notes.push(`Facing ${facing}: the head is the thickest end of the silhouette.`);
@@ -207,6 +250,15 @@ export function detectBeast(img: ImageDataLike, facingIn: Facing | 'auto' = 'aut
 	let wings: BeastLandmarks['wings'] = null;
 	if (o.wings) {
 		const lerpX = (t: number) => hipX + (shX - hipX) * t;
+		// horns and crests near the snout are not wing tips; then the highest tip and the highest
+		// one well apart from it (one wing can have several points)
+		const high = wingEnds.filter((e) => Math.hypot(e.end[0] - tip[0], e.end[1] - tip[1]) > W * 0.2);
+		wingEnds = [];
+		if (high.length) {
+			const first = high[0]!;
+			const second = high.find((e) => Math.abs(e.end[0] - first.end[0]) >= W * 0.25);
+			wingEnds = second ? [first, second] : [first];
+		}
 		if (wingEnds.length) {
 			const [back, fwd] = wingEnds.slice().sort((a, b) => front(a.end[0]) - front(b.end[0]));
 			wings = { near: { base: [lerpX(0.4), backY + 1], tip: back!.end }, far: { base: [lerpX(0.65), backY + 1], tip: fwd ? fwd.end : [back!.end[0] + s * W * 0.15, back!.end[1]] } };
@@ -218,7 +270,19 @@ export function detectBeast(img: ImageDataLike, facingIn: Facing | 'auto' = 'aut
 	let tail: BeastLandmarks['tail'] = null;
 	const behindHip = rest.filter((e) => e !== headEnd && front(e.end[0]) < front(hipX) - W * 0.04);
 	// tails hang at or below the back; a raised tail is taken only when nothing hangs lower
-	const low = behindHip.filter((e) => e.end[1] >= backY);
+	// with wings, only ends below the belly: a wing's lower point can hang well below the back
+	let low = behindHip.filter((e) => e.end[1] >= (o.wings ? belly : backY));
+	if (o.wings) {
+		// a point whose skeleton path runs high is the bottom of a wing, not a tail
+		const wingish = low.filter((e) => e.half[1] < backY);
+		low = low.filter((e) => e.half[1] >= backY);
+		const back = wingish.sort((a, b) => front(a.end[0]) - front(b.end[0]))[0];
+		if (back && wings && front(back.end[0]) < front(wings.near.tip[0]) - W * 0.15) {
+			// the big wing behind the body: its far point, when the high tips were both on the other wing
+			wings.far = { base: wings.far.base, tip: wings.near.tip };
+			wings.near = { base: wings.near.base, tip: back.end };
+		}
+	}
 	// (with wings, anything above the back is wing)
 	const tails = (low.length || o.wings ? low : behindHip).sort((a, b) => Math.hypot(b.end[0] - hipX, b.end[1] - cy) - Math.hypot(a.end[0] - hipX, a.end[1] - cy));
 	if (tails.length) {
