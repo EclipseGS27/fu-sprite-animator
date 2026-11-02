@@ -14,7 +14,7 @@ Foundry mock; **not yet run in a real Foundry world** — see
 
 ## Install
 Add-on Modules → Install Module → Manifest URL:
-`https://raw.githubusercontent.com/EclipseGS27/fu-sprite-animator/main/module.json`
+`https://raw.githubusercontent.com/EclipseGS27/fu-sprite-animator/claude/nifty-darwin-wkrvxl/module.json`
 
 Requires Foundry v13 and Project FU 4.14+. Works alongside
 [Fabula Ultima Battle Animations](https://github.com/EclipseGS27/fu-animations).

@@ -38,7 +38,7 @@
   ],
   "socket": true,
   "url": "https://github.com/EclipseGS27/fu-sprite-animator",
-  "manifest": "https://raw.githubusercontent.com/EclipseGS27/fu-sprite-animator/main/module.json",
-  "download": "https://github.com/EclipseGS27/fu-sprite-animator/archive/refs/heads/main.zip",
+  "manifest": "https://raw.githubusercontent.com/EclipseGS27/fu-sprite-animator/claude/nifty-darwin-wkrvxl/module.json",
+  "download": "https://github.com/EclipseGS27/fu-sprite-animator/archive/refs/heads/claude/nifty-darwin-wkrvxl.zip",
   "bugs": "https://github.com/EclipseGS27/fu-sprite-animator/issues"
 }
