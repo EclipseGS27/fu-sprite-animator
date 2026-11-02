@@ -4,7 +4,7 @@ Statuses: **Not Started**, **In Progress**, **Implemented** (code exists, not ye
 test), **Tested** (an automated or recorded manual test passed — the "Evidence" column says
 which), **Blocked**.
 
-Last updated: 2026-11-02 (Phase 5). Environment for automated tests: Node 22, Chromium (SwiftShader
+Last updated: 2026-11-02 (Phase 6). Environment for automated tests: Node 22, Chromium (SwiftShader
 WebGL), PixiJS 7.4.3. **No Foundry VTT instance was available**: every Foundry-dependent feature
 below is at most *Implemented* (exercised only against a Foundry mock) until the checklist in
 docs/TESTING.md is run in a real Foundry v13 world.
@@ -91,10 +91,23 @@ docs/TESTING.md is run in a real Foundry v13 world.
 | API 0.2.0: current, resolveClip, describe, mapping, playAction, react | Implemented | mock integration |
 | `fu-animations.contact` hook for exact timing | Not Started | proposal only; fu-animations not changed unasked |
 
+## Phase 6 — Creature support
+| Feature | Status | Evidence |
+| --- | --- | --- |
+| Templates: four-legged beast, winged, serpent, floating spirit, blob (+ humanoid, custom), shared roles | Tested | unit: structure, every template's idle and a clip per family playable; rest pose bit-identical on CPU and GPU for wolf, dragon, ghost, slime |
+| Beast landmarks: legs (solid columns up to the belly), belly line, body thickness, snout, tail, wing tips, facing (thickest end = head) | Tested | unit: wolf, dragon, both mirrored (face left), legless sprites rejected |
+| Creature auto-rig accuracy | Tested | unit floors: wolf 69.7 %, dragon 75.6 % (landmarks beat proportions by > 3 points), ghost 83.4 %, slime 97.2 % (proportions) |
+| Serpent landmarks | Not Started | serpents use proportions; no serpent test sprite yet |
+| Guessing the template automatically | Not Started | the detectors fire on humanoids too, so the GM picks it ("What is it?" on the proposal banner) |
+| Creature clips: beast idle, bite, claw, pounce, tail swipe, roar, breath, crouch, beast dodge/hit/defeat, hover, wing beat, serpent idle, blob idle/attack/hit/defeat, float idle, spirit defeat | Tested | unit (finite on every template, both facings; keys in range; mirror test); contact sheets reviewed on wolf, dragon, ghost, slime; GPU matches CPU for bite, wing beat, blob attack, spirit defeat |
+| Any-rig clips (root only): breathe, lunge, gather power, recoil, hop back, collapse | Tested | unit (custom rig plays one of each family); contact sheet (stays inside the frame) |
+| Template-specific mapping defaults; root-only last resort | Tested | unit (wolf bites, dragon breathes, slime splats, spirit sinks; world choice still wins) + mock integration (wolf token idles, bites, flinches) |
+| Studio: template menu, "What is it?" on the proposal banner, preview idle/action suited to the rig, library lists playable clips first | Tested (test page) | screenshots reviewed; mock integration; UI suites still pass |
+| Assign dialog offers the rig's own idles; tokens fall back to the template's idle | Implemented | mock integration (token idle); dialog form not exercised |
+
 ## Later phases
 | Feature | Status |
 | --- | --- |
-| Phase 6: quadruped, winged, serpentine, blob templates and creature clips | Not Started (custom rigs work today; mapping already supports template-specific keys) |
 | Phase 7: compatibility matrix, RotSprite option, profiling, release | Not Started |
 
 ## Known limitations (Phase 2)
@@ -112,5 +125,8 @@ docs/TESTING.md is run in a real Foundry v13 world.
   hits, so reactions come early for those.
 - Movement clips play in place (fu-animations moves the token); they are not triggered
   automatically by token movement yet.
+- Creatures: near and far legs that overlap in a side view share one place; curled tails that
+  touch a leg are placed by proportion; serpents, spirits and blobs are placed by proportion.
+  Tested on generated creatures shaped like the user's examples, not on the user's files.
 - Bucket fill and right-click-to-parent are covered by unit tests of the underlying functions,
   not by the UI test.

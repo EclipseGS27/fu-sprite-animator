@@ -50,9 +50,12 @@ self-test passes on the GM's Foundry v13 world (we cannot run Foundry in CI).
   to replace the timing estimate.
 - **Deliverable**: abilities trigger the right animation automatically.
 
-## Phase 6 — Creature support
-- Templates: quadruped, winged, serpentine, slime/blob (squash-stretch lattice), floating (ghost),
-  multi-limb; role vocabularies per template; creature presets (bite, claw, tail swipe, wing beat).
+## Phase 6 — Creature support ✅ (built and tested on generated creatures; in-Foundry run pending)
+- Templates: quadruped, winged, serpentine, blob, floating; shared role vocabulary.
+- Beast landmarks (legs, belly, snout, tail, wing tips, facing) for quadrupeds and winged creatures.
+- 26 creature and any-rig clips; template-specific mapping defaults; root-only fallbacks so any
+  rig plays something; template-appropriate idles and Studio previews.
+- Not done: multi-limb bosses beyond these plans (use Custom and add bones), serpent landmarks.
 - **Deliverable**: wolves, dragons, slimes and bosses rig and animate.
 
 ## Phase 7 — Testing and polish

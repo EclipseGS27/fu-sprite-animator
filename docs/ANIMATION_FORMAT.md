@@ -18,7 +18,7 @@ independent of any rig or actor) and a **profile** (which rig an actor uses). Ty
 {
   "format": "fusa-rig", "version": 1,
   "id": "rigk2…", "name": "Warrior",
-  "template": "humanoid",            // humanoid | quadruped | winged | serpentine | custom
+  "template": "humanoid",            // humanoid | quadruped | winged | serpentine | floating | blob | custom
   "facing": "right",
   "image": { "src": "worlds/my-world/sprites/warrior.png", "width": 64, "height": 64 },
   "metrics": { "bodyHeight": 52, "bounds": { "x": 17, "y": 8, "width": 42, "height": 54 } },
@@ -55,13 +55,28 @@ independent of any rig or actor) and a **profile** (which rig an actor uses). Ty
 - **render.idleFps**: idle loops step at this rate on tokens (pixel-art "on twos/threes");
   actions always run at display rate. 0 = every frame.
 
-### Roles (humanoid template)
-`root`, `pelvis`, `torso`, `head`, `arm.upper.front`, `arm.lower.front`, `hand.front`, `weapon`,
-`arm.upper.back`, `arm.lower.back`, `hand.back`, `leg.upper.front`, `leg.lower.front`,
-`foot.front`, `leg.upper.back`, `leg.lower.back`, `foot.back`; extras: `neck`, `hair`, `cape`,
-`tail`, `offhand`, `accessory`. "Front" means nearer the viewer — it does not change when the
-character faces the other way. Creature templates (Phase 6) add their own roles
-(`leg.front.near`, `wing.far`, `tail.1`, …).
+### Roles
+**Humanoid**: `root`, `pelvis`, `torso`, `head`, `arm.upper.front`, `arm.lower.front`,
+`hand.front`, `weapon`, `arm.upper.back`, `arm.lower.back`, `hand.back`, `leg.upper.front`,
+`leg.lower.front`, `foot.front`, `leg.upper.back`, `leg.lower.back`, `foot.back`; extras: `neck`,
+`hair`, `cape`, `tail`, `offhand`, `accessory`. "Front" means nearer the viewer — it does not
+change when the character faces the other way.
+
+**Creatures** share roles wherever the body part is the same thing, so one clip serves several
+body plans:
+
+| Template | Roles |
+| --- | --- |
+| quadruped (four-legged beast) | `root`, `torso` (the body, from hips to shoulders), `neck`, `head`, `tail`, `tail.tip`, `leg.hind.near`, `leg.hind.far`, `leg.front.near`, `leg.front.far` |
+| winged | the quadruped roles + `wing.near`, `wing.far` (the neck has its own part) |
+| serpentine | `root`, `torso`, `neck`, `head`, `tail`, `tail.tip` |
+| floating (spirits) | `root`, `torso`, `head`, `arm.upper.front`, `arm.lower.front`, `arm.upper.back`, `arm.lower.back`, `tail`, `tail.tip` (the trailing lower body) |
+| blob | `root`, `torso` (the soft body), `crest` (what sits on top) |
+| custom | `root`, `torso`; add any roles |
+
+"Near" is the side facing the viewer (drawn in front). For beasts, offsets turn clockwise: `torso`
++ dips the front, − rears up; legs + swing the foot back; `neck`/`head` + lower toward the
+ground; back-pointing bones (`tail`, the near wing) + lift.
 
 ## Clip (`fusa-clip`, version 1)
 

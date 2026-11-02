@@ -46,7 +46,7 @@ Put the **weapon** bone along the blade, starting at the hand.
 
 Add bones with **Add bone** (drag from the joint to the tip; the new bone joins the selected
 bone), delete with **Del**, rename with a double click, change parent or role in the Inspector.
-Not a humanoid? Choose *Template → Custom (one bone)* and build the creature bone by bone.
+Not a humanoid? See *Monsters and creatures* below.
 
 ## 3. Assign pixels (wand button, then Paint mode, key 2)
 Press the **wand** to give every pixel to its nearest bone again with the fitted skeleton.
@@ -123,6 +123,33 @@ until healed. To change what plays:
 - for one character: actor sheet header → *Sprite animation choices*;
 - for one item: item sheet header → *Sprite animation*.
 Details in [ABILITY_MAPPING.md](ABILITY_MAPPING.md).
+
+## Monsters and creatures
+Every new sprite starts as a humanoid. If it is not one, choose **What is it?** on the banner
+that appears after import (or *Template…* in the Skeleton panel at any time):
+
+| Choose | For | What it finds |
+| --- | --- | --- |
+| Four-legged beast | wolves, cats, boars, horses — side view | the feet and where the legs leave the body, the belly line, the snout, the tail; which way it faces (the head is the thickest end) |
+| Winged creature | dragons, griffins, wyverns | the same, plus the two wing tips high above the back |
+| Serpent | snakes, eels, worms | placed by proportion: tail, body, raised neck, head |
+| Floating spirit | ghosts, wraiths, elementals | placed by proportion: head, body, two arms, trailing lower body |
+| Blob | slimes, puddings, flans | placed by proportion: a soft body and whatever sits on top |
+| Custom | anything else | a root and one body bone; add bones yourself |
+
+Then fit it like a humanoid: drag joints, press the wand, paint. Things to check:
+- **Near and far legs** often overlap in side views; both bones may start in the same place.
+  Paint the far leg's visible pixels onto it, or leave them on the near leg.
+- **A tail that touches a leg** (curled tails) is not found automatically: drag the tail bones
+  along it and press the wand.
+- **Facing**: if the head ended up on the wrong side, set *Character faces* in the Inspector.
+- Sparks, smoke and floating crystals follow the nearest part — paint them onto the part they
+  belong to.
+
+Each body plan has its own animations (bite, claw, pounce, tail swipe, roar, breath, wing beat,
+hover, crouch, beast hit and defeat; blob attack, hit and melt; spirit float and defeat) and
+chooses them automatically in combat; the library lists the ones your rig can play first and
+dims the others. Clips marked *(any rig)* move the whole sprite and work on every rig.
 
 ## Pixel-art tips
 - Rotations of a few degrees move pixels in steps, like hand-made pixel art. That is intended.

@@ -48,6 +48,11 @@ describe('clips on every test rig', () => {
 		['tiny', 'humanoid', 'right'],
 		['wolf', 'custom', 'right'],
 		['slime', 'custom', 'left'],
+		['wolf', 'quadruped', 'right'],
+		['dragon', 'winged', 'left'],
+		['ghost', 'floating', 'right'],
+		['slime', 'blob', 'right'],
+		['wolf', 'serpentine', 'right'],
 	] as const;
 	it.each(cases)('%s (%s, facing %s) plays every clip with finite poses', (name, template, facing) => {
 		const image = readPng(spritePath(name));

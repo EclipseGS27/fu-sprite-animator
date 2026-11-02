@@ -41,6 +41,11 @@ Built-in clip ids (`api.clips()` lists them with names):
 - magic: `magic-cast`, `channel`, `charge`, `projectile-cast`, `area-cast`, `healing`, `summoning`
 - defence: `block`, `dodge`, `parry`, `counterattack`, `guard`
 - reactions: `light-hit`, `heavy-hit`, `stagger`, `knockback`, `knockdown`, `defeat`
+- creatures: `beast-idle`, `bite`, `claw`, `pounce`, `tail-swipe`, `roar`, `breath`, `crouch`,
+  `beast-dodge`, `beast-hit`, `beast-defeat`, `wing-idle` (hover), `wing-beat`, `serpent-idle`,
+  `blob-idle`, `blob-attack`, `blob-hit`, `blob-defeat`, `float-idle`, `float-defeat`
+- any rig (root only): `generic-idle`, `generic-attack`, `generic-cast`, `generic-hit`,
+  `generic-dodge`, `generic-defeat`
 
 The actor profile `{ rig, enabled, idle, intensity, map }` also holds `map`: this character's own
 choices, rule or ability key → clip id.

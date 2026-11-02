@@ -249,7 +249,7 @@ var HEAVY_HIT = base({
 });
 var HUMANOID_CLIPS = [IDLE_BREATHING, COMBAT_STANCE, SWORD_SLASH, HEAVY_SLASH, MAGIC_CAST, LIGHT_HIT, HEAVY_HIT];
 
-// src/presets/library.ts
+// src/presets/kit.ts
 var k3 = (t, v, e) => e ? { t, v, e } : { t, v };
 var k22 = (t, x, y, e) => e ? { t, x, y, e } : { t, x, y };
 var R = (t, v, e) => ({ ...k3(t, v, e), rest: true });
@@ -278,12 +278,20 @@ var clip = (s) => ({
   ...s.phases ? { phases: s.phases } : {},
   ...s.events ? { events: s.events } : {},
   requires: s.requires ?? ["torso"],
-  templates: ["humanoid"],
+  templates: s.templates ?? ["humanoid"],
   defaults: { mixIn: s.mixIn ?? (s.loop ? 0.25 : 0.08), mixOut: s.mixOut ?? 0.25 }
 });
 var ev = (t, name) => ({ t, name });
 var cycle = (dur, values, e = SINE) => [...values, values[0]].map((v, i) => k3(dur * i / values.length, v, e));
 var cycle2 = (dur, values, e = SINE) => [...values, values[0]].map(([x, y], i) => k22(dur * i / values.length, x, y, e));
+var tremble = (t0, t1, amp, base2 = 0) => {
+  const keys = [];
+  const n = Math.max(2, Math.round((t1 - t0) / 0.05));
+  for (let i = 0; i <= n; i++) keys.push(k3(t0 + (t1 - t0) * i / n, base2 + (i % 2 ? amp : -amp) * (0.6 + 0.4 * Math.sin(i))));
+  return keys;
+};
+
+// src/presets/library.ts
 var MAGICAL_IDLE = clip({
   id: "magical-idle",
   name: "Magical idle",
@@ -615,12 +623,6 @@ var CHANNEL = clip({
     "arm.lower.back": { rotate: [k3(0, 0, OUT), k3(0.3, -40), k3(1.1, -40, SET), k3(1.5, 0)] }
   }
 });
-var tremble = (t0, t1, amp, base2 = 0) => {
-  const keys = [];
-  const n = Math.max(2, Math.round((t1 - t0) / 0.05));
-  for (let i = 0; i <= n; i++) keys.push(k3(t0 + (t1 - t0) * i / n, base2 + (i % 2 ? amp : -amp) * (0.6 + 0.4 * Math.sin(i))));
-  return keys;
-};
 var CHARGE = clip({
   id: "charge",
   name: "Charge",
@@ -946,8 +948,586 @@ var LIBRARY_CLIPS = [
   DEFEAT
 ];
 
+// src/presets/creatures.ts
+var BEASTS = ["quadruped", "winged", "serpentine"];
+var BEAST_IDLE = clip({
+  id: "beast-idle",
+  name: "Beast idle",
+  category: "idle",
+  description: "Slow breathing through the body, the head and neck shifting, the tail swaying.",
+  duration: 2.4,
+  loop: true,
+  templates: BEASTS,
+  tracks: {
+    root: { translate: cycle2(2.4, [[0, 0], [0, 6e-3]]) },
+    torso: { scale: cycle2(2.4, [[1, 1], [1, 1.03]]) },
+    neck: { rotate: cycle(2.4, [0, 2, 3, 1]) },
+    head: { rotate: cycle(2.4, [0, -1.5, -2.5, -1]) },
+    tail: { rotate: cycle(2.4, [-4, 2, 6, 0]) },
+    "tail.tip": { rotate: cycle(2.4, [0, -8, 0, 10]) },
+    "wing.near": { rotate: cycle(2.4, [0, -3]) },
+    "wing.far": { rotate: cycle(2.4, [0, 3]) }
+  }
+});
+var BITE = clip({
+  id: "bite",
+  name: "Bite",
+  category: "attack",
+  description: "Rear the head back with the jaws open, then lunge and snap down on the target.",
+  duration: 0.85,
+  phases: { anticipation: [0, 0.3], action: [0.3, 0.4], impact: 0.4, recovery: [0.5, 0.85] },
+  events: [ev(0, "windup"), ev(0.3, "release"), ev(0.4, "contact"), ev(0.5, "recover"), ev(0.85, "end")],
+  requires: ["neck", "head"],
+  templates: BEASTS,
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.3, -0.04, 0, SNAP2), k22(0.4, 0.1, 0, "outQuad"), k22(0.55, 0.09, 0, SET), k22(0.85, 0, 0)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.3, -6, SNAP2), k3(0.4, 7, BACK), k3(0.55, 5, SET), k3(0.85, 0)] },
+    neck: { rotate: [k3(0, 0, OUT), k3(0.3, -22, SNAP2), k3(0.4, 18, BACK), k3(0.55, 14, SET), k3(0.85, 0)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.3, -16, SNAP2), k3(0.4, 14, "outQuad"), k3(0.5, 8, SET), k3(0.85, 0)] },
+    "leg.hind.near": { rotate: [k3(0, 0, OUT), k3(0.3, -8, SNAP2), k3(0.4, 18, "outQuad"), k3(0.85, 0, SET)] },
+    "leg.hind.far": { rotate: [k3(0, 0, OUT), k3(0.3, -6, SNAP2), k3(0.42, 15, "outQuad"), k3(0.85, 0, SET)] },
+    "leg.front.near": { rotate: [k3(0, 0, OUT), k3(0.3, 6, SNAP2), k3(0.4, -20, "outQuad"), k3(0.85, 0, SET)] },
+    "leg.front.far": { rotate: [k3(0, 0, OUT), k3(0.3, 5, SNAP2), k3(0.42, -16, "outQuad"), k3(0.85, 0, SET)] },
+    tail: { rotate: [k3(0, 0, OUT), k3(0.3, 10, SNAP2), k3(0.42, -14, "outQuad"), k3(0.85, 0, SET)] },
+    "tail.tip": { rotate: [k3(0, 0, OUT), k3(0.34, 14, SNAP2), k3(0.48, -16, "outQuad"), k3(0.85, 0, SET)] },
+    "wing.near": { rotate: [k3(0, 0, OUT), k3(0.3, 10, SNAP2), k3(0.42, -12, "outQuad"), k3(0.85, 0, SET)] },
+    "wing.far": { rotate: [k3(0, 0, OUT), k3(0.3, -8, SNAP2), k3(0.42, 10, "outQuad"), k3(0.85, 0, SET)] }
+  }
+});
+var CLAW = clip({
+  id: "claw",
+  name: "Claw",
+  category: "attack",
+  description: "Rear up on the hind legs, raise a foreleg high and rake it down.",
+  duration: 0.9,
+  phases: { anticipation: [0, 0.32], action: [0.32, 0.42], impact: 0.42, recovery: [0.5, 0.9] },
+  events: [ev(0, "windup"), ev(0.32, "release"), ev(0.42, "contact"), ev(0.5, "recover"), ev(0.9, "end")],
+  requires: ["torso", "leg.front.near"],
+  templates: ["quadruped", "winged"],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.32, -0.02, 0, SNAP2), k22(0.42, 0.07, 0, "outQuad"), k22(0.9, 0, 0, SET)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.32, -22, SNAP2), k3(0.42, 4, BACK), k3(0.6, 2, SET), k3(0.9, 0)] },
+    // the hind legs turn against the body so the feet stay planted while it rears
+    "leg.hind.near": { rotate: [k3(0, 0, OUT), k3(0.32, 22, SNAP2), k3(0.42, -4, BACK), k3(0.6, -2, SET), k3(0.9, 0)] },
+    "leg.hind.far": { rotate: [k3(0, 0, OUT), k3(0.32, 22, SNAP2), k3(0.42, -4, BACK), k3(0.6, -2, SET), k3(0.9, 0)] },
+    "leg.front.near": { rotate: [k3(0, 0, OUT), k3(0.32, -78, SNAP2), k3(0.42, 18, BACK), k3(0.6, 8, SET), k3(0.9, 0)] },
+    "leg.front.far": { rotate: [k3(0, 0, OUT), k3(0.32, -14, SNAP2), k3(0.44, 4, "outQuad"), k3(0.9, 0, SET)] },
+    neck: { rotate: [k3(0, 0, OUT), k3(0.32, -10, SNAP2), k3(0.42, 15, "outQuad"), k3(0.9, 0, SET)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.32, -10, SNAP2), k3(0.44, 10, "outQuad"), k3(0.9, 0, SET)] },
+    tail: { rotate: [k3(0, 0, OUT), k3(0.32, -15, SNAP2), k3(0.42, 10, "outQuad"), k3(0.9, 0, SET)] },
+    "tail.tip": { rotate: [k3(0, 0, OUT), k3(0.36, -12, SNAP2), k3(0.48, 12, "outQuad"), k3(0.9, 0, SET)] },
+    "wing.near": { rotate: [k3(0, 0, OUT), k3(0.32, 18, SNAP2), k3(0.44, -10, "outQuad"), k3(0.9, 0, SET)] },
+    "wing.far": { rotate: [k3(0, 0, OUT), k3(0.32, -14, SNAP2), k3(0.44, 8, "outQuad"), k3(0.9, 0, SET)] }
+  }
+});
+var POUNCE = clip({
+  id: "pounce",
+  name: "Pounce",
+  category: "attack",
+  description: "Crouch low, spring forward with the forelegs reaching, land on the target and push back.",
+  duration: 1.05,
+  phases: { anticipation: [0, 0.35], action: [0.35, 0.6], impact: 0.6, recovery: [0.68, 1.05] },
+  events: [ev(0, "windup"), ev(0.36, "release"), ev(0.6, "contact"), ev(0.68, "recover"), ev(1.05, "end")],
+  requires: ["torso"],
+  templates: BEASTS,
+  tracks: {
+    root: {
+      translate: [k22(0, 0, 0, OUT), k22(0.35, -0.03, 0.03, SNAP2), k22(0.48, 0.1, -0.16, "outQuad"), k22(0.6, 0.15, 0, "inQuad"), k22(0.72, 0.14, 0.01, SET), k22(1.05, 0, 0)],
+      scale: [k22(0, 1, 1, OUT), k22(0.35, 1.05, 0.92, SNAP2), k22(0.45, 0.97, 1.04, OUT), k22(0.6, 1.05, 0.94, OUT), k22(0.75, 1, 1, SET)]
+    },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.35, 6, SNAP2), k3(0.47, -12, "outQuad"), k3(0.6, 10, OUT), k3(0.75, 4, SET), k3(1.05, 0)] },
+    neck: { rotate: [k3(0, 0, OUT), k3(0.35, 12, SNAP2), k3(0.48, -10), k3(0.6, 14, OUT), k3(1.05, 0, SET)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.35, -6, SNAP2), k3(0.5, -10), k3(0.62, 10, OUT), k3(1.05, 0, SET)] },
+    "leg.front.near": { rotate: [k3(0, 0, OUT), k3(0.35, -20, SNAP2), k3(0.48, -45, "outQuad"), k3(0.6, -10, OUT), k3(1.05, 0, SET)] },
+    "leg.front.far": { rotate: [k3(0, 0, OUT), k3(0.35, -18, SNAP2), k3(0.5, -40, "outQuad"), k3(0.62, -8, OUT), k3(1.05, 0, SET)] },
+    "leg.hind.near": { rotate: [k3(0, 0, OUT), k3(0.35, 20, SNAP2), k3(0.48, 45, "outQuad"), k3(0.6, 15, OUT), k3(1.05, 0, SET)] },
+    "leg.hind.far": { rotate: [k3(0, 0, OUT), k3(0.35, 18, SNAP2), k3(0.5, 40, "outQuad"), k3(0.62, 12, OUT), k3(1.05, 0, SET)] },
+    tail: { rotate: [k3(0, 0, OUT), k3(0.35, -10, SNAP2), k3(0.5, 18, "outQuad"), k3(0.65, -6, OUT), k3(1.05, 0, SET)] },
+    "tail.tip": { rotate: [k3(0, 0, OUT), k3(0.4, -12, SNAP2), k3(0.55, 20, "outQuad"), k3(0.7, -8, OUT), k3(1.05, 0, SET)] },
+    "wing.near": { rotate: [k3(0, 0, OUT), k3(0.35, 20, SNAP2), k3(0.5, -30, "outQuad"), k3(1.05, 0, SET)] },
+    "wing.far": { rotate: [k3(0, 0, OUT), k3(0.35, -16, SNAP2), k3(0.5, 26, "outQuad"), k3(1.05, 0, SET)] }
+  }
+});
+var TAIL_SWIPE = clip({
+  id: "tail-swipe",
+  name: "Tail swipe",
+  category: "attack",
+  description: "Lift the tail high, then whip it down across the target, the tip lashing a moment later.",
+  duration: 0.95,
+  phases: { anticipation: [0, 0.35], action: [0.35, 0.47], impact: 0.45, recovery: [0.55, 0.95] },
+  events: [ev(0, "windup"), ev(0.35, "release"), ev(0.45, "contact"), ev(0.55, "recover"), ev(0.95, "end")],
+  requires: ["tail"],
+  templates: BEASTS,
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.35, 0.03, 0, SNAP2), k22(0.47, -0.04, 0, "outQuad"), k22(0.95, 0, 0, SET)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.35, 5, SNAP2), k3(0.47, -6, "outQuad"), k3(0.95, 0, SET)] },
+    neck: { rotate: [k3(0, 0, OUT), k3(0.35, 8, SNAP2), k3(0.5, -6, "outQuad"), k3(0.95, 0, SET)] },
+    tail: { rotate: [k3(0, 0, OUT), k3(0.35, 35, SNAP2), k3(0.47, -50, "outQuad"), k3(0.6, -40, SET), k3(0.95, 0)] },
+    "tail.tip": { rotate: [k3(0, 0, OUT), k3(0.38, 25, SNAP2), k3(0.52, -45, "outQuad"), k3(0.65, -30, SET), k3(0.95, 0)] },
+    "leg.hind.near": { rotate: [k3(0, 0, OUT), k3(0.35, -6, SNAP2), k3(0.47, 8, "outQuad"), k3(0.95, 0, SET)] },
+    "leg.front.near": { rotate: [k3(0, 0, OUT), k3(0.35, -6, SNAP2), k3(0.47, 6, "outQuad"), k3(0.95, 0, SET)] }
+  }
+});
+var ROAR = clip({
+  id: "roar",
+  name: "Roar",
+  category: "magic",
+  description: "Gather with the head low, then throw it up and roar, the body shaking; wings spread.",
+  duration: 1.3,
+  phases: { anticipation: [0, 0.35], action: [0.35, 0.45], impact: 0.6, recovery: [1, 1.3] },
+  events: [ev(0, "windup"), ev(0.42, "release"), ev(0.6, "contact"), ev(1, "recover"), ev(1.3, "end")],
+  requires: ["head"],
+  templates: BEASTS,
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.35, 0.02, 0, SNAP2), k22(0.45, -0.025, 0, "outQuad"), k22(1, -0.02, 0, SET), k22(1.3, 0, 0)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.35, 4, SNAP2), k3(0.45, -8, "outQuad"), ...tremble(0.5, 1, 1, -8), k3(1.3, 0, SET)] },
+    neck: { rotate: [k3(0, 0, OUT), k3(0.35, 12, SNAP2), k3(0.45, -30, BACK), ...tremble(0.5, 1, 1.5, -28), k3(1.3, 0, SET)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.35, 8, SNAP2), k3(0.45, -28, BACK), k3(1, -24, SET), k3(1.3, 0)] },
+    "leg.front.near": { rotate: [k3(0, 0, OUT), k3(0.45, -8, "outQuad"), k3(1, -6), k3(1.3, 0, SET)] },
+    "leg.front.far": { rotate: [k3(0, 0, OUT), k3(0.45, -6, "outQuad"), k3(1, -5), k3(1.3, 0, SET)] },
+    tail: { rotate: [k3(0, 0, OUT), k3(0.35, -6, SNAP2), k3(0.5, 16, "outQuad"), k3(1, 12), k3(1.3, 0, SET)] },
+    "wing.near": { rotate: [k3(0, 0, OUT), k3(0.35, -6, SNAP2), k3(0.5, 25, "outQuad"), k3(1, 22), k3(1.3, 0, SET)] },
+    "wing.far": { rotate: [k3(0, 0, OUT), k3(0.35, 6, SNAP2), k3(0.5, -20, "outQuad"), k3(1, -18), k3(1.3, 0, SET)] }
+  }
+});
+var BREATH2 = clip({
+  id: "breath",
+  name: "Breath attack",
+  category: "magic",
+  description: "Rear the head back and fill up, then thrust it forward and hold the breath on the target.",
+  duration: 1.4,
+  phases: { anticipation: [0, 0.45], action: [0.45, 0.6], impact: 0.62, recovery: [1.05, 1.4] },
+  events: [ev(0, "windup"), ev(0.5, "release"), ev(0.62, "contact"), ev(1.05, "recover"), ev(1.4, "end")],
+  requires: ["neck", "head"],
+  templates: BEASTS,
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.45, -0.03, 0, SNAP2), k22(0.6, 0.04, 0, "outQuad"), k22(1.05, 0.03, 0, SET), k22(1.4, 0, 0)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.45, -8, SNAP2), k3(0.6, 6, "outQuad"), k3(1.05, 4, SET), k3(1.4, 0)], scale: [k22(0, 1, 1, OUT), k22(0.45, 1, 1.05, SNAP2), k22(0.6, 1, 0.98), k22(1.4, 1, 1, SET)] },
+    neck: { rotate: [k3(0, 0, OUT), k3(0.45, -30, SNAP2), k3(0.6, 20, BACK), ...tremble(0.65, 1.05, 1.2, 18), k3(1.4, 0, SET)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.45, -20, SNAP2), k3(0.6, 12, "outQuad"), ...tremble(0.65, 1.05, 1, 10), k3(1.4, 0, SET)] },
+    "leg.front.near": { rotate: [k3(0, 0, OUT), k3(0.45, 6, SNAP2), k3(0.6, -10, "outQuad"), k3(1.05, -8), k3(1.4, 0, SET)] },
+    "leg.hind.near": { rotate: [k3(0, 0, OUT), k3(0.45, -4, SNAP2), k3(0.6, 8, "outQuad"), k3(1.05, 6), k3(1.4, 0, SET)] },
+    tail: { rotate: [k3(0, 0, OUT), k3(0.45, 12, SNAP2), k3(0.6, -8, "outQuad"), k3(1.4, 0, SET)] },
+    "wing.near": { rotate: [k3(0, 0, OUT), k3(0.45, 15, SNAP2), k3(0.6, -10, "outQuad"), k3(1.4, 0, SET)] },
+    "wing.far": { rotate: [k3(0, 0, OUT), k3(0.45, -12, SNAP2), k3(0.6, 8, "outQuad"), k3(1.4, 0, SET)] }
+  }
+});
+var CROUCH = clip({
+  id: "crouch",
+  name: "Crouch",
+  category: "defence",
+  description: "Sink low with the head down and the legs braced, and hold it (a beast\u2019s guard).",
+  duration: 1,
+  phases: { action: [0, 0.3] },
+  events: [ev(0.3, "contact"), ev(1, "end")],
+  mixOut: 0.45,
+  templates: BEASTS,
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.3, -0.015, 0.035), k22(1, -0.015, 0.03, SINE)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.3, 4), k3(1, 3, SINE)] },
+    neck: { rotate: [k3(0, 0, OUT), k3(0.3, 16), k3(1, 15, SINE)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.3, -10), k3(1, -9, SINE)] },
+    "leg.front.near": { rotate: [k3(0, 0, OUT), k3(0.3, -12), k3(1, -12)] },
+    "leg.front.far": { rotate: [k3(0, 0, OUT), k3(0.3, -10), k3(1, -10)] },
+    "leg.hind.near": { rotate: [k3(0, 0, OUT), k3(0.3, 12), k3(1, 12)] },
+    "leg.hind.far": { rotate: [k3(0, 0, OUT), k3(0.3, 10), k3(1, 10)] },
+    tail: { rotate: [k3(0, 0, OUT), k3(0.3, -12), k3(1, -10, SINE)] },
+    "wing.near": { rotate: [k3(0, 0, OUT), k3(0.3, -15), k3(1, -14, SINE)] },
+    "wing.far": { rotate: [k3(0, 0, OUT), k3(0.3, 12), k3(1, 11, SINE)] }
+  }
+});
+var BEAST_DODGE = clip({
+  id: "beast-dodge",
+  name: "Beast dodge",
+  category: "defence",
+  description: "A quick hop back with the legs tucked, landing ready.",
+  duration: 0.65,
+  phases: { action: [0, 0.18], recovery: [0.3, 0.65] },
+  events: [ev(0, "contact"), ev(0.65, "end")],
+  mixIn: 0.03,
+  templates: BEASTS,
+  tracks: {
+    root: { translate: [k22(0, 0, 0, "outQuad"), k22(0.16, -0.1, -0.06), k22(0.3, -0.12, 0, "inQuad"), k22(0.4, -0.11, 5e-3, SET), k22(0.65, 0, 0)] },
+    torso: { rotate: [k3(0, 0, "outQuad"), k3(0.16, -10), k3(0.3, 4, OUT), k3(0.65, 0, SET)] },
+    neck: { rotate: [k3(0, 0, "outQuad"), k3(0.18, -12), k3(0.32, 4, OUT), k3(0.65, 0, SET)] },
+    "leg.front.near": { rotate: [k3(0, 0, "outQuad"), k3(0.16, -20), k3(0.3, 0, OUT), k3(0.65, 0)] },
+    "leg.front.far": { rotate: [k3(0, 0, "outQuad"), k3(0.16, -18), k3(0.3, 0, OUT), k3(0.65, 0)] },
+    "leg.hind.near": { rotate: [k3(0, 0, "outQuad"), k3(0.16, 20), k3(0.3, 0, OUT), k3(0.65, 0)] },
+    "leg.hind.far": { rotate: [k3(0, 0, "outQuad"), k3(0.16, 18), k3(0.3, 0, OUT), k3(0.65, 0)] },
+    tail: { rotate: [k3(0, 0, "outQuad"), k3(0.18, 14), k3(0.35, -4, OUT), k3(0.65, 0, SET)] }
+  }
+});
+var BEAST_HIT = clip({
+  id: "beast-hit",
+  name: "Beast hit",
+  category: "reaction",
+  description: "The body jolts back and the front lifts, the head whips up, the tail flicks.",
+  duration: 0.55,
+  phases: { impact: 0, action: [0, 0.08], recovery: [0.08, 0.55] },
+  events: [ev(0, "contact"), ev(0.55, "end")],
+  mixIn: 0.03,
+  mixOut: 0.2,
+  templates: BEASTS,
+  tracks: {
+    root: { translate: [k22(0, 0, 0, "outQuad"), k22(0.07, -0.04, 0), k22(0.18, -0.03, 0, SET), k22(0.55, 0, 0)] },
+    torso: { rotate: [k3(0, 0, "outQuad"), k3(0.07, -10), k3(0.2, -6, BACK), k3(0.55, 0, SET)] },
+    neck: { rotate: [k3(0, 0), k3(0.04, 0, "outQuad"), k3(0.11, -14), k3(0.26, -6, SET), k3(0.55, 0)] },
+    head: { rotate: [k3(0, 0), k3(0.06, 0, "outQuad"), k3(0.13, -10), k3(0.3, -4, SET), k3(0.55, 0)] },
+    tail: { rotate: [k3(0, 0, "outQuad"), k3(0.1, 15), k3(0.3, -4, SET), k3(0.55, 0)] },
+    "tail.tip": { rotate: [k3(0, 0), k3(0.04, 0, "outQuad"), k3(0.14, 20), k3(0.34, -6, SET), k3(0.55, 0)] },
+    "leg.front.near": { rotate: [k3(0, 0, "outQuad"), k3(0.08, -8), k3(0.55, 0, SET)] },
+    "leg.front.far": { rotate: [k3(0, 0, "outQuad"), k3(0.08, -6), k3(0.55, 0, SET)] },
+    "wing.near": { rotate: [k3(0, 0, "outQuad"), k3(0.08, 12), k3(0.3, -4, SET), k3(0.55, 0)] },
+    "wing.far": { rotate: [k3(0, 0, "outQuad"), k3(0.08, -10), k3(0.3, 3, SET), k3(0.55, 0)] }
+  }
+});
+var BEAST_DEFEAT = clip({
+  id: "beast-defeat",
+  name: "Beast defeat",
+  category: "reaction",
+  description: "The legs give way and the body sinks to the ground, the head drops last. Stays down.",
+  duration: 1.5,
+  phases: { impact: 0, action: [0, 0.5], recovery: [0.5, 1.5] },
+  events: [ev(0, "contact"), ev(1.5, "end")],
+  mixIn: 0.05,
+  templates: BEASTS,
+  tracks: {
+    root: { translate: [k22(0, 0, 0, "outQuad"), k22(0.12, -0.03, 0), k22(0.55, -0.02, 0.17, "inQuad"), k22(0.62, -0.02, 0.15, OUT), k22(0.75, -0.02, 0.17, SET)] },
+    torso: { rotate: [k3(0, 0, "outQuad"), k3(0.12, -8), k3(0.55, 5, "inQuad"), k3(0.7, 3, SET)] },
+    neck: { rotate: [k3(0, 0, "outQuad"), k3(0.15, -12), k3(0.7, 45, "inQuad"), k3(0.78, 40, OUT), k3(0.9, 44, SET)] },
+    head: { rotate: [k3(0, 0, "outQuad"), k3(0.2, -8), k3(0.8, 35, "inQuad"), k3(0.88, 30, OUT), k3(1, 33, SET)] },
+    "leg.front.near": { rotate: [k3(0, 0, "outQuad"), k3(0.12, -6), k3(0.55, -55, "inQuad"), k3(0.7, -50, SET)] },
+    "leg.front.far": { rotate: [k3(0, 0, "outQuad"), k3(0.12, -5), k3(0.58, -48, "inQuad"), k3(0.72, -45, SET)] },
+    "leg.hind.near": { rotate: [k3(0, 0, "outQuad"), k3(0.12, 6), k3(0.55, 58, "inQuad"), k3(0.7, 52, SET)] },
+    "leg.hind.far": { rotate: [k3(0, 0, "outQuad"), k3(0.12, 5), k3(0.58, 50, "inQuad"), k3(0.72, 46, SET)] },
+    tail: { rotate: [k3(0, 0, "outQuad"), k3(0.15, 10), k3(0.8, -22, "inQuad"), k3(1, -20, SET)] },
+    "tail.tip": { rotate: [k3(0, 0, "outQuad"), k3(0.2, 12), k3(0.9, -20, "inQuad"), k3(1.1, -18, SET)] },
+    "wing.near": { rotate: [k3(0, 0, "outQuad"), k3(0.15, 15), k3(0.8, -35, "inQuad"), k3(1, -32, SET)] },
+    "wing.far": { rotate: [k3(0, 0, "outQuad"), k3(0.15, -12), k3(0.8, 30, "inQuad"), k3(1, 28, SET)] }
+  }
+});
+var WING_IDLE = clip({
+  id: "wing-idle",
+  name: "Hover",
+  category: "idle",
+  description: "Slow wing beats that keep the body bobbing in the air.",
+  duration: 1.1,
+  loop: true,
+  requires: ["wing.near"],
+  templates: ["winged"],
+  tracks: {
+    root: { translate: cycle2(1.1, [[0, -0.022], [0, 8e-3]]) },
+    torso: { rotate: cycle(1.1, [-1.5, 1]) },
+    neck: { rotate: cycle(1.1, [1.5, -1]) },
+    "wing.near": { rotate: cycle(1.1, [10, -26]), scale: cycle2(1.1, [[1, 1], [0.9, 1]]) },
+    "wing.far": { rotate: cycle(1.1, [-9, 24]), scale: cycle2(1.1, [[1, 1], [0.9, 1]]) },
+    tail: { rotate: cycle(1.1, [3, -3]) },
+    "tail.tip": { rotate: cycle(1.1, [0, 5, 0, -5]) }
+  }
+});
+var WING_BEAT = clip({
+  id: "wing-beat",
+  name: "Wing beat",
+  category: "attack",
+  description: "Raise both wings high, then drive them down in one great beat that blasts the field.",
+  duration: 1.15,
+  phases: { anticipation: [0, 0.42], action: [0.42, 0.54], impact: 0.54, recovery: [0.62, 1.15] },
+  events: [ev(0, "windup"), ev(0.44, "release"), ev(0.54, "contact"), ev(0.62, "recover"), ev(1.15, "end")],
+  requires: ["wing.near"],
+  templates: ["winged"],
+  tracks: {
+    root: { translate: [k22(0, 0, 0, OUT), k22(0.42, 0, 0.02, SNAP2), k22(0.54, 0.03, -0.08, "outQuad"), k22(0.75, 0.02, -0.06, SET), k22(1.15, 0, 0)] },
+    torso: { rotate: [k3(0, 0, OUT), k3(0.42, -6, SNAP2), k3(0.54, 4, "outQuad"), k3(1.15, 0, SET)] },
+    neck: { rotate: [k3(0, 0, OUT), k3(0.42, -10, SNAP2), k3(0.56, 8, "outQuad"), k3(1.15, 0, SET)] },
+    head: { rotate: [k3(0, 0, OUT), k3(0.42, -6, SNAP2), k3(0.58, 6, "outQuad"), k3(1.15, 0, SET)] },
+    "wing.near": { rotate: [k3(0, 0, OUT), k3(0.42, 30, SNAP2), k3(0.54, -45, "outQuad"), k3(0.75, -35, SET), k3(1.15, 0)], scale: [k22(0, 1, 1), k22(0.42, 1.04, 1, SNAP2), k22(0.54, 0.82, 1, "outQuad"), k22(1.15, 1, 1, SET)] },
+    "wing.far": { rotate: [k3(0, 0, OUT), k3(0.42, -25, SNAP2), k3(0.54, 40, "outQuad"), k3(0.75, 32, SET), k3(1.15, 0)], scale: [k22(0, 1, 1), k22(0.42, 1.04, 1, SNAP2), k22(0.54, 0.82, 1, "outQuad"), k22(1.15, 1, 1, SET)] },
+    "leg.front.near": { rotate: [k3(0, 0, OUT), k3(0.54, -15, "outQuad"), k3(1.15, 0, SET)] },
+    "leg.hind.near": { rotate: [k3(0, 0, OUT), k3(0.54, 15, "outQuad"), k3(1.15, 0, SET)] },
+    tail: { rotate: [k3(0, 0, OUT), k3(0.42, -8, SNAP2), k3(0.58, 12, "outQuad"), k3(1.15, 0, SET)] }
+  }
+});
+var SERPENT_IDLE = clip({
+  id: "serpent-idle",
+  name: "Serpent idle",
+  category: "idle",
+  description: "A slow sway passing down the raised neck and along the body to the tail tip.",
+  duration: 2,
+  loop: true,
+  requires: ["neck"],
+  templates: ["serpentine"],
+  tracks: {
+    root: { translate: cycle2(2, [[0, 0], [0, 4e-3]]) },
+    torso: { rotate: cycle(2, [0, 2.5, 0, -2.5]) },
+    neck: { rotate: cycle(2, [-5, 0, 5, 0]) },
+    head: { rotate: cycle(2, [4, 0, -4, 0]) },
+    tail: { rotate: cycle(2, [0, -6, 0, 6]) },
+    "tail.tip": { rotate: cycle(2, [10, 0, -10, 0]) }
+  }
+});
+var BLOB_IDLE = clip({
+  id: "blob-idle",
+  name: "Blob idle",
+  category: "idle",
+  description: "A soft squash and stretch, the top wobbling a beat behind.",
+  duration: 1.6,
+  loop: true,
+  requires: ["root"],
+  templates: ["blob"],
+  tracks: {
+    root: { scale: cycle2(1.6, [[1.03, 0.97], [0.98, 1.025]]) },
+    crest: { rotate: cycle(1.6, [0, -4, 0, 4]) }
+  }
+});
+var BLOB_ATTACK = clip({
+  id: "blob-attack",
+  name: "Blob attack",
+  category: "attack",
+  description: "Squash flat, then spring forward stretched tall and splat onto the target.",
+  duration: 0.95,
+  phases: { anticipation: [0, 0.3], action: [0.3, 0.45], impact: 0.45, recovery: [0.52, 0.95] },
+  events: [ev(0, "windup"), ev(0.3, "release"), ev(0.45, "contact"), ev(0.52, "recover"), ev(0.95, "end")],
+  requires: ["root"],
+  templates: ["blob"],
+  tracks: {
+    root: {
+      translate: [k22(0, 0, 0, OUT), k22(0.3, -0.03, 0, SNAP2), k22(0.38, 0.08, -0.12, "outQuad"), k22(0.45, 0.15, 0, "inQuad"), k22(0.6, 0.14, 0, SET), k22(0.95, 0, 0)],
+      scale: [k22(0, 1, 1, OUT), k22(0.3, 1.2, 0.78, SNAP2), k22(0.38, 0.86, 1.18, "outQuad"), k22(0.45, 1.18, 0.84, OUT), k22(0.58, 0.96, 1.05, SET), k22(0.72, 1.02, 0.98, SET), k22(0.95, 1, 1)]
+    },
+    crest: { rotate: [k3(0, 0, OUT), k3(0.3, 10, SNAP2), k3(0.4, -14, "outQuad"), k3(0.5, 12, OUT), k3(0.95, 0, SET)] }
+  }
+});
+var BLOB_HIT = clip({
+  id: "blob-hit",
+  name: "Blob hit",
+  category: "reaction",
+  description: "The whole body jiggles from the blow and settles.",
+  duration: 0.6,
+  phases: { impact: 0, action: [0, 0.05], recovery: [0.05, 0.6] },
+  events: [ev(0, "contact"), ev(0.6, "end")],
+  mixIn: 0.02,
+  requires: ["root"],
+  templates: ["blob"],
+  tracks: {
+    root: {
+      translate: [k22(0, 0, 0, "outQuad"), k22(0.05, -0.04, 0), k22(0.25, -0.02, 0, SET), k22(0.6, 0, 0)],
+      scale: [k22(0, 1, 1, "outQuad"), k22(0.05, 0.88, 1.1, SINE), k22(0.15, 1.08, 0.92, SINE), k22(0.27, 0.96, 1.04, SINE), k22(0.4, 1.02, 0.98, SINE), k22(0.6, 1, 1)]
+    },
+    crest: { rotate: [k3(0, 0), k3(0.04, 0, "outQuad"), k3(0.12, -14, SINE), k3(0.26, 9, SINE), k3(0.4, -4, SINE), k3(0.6, 0)] }
+  }
+});
+var BLOB_DEFEAT = clip({
+  id: "blob-defeat",
+  name: "Blob defeat",
+  category: "reaction",
+  description: "A last wobble, then the body melts into a puddle. Stays down.",
+  duration: 1.3,
+  phases: { impact: 0, recovery: [0.1, 1.3] },
+  events: [ev(0, "contact"), ev(1.3, "end")],
+  requires: ["root"],
+  templates: ["blob"],
+  tracks: {
+    root: { scale: [k22(0, 1, 1, "outQuad"), k22(0.1, 1.1, 0.9, SINE), k22(0.25, 0.92, 1.08, SINE), k22(1, 1.4, 0.32, "inOutCubic"), k22(1.15, 1.35, 0.36, SET)] },
+    crest: { rotate: [k3(0, 0, "outQuad"), k3(0.25, -10, SINE), k3(0.95, 60, "inQuad"), k3(1.1, 55, SET)] }
+  }
+});
+var FLOAT_IDLE = clip({
+  id: "float-idle",
+  name: "Float",
+  category: "idle",
+  description: "Drifting up and down, the arms swaying and the trailing body rippling.",
+  duration: 2.6,
+  loop: true,
+  templates: ["floating"],
+  tracks: {
+    root: { translate: cycle2(2.6, [[0, 0], [0, -0.03]]) },
+    torso: { rotate: cycle(2.6, [-2, 2]) },
+    head: { rotate: cycle(2.6, [2, -2]) },
+    "arm.upper.front": { rotate: cycle(2.6, [-6, -2, 2, -2]) },
+    "arm.lower.front": { rotate: cycle(2.6, [-4, -10, -4, 2]) },
+    "arm.upper.back": { rotate: cycle(2.6, [4, 0, -4, 0]) },
+    "arm.lower.back": { rotate: cycle(2.6, [8, 2, -4, 2]) },
+    tail: { rotate: cycle(2.6, [-6, 0, 6, 0]) },
+    "tail.tip": { rotate: cycle(2.6, [0, -10, 0, 10]) }
+  }
+});
+var ANY = ["custom", "humanoid", "quadruped", "winged", "serpentine", "floating", "blob"];
+var GENERIC_IDLE = clip({
+  id: "generic-idle",
+  name: "Breathe (any rig)",
+  category: "idle",
+  description: "A gentle swell and settle of the whole sprite. Works on any rig.",
+  duration: 2.2,
+  loop: true,
+  requires: ["root"],
+  templates: ANY,
+  tracks: { root: { scale: cycle2(2.2, [[1, 1], [1, 1.02]]), translate: cycle2(2.2, [[0, 0], [0, -4e-3]]) } }
+});
+var GENERIC_ATTACK = clip({
+  id: "generic-attack",
+  name: "Lunge (any rig)",
+  category: "attack",
+  description: "Lean back, then lunge forward at the target and return. Works on any rig.",
+  duration: 0.75,
+  phases: { anticipation: [0, 0.25], action: [0.25, 0.33], impact: 0.33, recovery: [0.45, 0.75] },
+  events: [ev(0, "windup"), ev(0.25, "release"), ev(0.33, "contact"), ev(0.45, "recover"), ev(0.75, "end")],
+  requires: ["root"],
+  templates: ANY,
+  tracks: {
+    root: {
+      translate: [k22(0, 0, 0, OUT), k22(0.25, -0.04, 0, SNAP2), k22(0.33, 0.1, 0, "outQuad"), k22(0.45, 0.09, 0, SET), k22(0.75, 0, 0)],
+      rotate: [k3(0, 0, OUT), k3(0.25, -5, SNAP2), k3(0.33, 6, "outQuad"), k3(0.45, 4, SET), k3(0.75, 0)],
+      scale: [k22(0, 1, 1, OUT), k22(0.25, 0.96, 1.03, SNAP2), k22(0.33, 1.06, 0.96, "outQuad"), k22(0.5, 1, 1, SET)]
+    }
+  }
+});
+var GENERIC_CAST = clip({
+  id: "generic-cast",
+  name: "Gather power (any rig)",
+  category: "magic",
+  description: "Rise and swell while trembling, then release. Works on any rig.",
+  duration: 1.1,
+  phases: { anticipation: [0, 0.42], action: [0.42, 0.5], impact: 0.6, recovery: [0.6, 1.1] },
+  events: [ev(0, "windup"), ev(0.45, "release"), ev(0.6, "contact"), ev(1.1, "end")],
+  requires: ["root"],
+  templates: ANY,
+  tracks: {
+    root: {
+      translate: [k22(0, 0, 0, OUT), k22(0.42, 0, -0.03, SET), k22(0.5, 0.02, -0.02, "outQuad"), k22(1.1, 0, 0, SET)],
+      scale: [k22(0, 1, 1, OUT), k22(0.42, 1.04, 1.04, SET), k22(0.5, 0.98, 1.02, "outQuad"), k22(0.7, 1, 1, SET)],
+      rotate: [k3(0, 0), ...tremble(0.1, 0.42, 1.2), k3(0.5, 2, "outQuad"), k3(1.1, 0, SET)]
+    }
+  }
+});
+var GENERIC_HIT = clip({
+  id: "generic-hit",
+  name: "Recoil (any rig)",
+  category: "reaction",
+  description: "Knocked back a little, rocking, then settling. Works on any rig.",
+  duration: 0.5,
+  phases: { impact: 0, action: [0, 0.06], recovery: [0.06, 0.5] },
+  events: [ev(0, "contact"), ev(0.5, "end")],
+  mixIn: 0.02,
+  requires: ["root"],
+  templates: ANY,
+  tracks: {
+    root: {
+      translate: [k22(0, 0, 0, "outQuad"), k22(0.06, -0.05, 0), k22(0.2, -0.03, 0, SET), k22(0.5, 0, 0)],
+      rotate: [k3(0, 0, "outQuad"), k3(0.06, -7), k3(0.16, 3, SINE), k3(0.28, -1.5, SINE), k3(0.5, 0)]
+    }
+  }
+});
+var GENERIC_DODGE = clip({
+  id: "generic-dodge",
+  name: "Hop back (any rig)",
+  category: "defence",
+  description: "A quick hop away from the attack. Works on any rig.",
+  duration: 0.55,
+  phases: { action: [0, 0.18], recovery: [0.3, 0.55] },
+  events: [ev(0, "contact"), ev(0.55, "end")],
+  mixIn: 0.03,
+  requires: ["root"],
+  templates: ANY,
+  tracks: { root: { translate: [k22(0, 0, 0, "outQuad"), k22(0.16, -0.12, -0.05), k22(0.3, -0.12, 0, "inQuad"), k22(0.55, 0, 0, SET)] } }
+});
+var GENERIC_DEFEAT = clip({
+  id: "generic-defeat",
+  name: "Collapse (any rig)",
+  category: "reaction",
+  description: "Reel, then slump down and stay down. Works on any rig; stays inside the sprite\u2019s frame.",
+  duration: 1.2,
+  phases: { impact: 0, recovery: [0.2, 1.2] },
+  events: [ev(0, "contact"), ev(1.2, "end")],
+  requires: ["root"],
+  templates: ANY,
+  tracks: {
+    root: {
+      rotate: [k3(0, 0, "outQuad"), k3(0.2, -8, SINE), k3(0.8, 16, "inQuad"), k3(0.9, 13, OUT), k3(1, 14, SET)],
+      scale: [k22(0, 1, 1), k22(0.2, 0.98, 1.02, SINE), k22(0.8, 1.08, 0.7, "inQuad"), k22(0.9, 1.05, 0.74, OUT), k22(1, 1.06, 0.72, SET)],
+      translate: [k22(0, 0, 0), k22(0.2, -0.03, 0, SINE), k22(0.8, 0.02, 0, "inQuad")]
+    }
+  }
+});
+var FLOAT_DEFEAT = clip({
+  id: "float-defeat",
+  name: "Spirit defeat",
+  category: "reaction",
+  description: "The spirit shudders, sinks and folds in on itself, arms hanging. Stays down.",
+  duration: 1.4,
+  phases: { impact: 0, recovery: [0.15, 1.4] },
+  events: [ev(0, "contact"), ev(1.4, "end")],
+  templates: ["floating"],
+  tracks: {
+    root: {
+      translate: [k22(0, 0, 0, "outQuad"), k22(0.15, -0.03, -0.02), k22(1.1, 0, 0.12, "inOutCubic"), k22(1.25, 0, 0.11, SET)],
+      scale: [k22(0, 1, 1), k22(0.15, 0.96, 1.04, SINE), k22(1.1, 1.08, 0.72, "inOutCubic"), k22(1.25, 1.06, 0.74, SET)],
+      rotate: [k3(0, 0), ...tremble(0.05, 0.4, 2), k3(1.1, 4, SET)]
+    },
+    torso: { rotate: [k3(0, 0, "outQuad"), k3(0.15, -6), k3(1.1, 14, "inQuad"), k3(1.25, 12, SET)] },
+    head: { rotate: [k3(0, 0, "outQuad"), k3(0.2, -8), k3(1.2, 25, "inQuad"), k3(1.3, 22, SET)] },
+    "arm.upper.front": { rotate: [k3(0, 0, "outQuad"), k3(0.15, -15), k3(1.1, 30, "inQuad"), k3(1.25, 26, SET)] },
+    "arm.lower.front": { rotate: [k3(0, 0, "outQuad"), k3(0.2, -10), k3(1.15, 25, "inQuad"), k3(1.3, 22, SET)] },
+    "arm.upper.back": { rotate: [k3(0, 0, "outQuad"), k3(0.15, 15), k3(1.1, -30, "inQuad"), k3(1.25, -26, SET)] },
+    "arm.lower.back": { rotate: [k3(0, 0, "outQuad"), k3(0.2, 10), k3(1.15, -25, "inQuad"), k3(1.3, -22, SET)] },
+    tail: { rotate: [k3(0, 0, "outQuad"), k3(0.3, 10), k3(1.2, -8, SINE)] },
+    "tail.tip": { rotate: [k3(0, 0, "outQuad"), k3(0.35, -14), k3(1.25, 10, SINE)] }
+  }
+});
+var CREATURE_CLIPS = [
+  BEAST_IDLE,
+  BITE,
+  CLAW,
+  POUNCE,
+  TAIL_SWIPE,
+  ROAR,
+  BREATH2,
+  CROUCH,
+  BEAST_DODGE,
+  BEAST_HIT,
+  BEAST_DEFEAT,
+  WING_IDLE,
+  WING_BEAT,
+  SERPENT_IDLE,
+  BLOB_IDLE,
+  BLOB_ATTACK,
+  BLOB_HIT,
+  BLOB_DEFEAT,
+  FLOAT_IDLE,
+  GENERIC_IDLE,
+  GENERIC_ATTACK,
+  GENERIC_CAST,
+  GENERIC_HIT,
+  GENERIC_DODGE,
+  GENERIC_DEFEAT,
+  FLOAT_DEFEAT
+];
+var DEFAULT_IDLE = {
+  humanoid: "idle-breathing",
+  quadruped: "beast-idle",
+  winged: "wing-idle",
+  serpentine: "serpent-idle",
+  floating: "float-idle",
+  blob: "blob-idle",
+  custom: "generic-idle"
+};
+var DEFAULT_ACTION = {
+  humanoid: "sword-slash",
+  quadruped: "bite",
+  winged: "wing-beat",
+  serpentine: "bite",
+  floating: "magic-cast",
+  blob: "blob-attack",
+  custom: "generic-attack"
+};
+
 // src/presets/index.ts
-var builtIn = new Map([...HUMANOID_CLIPS, ...LIBRARY_CLIPS].map((c) => [c.id, c]));
+var builtIn = new Map([...HUMANOID_CLIPS, ...LIBRARY_CLIPS, ...CREATURE_CLIPS].map((c) => [c.id, c]));
+function defaultActionFor(template) {
+  return DEFAULT_ACTION[template ?? "humanoid"] ?? "generic-attack";
+}
+function defaultIdleFor(template) {
+  return DEFAULT_IDLE[template ?? "humanoid"] ?? "generic-idle";
+}
 var registered = /* @__PURE__ */ new Map();
 var CATEGORY_LABELS = {
   idle: "Idle",
@@ -1108,7 +1688,55 @@ var DEFAULT_RULES = {
   // last resorts by family, when nothing more specific matches or the rig lacks the roles
   attack: "sword-slash",
   magic: "magic-cast",
-  support: "channel"
+  support: "channel",
+  ...creatureRules()
+};
+function creatureRules() {
+  const out = {};
+  const beast = (tpl, o) => {
+    Object.assign(out, {
+      [`attack@${tpl}`]: "bite",
+      [`basic:ranged@${tpl}`]: o.ranged,
+      [`magic@${tpl}`]: o.magic,
+      [`support@${tpl}`]: "roar",
+      [`style:self@${tpl}`]: "roar",
+      [`heroic@${tpl}`]: o.big,
+      [`zeroPower@${tpl}`]: o.big,
+      [`act:guard@${tpl}`]: o.guard,
+      [`act:hinder@${tpl}`]: "roar",
+      [`react:hit@${tpl}`]: "beast-hit",
+      [`react:heavy@${tpl}`]: "beast-hit",
+      [`react:guarding@${tpl}`]: "beast-hit",
+      [`react:miss@${tpl}`]: "beast-dodge",
+      [`react:defeat@${tpl}`]: "beast-defeat"
+    });
+  };
+  beast("quadruped", { magic: "roar", ranged: "roar", big: "pounce", guard: "crouch" });
+  beast("winged", { magic: "breath", ranged: "breath", big: "wing-beat", guard: "crouch" });
+  beast("serpentine", { magic: "breath", ranged: "breath", big: "tail-swipe", guard: "crouch" });
+  out["spell:area@winged"] = "wing-beat";
+  Object.assign(out, {
+    "attack@blob": "blob-attack",
+    "magic@blob": "generic-cast",
+    "support@blob": "generic-cast",
+    "react:hit@blob": "blob-hit",
+    "react:heavy@blob": "blob-hit",
+    "react:guarding@blob": "blob-hit",
+    "react:miss@blob": "generic-dodge",
+    "react:defeat@blob": "blob-defeat",
+    "react:defeat@floating": "float-defeat"
+  });
+  return out;
+}
+var GENERIC = {
+  attack: "generic-attack",
+  magic: "generic-cast",
+  support: "generic-cast",
+  "react:hit": "generic-hit",
+  "react:heavy": "generic-hit",
+  "react:guarding": "generic-hit",
+  "react:miss": "generic-dodge",
+  "react:defeat": "generic-defeat"
 };
 var CLIP_FALLBACKS = {
   "bow-attack": ["projectile-cast", "magic-cast"],
@@ -1133,7 +1761,22 @@ var CLIP_FALLBACKS = {
   stagger: ["heavy-hit", "light-hit"],
   knockback: ["heavy-hit", "light-hit"],
   knockdown: ["heavy-hit", "light-hit"],
-  defeat: ["knockdown", "heavy-hit"]
+  defeat: ["knockdown", "heavy-hit"],
+  bite: ["generic-attack"],
+  claw: ["bite", "generic-attack"],
+  pounce: ["bite", "generic-attack"],
+  "tail-swipe": ["bite", "generic-attack"],
+  "wing-beat": ["roar", "generic-cast"],
+  breath: ["roar", "generic-cast"],
+  roar: ["generic-cast"],
+  crouch: ["generic-hit"],
+  "beast-hit": ["light-hit", "generic-hit"],
+  "beast-dodge": ["dodge", "generic-dodge"],
+  "beast-defeat": ["defeat", "generic-defeat"],
+  "blob-attack": ["generic-attack"],
+  "blob-hit": ["generic-hit"],
+  "blob-defeat": ["generic-defeat"],
+  "float-defeat": ["defeat", "generic-defeat"]
 };
 function emptyTable() {
   return { rules: {}, abilities: {} };
@@ -1239,11 +1882,11 @@ function resolveReaction(r, layers = {}) {
 }
 function resolveKeys(abilityKey, rules, layers) {
   const tpl = layers.template ?? null;
-  const variants = (k4) => tpl ? [`${k4}@${tpl}`, k4] : [k4];
   const chosen = [];
   const look = (table, keys, source) => {
     if (!table) return;
-    for (const k4 of keys) for (const kv of variants(k4)) if (table[kv]) chosen.push({ clip: table[kv], source, key: kv });
+    const order = tpl ? [...keys.map((k4) => `${k4}@${tpl}`), ...keys] : keys;
+    for (const kv of order) if (table[kv]) chosen.push({ clip: table[kv], source, key: kv });
   };
   const allKeys = [...abilityKey ? [abilityKey] : [], ...rules];
   if (layers.item) look(layers.item, ["*", ...allKeys], "item");
@@ -1262,7 +1905,9 @@ function resolveKeys(abilityKey, rules, layers) {
   for (const c of chosen.slice(1)) {
     if (c.clip === NONE) break;
     add(c.clip);
+    for (const f of CLIP_FALLBACKS[c.clip] ?? []) add(f);
   }
+  for (const k4 of rules) if (GENERIC[k4]) add(GENERIC[k4]);
   return { clip: first.clip, source: first.source, key: first.key, candidates };
 }
 function normName(s) {
@@ -1597,9 +2242,9 @@ function segmentIndex(keys, t) {
   let lo = 0;
   let hi = keys.length - 1;
   while (lo < hi) {
-    const mid = lo + hi + 1 >> 1;
-    if (keys[mid].t <= t) lo = mid;
-    else hi = mid - 1;
+    const mid2 = lo + hi + 1 >> 1;
+    if (keys[mid2].t <= t) lo = mid2;
+    else hi = mid2 - 1;
   }
   return lo;
 }
@@ -1660,8 +2305,8 @@ var TimeWarp = class {
     for (let i = 0; i < points.length - 1; i++) {
       const c0 = points[i];
       const c12 = points[i + 1];
-      const mid = (c0 + c12) / 2;
-      const m = ranges.find(({ r }) => mid > r[0] && mid < r[1])?.m ?? 1;
+      const mid2 = (c0 + c12) / 2;
+      const m = ranges.find(({ r }) => mid2 > r[0] && mid2 < r[1])?.m ?? 1;
       const len = (c12 - c0) * m;
       this.segs.push({ c0, c1: c12, p0: p, p1: p + len });
       p += len;
@@ -2692,6 +3337,27 @@ function skeletonize(mask, w, h2) {
   }
   return m;
 }
+function mainBounds(img, alphaMin = 1) {
+  const { width: w, height: h2, data } = img;
+  const mask = new Uint8Array(w * h2);
+  for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3] >= alphaMin ? 1 : 0;
+  const comps = components2(mask, w, h2);
+  if (!comps.length) return null;
+  const total = comps.reduce((s, c) => s + c.length, 0);
+  const biggest = comps.reduce((a, b) => b.length > a.length ? b : a);
+  let x0 = w, y0 = h2, x1 = -1, y1 = -1;
+  for (const c of comps) {
+    if (c !== biggest && c.length < total * 0.04) continue;
+    for (const i of c) {
+      const x = i % w, y = (i - x) / w;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 };
+}
 
 // src/sprite/landmarks.ts
 var clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
@@ -2894,8 +3560,8 @@ function detectHumanoid(img, facingIn = "auto") {
       n++;
     }
     const centre = sum / (n || 1);
-    const mid = (weaponFound.tip[0] + weaponFound.hilt[0]) / 2;
-    const side = mid - centre;
+    const mid2 = (weaponFound.tip[0] + weaponFound.hilt[0]) / 2;
+    const side = mid2 - centre;
     const dir = weaponFound.tip[0] - weaponFound.hilt[0];
     const lean = Math.abs(side) > (fBottom - fTop) * 0.05 ? side : dir;
     facing = lean >= 0 ? "right" : "left";
@@ -3043,14 +3709,14 @@ function detectHumanoid(img, facingIn = "auto") {
     const [c0, c12] = span;
     const len = c12 - c0;
     const hi = legRows(c0, c0 + len * 0.25);
-    const mid = legRows(c0 + len * 0.35, c0 + len * 0.65);
+    const mid2 = legRows(c0 + len * 0.35, c0 + len * 0.65);
     const lo = legRows(c0 + len * 0.75, c12);
     hipY = c0 - H * 0.03;
     const kneeY = (c0 + ankleY) / 2;
     hipF = [hi.front, hipY];
     hipB = [hi.back, hipY];
-    kneeF = [mid.n ? mid.front : hi.front, kneeY];
-    kneeB = [mid.n ? mid.back : hi.back, kneeY];
+    kneeF = [mid2.n ? mid2.front : hi.front, kneeY];
+    kneeB = [mid2.n ? mid2.back : hi.back, kneeY];
     ankleF = [lo.n ? lo.front : kneeF[0], ankleY];
     ankleB = [lo.n ? lo.back : kneeB[0], ankleY];
     legConf = clamp01(len / (H * 0.25));
@@ -3277,8 +3943,90 @@ var CUSTOM = {
   ],
   drawOrder: ["body"]
 };
-var TEMPLATES = { humanoid: HUMANOID, custom: CUSTOM };
-var KNOWN_ROLES = [.../* @__PURE__ */ new Set([...HUMANOID.bones.map((b) => b.role), "neck", "hair", "cape", "tail", "offhand", "accessory"])];
+var Q = { body: "#c9a36b", head: "#f2c45a", near: "#7ad08f", far: "#4f9163", tail: "#d98a5a", wing: "#9a8cf2", wingFar: "#6a5cb5" };
+var QUADRUPED = {
+  id: "quadruped",
+  name: "Four-legged beast",
+  description: "Body, head on a neck, tail, four legs. Wolves, cats, horses, boars, side view.",
+  bones: [
+    { id: "root", name: "Root", role: "root", parent: null, from: [0.5, 1], to: [0.62, 1], color: C.root },
+    { id: "body", name: "Body", role: "torso", parent: "root", from: [0.24, 0.5], to: [0.74, 0.46], color: Q.body, part: { deform: "mesh", softness: 0.05, reach: 0.04 } },
+    { id: "neck", name: "Neck", role: "neck", parent: "body", from: [0.74, 0.46], to: [0.82, 0.3], color: Q.head },
+    { id: "head", name: "Head", role: "head", parent: "neck", from: [0.82, 0.3], to: [1, 0.24], color: Q.head, part: { deform: "rigid", reach: 0.06 } },
+    { id: "tail", name: "Tail", role: "tail", parent: "body", from: [0.22, 0.44], to: [0.09, 0.3], color: Q.tail, part: { deform: "mesh", softness: 0.04 } },
+    { id: "tail_tip", name: "Tail tip", role: "tail.tip", parent: "tail", from: [0.09, 0.3], to: [0, 0.16], color: Q.tail, part: { deform: "mesh", softness: 0.04 } },
+    { id: "leg_hind_far", name: "Far hind leg", role: "leg.hind.far", parent: "body", from: [0.3, 0.6], to: [0.3, 0.99], color: Q.far, part: { deform: "mesh", softness: 0.04 } },
+    { id: "leg_front_far", name: "Far foreleg", role: "leg.front.far", parent: "body", from: [0.7, 0.6], to: [0.7, 0.99], color: Q.far, part: { deform: "mesh", softness: 0.04 } },
+    { id: "leg_hind_near", name: "Near hind leg", role: "leg.hind.near", parent: "body", from: [0.24, 0.6], to: [0.24, 0.99], color: Q.near, part: { deform: "mesh", softness: 0.04 } },
+    { id: "leg_front_near", name: "Near foreleg", role: "leg.front.near", parent: "body", from: [0.64, 0.6], to: [0.64, 0.99], color: Q.near, part: { deform: "mesh", softness: 0.04 } }
+  ],
+  drawOrder: ["leg_hind_far", "leg_front_far", "tail", "tail_tip", "body", "leg_hind_near", "leg_front_near", "head"]
+};
+var WINGED = {
+  id: "winged",
+  name: "Winged creature",
+  description: "A beast with wings: body, long neck, head, two wings, tail, four legs. Dragons, griffins, side view.",
+  bones: [
+    { id: "root", name: "Root", role: "root", parent: null, from: [0.5, 1], to: [0.62, 1], color: C.root },
+    { id: "body", name: "Body", role: "torso", parent: "root", from: [0.3, 0.6], to: [0.7, 0.54], color: Q.body, part: { deform: "mesh", softness: 0.05, reach: 0.04 } },
+    { id: "neck", name: "Neck", role: "neck", parent: "body", from: [0.7, 0.54], to: [0.8, 0.27], color: Q.head, part: { deform: "mesh", softness: 0.05 } },
+    { id: "head", name: "Head", role: "head", parent: "neck", from: [0.8, 0.27], to: [1, 0.24], color: Q.head, part: { deform: "rigid", reach: 0.04 } },
+    { id: "wing_far", name: "Far wing", role: "wing.far", parent: "body", from: [0.58, 0.46], to: [0.64, 0.04], color: Q.wingFar, part: { deform: "mesh", softness: 0.06, fill: false } },
+    { id: "wing_near", name: "Near wing", role: "wing.near", parent: "body", from: [0.46, 0.46], to: [0.14, 0.12], color: Q.wing, part: { deform: "mesh", softness: 0.06, fill: false } },
+    { id: "tail", name: "Tail", role: "tail", parent: "body", from: [0.28, 0.62], to: [0.06, 0.8], color: Q.tail, part: { deform: "mesh", softness: 0.05 } },
+    { id: "tail_tip", name: "Tail tip", role: "tail.tip", parent: "tail", from: [0.06, 0.8], to: [0.2, 0.98], color: Q.tail, part: { deform: "mesh", softness: 0.05 } },
+    { id: "leg_hind_far", name: "Far hind leg", role: "leg.hind.far", parent: "body", from: [0.38, 0.66], to: [0.38, 0.99], color: Q.far, part: { deform: "mesh", softness: 0.04 } },
+    { id: "leg_front_far", name: "Far foreleg", role: "leg.front.far", parent: "body", from: [0.72, 0.64], to: [0.72, 0.99], color: Q.far, part: { deform: "mesh", softness: 0.04 } },
+    { id: "leg_hind_near", name: "Near hind leg", role: "leg.hind.near", parent: "body", from: [0.33, 0.66], to: [0.33, 0.99], color: Q.near, part: { deform: "mesh", softness: 0.04 } },
+    { id: "leg_front_near", name: "Near foreleg", role: "leg.front.near", parent: "body", from: [0.66, 0.64], to: [0.66, 0.99], color: Q.near, part: { deform: "mesh", softness: 0.04 } }
+  ],
+  drawOrder: ["wing_far", "leg_hind_far", "leg_front_far", "tail", "tail_tip", "body", "neck", "head", "leg_hind_near", "leg_front_near", "wing_near"]
+};
+var SERPENTINE = {
+  id: "serpentine",
+  name: "Serpent",
+  description: "A long body raised at the front: tail, body, neck, head. Snakes, eels, worms, nagas\u2019 lower body.",
+  bones: [
+    { id: "root", name: "Root", role: "root", parent: null, from: [0.5, 1], to: [0.62, 1], color: C.root },
+    { id: "body", name: "Body", role: "torso", parent: "root", from: [0.42, 0.86], to: [0.66, 0.72], color: Q.body, part: { deform: "mesh", softness: 0.06 } },
+    { id: "neck", name: "Neck", role: "neck", parent: "body", from: [0.66, 0.72], to: [0.78, 0.3], color: Q.head, part: { deform: "mesh", softness: 0.06 } },
+    { id: "head", name: "Head", role: "head", parent: "neck", from: [0.78, 0.3], to: [1, 0.22], color: Q.head, part: { deform: "rigid", reach: 0.04 } },
+    { id: "tail", name: "Tail", role: "tail", parent: "body", from: [0.42, 0.86], to: [0.18, 0.9], color: Q.tail, part: { deform: "mesh", softness: 0.06 } },
+    { id: "tail_tip", name: "Tail tip", role: "tail.tip", parent: "tail", from: [0.18, 0.9], to: [0, 0.8], color: Q.tail, part: { deform: "mesh", softness: 0.06 } }
+  ],
+  drawOrder: ["tail_tip", "tail", "body", "neck", "head"]
+};
+var FLOATING = {
+  id: "floating",
+  name: "Floating spirit",
+  description: "No legs: head, body, two arms and a trailing lower body. Ghosts, wraiths, elementals, front or side view.",
+  bones: [
+    { id: "root", name: "Root", role: "root", parent: null, from: [0.5, 1], to: [0.62, 1], color: C.root },
+    { id: "torso", name: "Body", role: "torso", parent: "root", from: [0.5, 0.74], to: [0.5, 0.3], color: C.body, part: { deform: "mesh", softness: 0.05, reach: 0.04 } },
+    { id: "head", name: "Head", role: "head", parent: "torso", from: [0.5, 0.3], to: [0.5, 0], color: C.head, part: { deform: "rigid", reach: 0.06 } },
+    { id: "arm_upper_back", name: "Back arm", role: "arm.upper.back", parent: "torso", from: [0.34, 0.34], to: [0.2, 0.46], color: C.armB, part: { deform: "mesh", softness: 0.04 } },
+    { id: "arm_lower_back", name: "Back forearm", role: "arm.lower.back", parent: "arm_upper_back", from: [0.2, 0.46], to: [0.04, 0.56], color: C.armB, part: { deform: "mesh", softness: 0.04 } },
+    { id: "arm_upper_front", name: "Front arm", role: "arm.upper.front", parent: "torso", from: [0.66, 0.34], to: [0.8, 0.46], color: C.armF, part: { deform: "mesh", softness: 0.04 } },
+    { id: "arm_lower_front", name: "Front forearm", role: "arm.lower.front", parent: "arm_upper_front", from: [0.8, 0.46], to: [0.96, 0.56], color: C.armF, part: { deform: "mesh", softness: 0.04 } },
+    { id: "tail", name: "Trail", role: "tail", parent: "torso", from: [0.5, 0.74], to: [0.5, 0.88], color: Q.tail, part: { deform: "mesh", softness: 0.06 } },
+    { id: "tail_tip", name: "Trail tip", role: "tail.tip", parent: "tail", from: [0.5, 0.88], to: [0.5, 1], color: Q.tail, part: { deform: "mesh", softness: 0.06 } }
+  ],
+  drawOrder: ["arm_upper_back", "arm_lower_back", "tail_tip", "tail", "torso", "head", "arm_upper_front", "arm_lower_front"]
+};
+var BLOB = {
+  id: "blob",
+  name: "Blob",
+  description: "A soft body that squashes and stretches, with whatever sits on top (eye stalk, crown, flame). Slimes, puddings, flans.",
+  bones: [
+    { id: "root", name: "Root", role: "root", parent: null, from: [0.5, 1], to: [0.62, 1], color: C.root },
+    { id: "body", name: "Body", role: "torso", parent: "root", from: [0.5, 0.98], to: [0.5, 0.42], color: Q.body, part: { deform: "mesh", softness: 0.2, reach: 0.06 } },
+    { id: "crest", name: "Top", role: "crest", parent: "body", from: [0.5, 0.42], to: [0.5, 0], color: Q.head, part: { deform: "mesh", softness: 0.06 } }
+  ],
+  drawOrder: ["body", "crest"]
+};
+var TEMPLATES = { humanoid: HUMANOID, quadruped: QUADRUPED, winged: WINGED, serpentine: SERPENTINE, floating: FLOATING, blob: BLOB, custom: CUSTOM };
+var TEMPLATE_LIST = [HUMANOID, QUADRUPED, WINGED, SERPENTINE, FLOATING, BLOB, CUSTOM];
+var KNOWN_ROLES = [.../* @__PURE__ */ new Set([...TEMPLATE_LIST.flatMap((t) => t.bones.map((b) => b.role)), "hair", "cape", "offhand", "accessory", "jaw"])];
 function defaultPart(id, name, bone2, label, deform = "mesh") {
   return { id, name, bone: bone2, label, deform, softness: deform === "mesh" ? 0.03 : 0, stiffness: 0, cell: 0, fill: true };
 }
@@ -3338,6 +4086,210 @@ function humanoidFromLandmarks(L) {
     if (!p) throw new Error(`No placement for ${tb.id}`);
     return { from: p[0], to: p[1] };
   });
+}
+function beastFromLandmarks(L, t) {
+  const { box } = L;
+  const s = L.facing === "right" ? 1 : -1;
+  const prop = ([u, v]) => [box.x + (s > 0 ? u : 1 - u) * box.width, box.y + v * box.height];
+  const legTop = (l) => [l.top[0], L.belly - L.thickness * 0.25];
+  const ground = box.y + box.height - 1;
+  const place = {
+    root: [[box.x + box.width / 2, ground + 1], [box.x + box.width / 2 + s * box.height * 0.12, ground + 1]],
+    body: [L.hip, L.shoulder],
+    neck: [L.shoulder, L.head.base],
+    head: [L.head.base, L.head.tip],
+    leg_hind_near: [legTop(L.legs.hindNear), L.legs.hindNear.foot],
+    leg_hind_far: [legTop(L.legs.hindFar), L.legs.hindFar.foot],
+    leg_front_near: [legTop(L.legs.frontNear), L.legs.frontNear.foot],
+    leg_front_far: [legTop(L.legs.frontFar), L.legs.frontFar.foot]
+  };
+  if (L.tail) {
+    place.tail = [L.tail.base, L.tail.mid];
+    place.tail_tip = [L.tail.mid, L.tail.tip];
+  }
+  if (L.wings) {
+    place.wing_near = [L.wings.near.base, L.wings.near.tip];
+    place.wing_far = [L.wings.far.base, L.wings.far.tip];
+  }
+  return buildFromTemplate(t, (tb) => {
+    const p = place[tb.id];
+    return p ? { from: p[0], to: p[1] } : { from: prop(tb.from), to: prop(tb.to) };
+  });
+}
+
+// src/sprite/creatures.ts
+function runsOf(mask, w, y) {
+  const out = [];
+  let s = -1;
+  for (let x = 0; x <= w; x++) {
+    const on = x < w && mask[y * w + x] === 1;
+    if (on && s < 0) s = x;
+    if (!on && s >= 0) {
+      out.push({ x0: s, x1: x - 1 });
+      s = -1;
+    }
+  }
+  return out;
+}
+var mid = (r) => (r.x0 + r.x1) / 2;
+var width = (r) => r.x1 - r.x0 + 1;
+function detectBeast(img, facingIn = "auto", o = {}) {
+  const { width: w, height: h2 } = img;
+  const mask = alphaMask(img, 128);
+  {
+    const comps = components2(mask, w, h2).sort((a, b) => b.length - a.length);
+    const keep = new Uint8Array(mask.length);
+    const main = comps[0]?.length ?? 0;
+    for (const c of comps) if (c.length >= main * 0.15) for (const i of c) keep[i] = 1;
+    mask.set(keep);
+  }
+  let top = h2, bottom = -1, left = w, right = -1;
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const x = i % w, y = (i - x) / w;
+    if (y < top) top = y;
+    if (y > bottom) bottom = y;
+    if (x < left) left = x;
+    if (x > right) right = x;
+  }
+  if (bottom < 0) return null;
+  const H = bottom - top + 1;
+  const W = right - left + 1;
+  const notes = [];
+  let belly = -1;
+  for (let y = bottom; y >= top; y--) {
+    const widest = runsOf(mask, w, y).reduce((m, r) => Math.max(m, width(r)), 0);
+    if (widest >= W * 0.5) {
+      belly = y + 1;
+      break;
+    }
+  }
+  if (belly < 0 || bottom - belly < H * 0.1) return null;
+  const footRow = bottom - Math.max(1, Math.round(H * 0.03));
+  const legs = [];
+  for (const r of runsOf(mask, w, footRow)) {
+    let pixels = 0;
+    let solid = true;
+    for (let y = footRow; y >= belly; y--) {
+      let n = 0;
+      for (let x = r.x0; x <= r.x1; x++) n += mask[y * w + x];
+      if (n < width(r) * 0.6) {
+        solid = false;
+        break;
+      }
+      pixels += n;
+    }
+    if (solid && width(r) <= W * 0.3) legs.push({ top: [mid(r), belly], foot: [mid(r), bottom], pixels });
+  }
+  if (legs.length < 2) return null;
+  const xs = legs.map((l) => l.top[0]);
+  const lo = Math.min(...xs);
+  const hi = Math.max(...xs);
+  const thick = [];
+  for (let x = Math.round(lo); x <= Math.round(hi); x++) {
+    let n = 0;
+    for (let y = belly - 1; y >= top && mask[y * w + x]; y--) n++;
+    if (n > 0) thick.push(n);
+  }
+  thick.sort((a, b) => a - b);
+  const thickness = Math.max(2, thick.length ? thick[thick.length >> 1] : H * 0.25);
+  const cy = belly - thickness / 2;
+  const backY = belly - thickness;
+  const dist = distanceTransform(mask, w, h2);
+  const skel = skeletonize(mask, w, h2);
+  const P = (i) => [i % w, Math.floor(i / w)];
+  const near = (a, b, r) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= r;
+  const free = skeletonBranches(skel, w, h2).map((b) => {
+    const k4 = Math.max(2, Math.ceil(b.path.length * 0.4));
+    const d = b.path.slice(0, k4).map((i) => dist[i]).sort((x, y) => x - y);
+    return { end: P(b.path[0]), half: P(b.path[Math.floor(b.path.length / 2)]), length: b.length, girth: d[d.length >> 1] };
+  }).filter((e) => !legs.some((l) => near(e.end, l.foot, Math.max(4, thickness * 0.6))) && e.length >= Math.max(3, H * 0.05));
+  const used = /* @__PURE__ */ new Set();
+  let wingEnds = [];
+  if (o.wings) {
+    const high = free.filter((e) => e.end[1] < backY - thickness * 0.3).sort((a, b) => a.end[1] - b.end[1]);
+    if (high.length) {
+      const first = high[0];
+      const second = high.find((e) => Math.abs(e.end[0] - first.end[0]) >= W * 0.25);
+      wingEnds = second ? [first, second] : [first];
+    }
+    for (const e of high) used.add(e);
+  }
+  const rest = free.filter((e) => !used.has(e));
+  const headEnd = rest.slice().sort((a, b) => b.girth - a.girth)[0] ?? null;
+  let facing = facingIn === "auto" ? "right" : facingIn;
+  if (facingIn === "auto" && headEnd) {
+    facing = headEnd.end[0] >= (left + right) / 2 ? "right" : "left";
+    notes.push(`Facing ${facing}: the head is the thickest end of the silhouette.`);
+  }
+  const s = facing === "right" ? 1 : -1;
+  const front = (x) => x * s;
+  const centre = (left + right) / 2;
+  legs.sort((a, b) => front(a.foot[0]) - front(b.foot[0]));
+  let hind = legs.filter((l) => front(l.foot[0]) < front(centre));
+  let fore = legs.filter((l) => front(l.foot[0]) >= front(centre));
+  if (!hind.length || !fore.length) {
+    hind = legs.slice(0, Math.ceil(legs.length / 2));
+    fore = legs.slice(Math.ceil(legs.length / 2));
+  }
+  const pair = (list) => {
+    const sorted = list.slice().sort((a, b) => b.pixels - a.pixels);
+    const n = sorted[0];
+    const f = sorted[1] ?? { top: [n.top[0] + s, n.top[1]], foot: [n.foot[0] + s, n.foot[1]], pixels: 0 };
+    return { near: n, far: f };
+  };
+  const hp = pair(hind);
+  const fp = pair(fore);
+  if (legs.length < 4) notes.push(`${legs.length} legs visible; the hidden ones share their place.`);
+  const hipX = (hp.near.top[0] + hp.far.top[0]) / 2;
+  const shX = (fp.near.top[0] + fp.far.top[0]) / 2;
+  const hip = [hipX, cy];
+  const shoulder = [shX, cy];
+  let tip = null;
+  for (let y = top; y < belly; y++) {
+    for (let x = left; x <= right; x++) {
+      if (!mask[y * w + x]) continue;
+      if (!tip || front(x) > front(tip[0])) tip = [x, y];
+    }
+  }
+  if (!tip) return null;
+  const neckBase = [shX + s * thickness * 0.15, backY + thickness * 0.25];
+  const reach = Math.hypot(tip[0] - neckBase[0], tip[1] - neckBase[1]) || 1;
+  const headLen = Math.min(reach * 0.7, thickness * 1.25 + 2);
+  const headBase = [tip[0] - (tip[0] - neckBase[0]) / reach * headLen, tip[1] - (tip[1] - neckBase[1]) / reach * headLen];
+  let wings = null;
+  if (o.wings) {
+    const lerpX = (t) => hipX + (shX - hipX) * t;
+    if (wingEnds.length) {
+      const [back, fwd] = wingEnds.slice().sort((a, b) => front(a.end[0]) - front(b.end[0]));
+      wings = { near: { base: [lerpX(0.4), backY + 1], tip: back.end }, far: { base: [lerpX(0.65), backY + 1], tip: fwd ? fwd.end : [back.end[0] + s * W * 0.15, back.end[1]] } };
+      notes.push(`Wings found: ${fwd ? "two tips" : "one tip (the other wing is hidden)"}.`);
+    } else notes.push("No wing tips found above the back; wings placed by proportion.");
+  }
+  let tail = null;
+  const behindHip = rest.filter((e) => e !== headEnd && front(e.end[0]) < front(hipX) - W * 0.04);
+  const low = behindHip.filter((e) => e.end[1] >= backY);
+  const tails = (low.length || o.wings ? low : behindHip).sort((a, b) => Math.hypot(b.end[0] - hipX, b.end[1] - cy) - Math.hypot(a.end[0] - hipX, a.end[1] - cy));
+  if (tails.length) {
+    const t = tails[0];
+    tail = { base: [hipX - s * thickness * 0.3, cy - thickness * 0.15], mid: t.half, tip: t.end };
+  } else notes.push("No tail found.");
+  const conf = (v) => Math.max(0, Math.min(1, v));
+  return {
+    facing,
+    box: { x: left, y: top, width: W, height: H },
+    belly,
+    thickness,
+    hip,
+    shoulder,
+    legs: { hindNear: hp.near, hindFar: hp.far, frontNear: fp.near, frontFar: fp.far },
+    head: { base: headBase, tip },
+    neckBase,
+    tail,
+    wings,
+    confidence: { legs: conf(legs.length / 4), head: headEnd ? 0.7 : 0.4, tail: tail ? 0.6 : 0, ...o.wings ? { wings: wings ? 0.6 : 0 } : {} },
+    notes
+  };
 }
 
 // src/sprite/rle.ts
@@ -3421,7 +4373,14 @@ function createRig(o) {
     landmarks = detectHumanoid(o.image, o.facing ?? "auto");
     if (landmarks) facing = landmarks.facing;
   }
-  const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : fitTemplate(template, body, facing);
+  const creature = template.id !== "humanoid" && template.id !== "custom";
+  const fitBox = creature ? mainBounds(o.image) ?? bounds : body;
+  let beast = null;
+  if ((template.id === "quadruped" || template.id === "winged") && o.detect !== false) {
+    beast = detectBeast(o.image, o.facing ?? "auto", { wings: template.id === "winged" });
+    if (beast) facing = beast.facing;
+  }
+  const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : beast ? beastFromLandmarks(beast, template) : fitTemplate(template, fitBox, facing);
   const now = Date.now();
   const rig = {
     format: RIG_FORMAT,
@@ -3431,7 +4390,7 @@ function createRig(o) {
     template: template.id,
     facing,
     image: { src: o.src, width: o.image.width, height: o.image.height },
-    metrics: { bodyHeight: body.height, bounds },
+    metrics: { bodyHeight: fitBox.height, bounds },
     bones,
     parts,
     ownership: null,
@@ -3442,7 +4401,8 @@ function createRig(o) {
   };
   if (landmarks) rig.metrics.bodyHeight = landmarks.body.height;
   if (o.assign !== false) rig.ownership = encodeRle(assignPixels(rig, o.image));
-  lastReport.set(rig, landmarks ? { method: "landmarks", confidence: landmarks.confidence, notes: landmarks.notes } : { method: "proportions", confidence: {}, notes: [] });
+  const found = landmarks ?? beast;
+  lastReport.set(rig, found ? { method: "landmarks", confidence: found.confidence, notes: found.notes } : { method: "proportions", confidence: {}, notes: [] });
   return rig;
 }
 function rigLabels(rig) {
@@ -3484,9 +4444,9 @@ function parseRig(input) {
   if (o.format !== RIG_FORMAT) throw new Error('Not a rig file (format is not "fusa-rig").');
   if (num(o.version, 0) > RIG_VERSION) throw new Error(`This rig was saved by a newer version (format ${o.version}).`);
   const image = o.image ?? {};
-  const width = Math.round(num(image.width, 0));
+  const width2 = Math.round(num(image.width, 0));
   const height = Math.round(num(image.height, 0));
-  if (width <= 0 || height <= 0) throw new Error("The rig has no image size.");
+  if (width2 <= 0 || height <= 0) throw new Error("The rig has no image size.");
   const bones = (Array.isArray(o.bones) ? o.bones : []).map((b2, i) => ({
     id: str(b2.id, `bone${i}`),
     name: str(b2.name, `Bone ${i + 1}`),
@@ -3523,12 +4483,12 @@ function parseRig(input) {
     version: RIG_VERSION,
     id: str(o.id, newId("rig")),
     name: str(o.name, "Unnamed rig"),
-    template: ["humanoid", "quadruped", "winged", "serpentine", "custom"].includes(o.template) ? o.template : "custom",
+    template: ["humanoid", "quadruped", "winged", "serpentine", "floating", "blob", "custom"].includes(o.template) ? o.template : "custom",
     facing: o.facing === "left" ? "left" : "right",
-    image: { src: str(image.src, ""), width, height },
+    image: { src: str(image.src, ""), width: width2, height },
     metrics: {
       bodyHeight: Math.max(1, num(metrics.bodyHeight, height)),
-      bounds: { x: num(b.x, 0), y: num(b.y, 0), width: num(b.width, width), height: num(b.height, height) }
+      bounds: { x: num(b.x, 0), y: num(b.y, 0), width: num(b.width, width2), height: num(b.height, height) }
     },
     bones,
     parts,
@@ -4227,8 +5187,16 @@ var TokenAnimator = class {
     this.mode = mode;
     this.startIdle();
   }
+  /** The base loop: the profile's choice if this rig can play it, else the template's own idle. '' = none. */
+  idleId() {
+    const want = this.profile.idle;
+    if (want === "") return null;
+    const tpl = this.view.build.rig.template;
+    for (const id of [want, defaultIdleFor(tpl), "generic-idle"]) if (id && this.canPlay(id)) return id;
+    return null;
+  }
   startIdle() {
-    const id = this.profile.idle ?? "idle-breathing";
+    const id = this.idleId();
     const clip2 = id ? getClip(id) : void 0;
     if (clip2) this.view.player.play(clip2, { track: 0, mixIn: 0, intensity: this.profile.intensity ?? 1 });
     this.view.player.update(Math.random() * 2);
@@ -4261,7 +5229,7 @@ var TokenAnimator = class {
     if (!clipIds) {
       if (!this.defeatedBy) return;
       this.defeatedBy = null;
-      const id2 = this.profile.idle ?? "idle-breathing";
+      const id2 = this.idleId();
       const clip2 = id2 ? getClip(id2) : void 0;
       if (clip2) p.play(clip2, { track: 0, mixIn: 0.5, intensity: this.profile.intensity ?? 1 });
       else p.stop(0, 0.5);
@@ -5856,20 +6824,20 @@ var Viewport = class {
     this.applyCamera();
   }
   /** Colour each part's pixels (labels → RGBA) for the region overlay. */
-  setRegions(labels, width, height, colourOf, visible) {
+  setRegions(labels, width2, height, colourOf, visible) {
     const P = pixi();
     this.regions.visible = visible && !!labels;
     if (!labels || !visible) return;
-    if (!this.regionCanvas || this.regionCanvas.width !== width || this.regionCanvas.height !== height) {
+    if (!this.regionCanvas || this.regionCanvas.width !== width2 || this.regionCanvas.height !== height) {
       this.regionCanvas = document.createElement("canvas");
-      this.regionCanvas.width = width;
+      this.regionCanvas.width = width2;
       this.regionCanvas.height = height;
       this.regionTexture?.destroy(true);
       this.regionTexture = P.Texture.from(this.regionCanvas, { scaleMode: P.SCALE_MODES.NEAREST });
       this.regions.texture = this.regionTexture;
     }
     const ctx = this.regionCanvas.getContext("2d");
-    const img = ctx.createImageData(width, height);
+    const img = ctx.createImageData(width2, height);
     const cache2 = /* @__PURE__ */ new Map();
     for (let i = 0; i < labels.length; i++) {
       const l = labels[i];
@@ -6086,7 +7054,7 @@ var MODES = [
   { id: "pose", label: "Pose", hint: "Drag any bone to rotate it and see the art move. Shift-drag the root to move the whole body. Nothing here is saved." },
   { id: "animate", label: "Animate", hint: "Pick an animation below. Space plays and pauses. Adjust speed, intensity and phase timing." }
 ];
-var IDLE_IDS = ["idle-breathing", "combat-stance", "magical-idle", "heavy-weapon-idle", "walk", "run"];
+var isBaseLoop = (c) => c.loop && (c.category === "idle" || c.category === "movement");
 var Studio = class {
   root;
   host;
@@ -6236,8 +7204,7 @@ var Studio = class {
         "select",
         { class: "fusa-template", title: "Start over from a template", onchange: (e) => this.resetTemplate(e.target.value) },
         h("option", { value: "" }, "Template\u2026"),
-        h("option", { value: "humanoid" }, "Humanoid"),
-        h("option", { value: "custom" }, "Custom (one bone)")
+        ...TEMPLATE_LIST.map((t) => h("option", { value: t.id, title: t.description }, t.id === "custom" ? "Custom (one bone)" : t.name))
       )
     );
   }
@@ -6266,8 +7233,14 @@ var Studio = class {
     if (!p || !this.rig) return;
     const dots = (v) => "\u25CF".repeat(Math.max(1, Math.round(v * 3))) + "\u25CB".repeat(3 - Math.max(1, Math.round(v * 3)));
     const groups = Object.entries(p.report.confidence).map(([k4, v]) => h("span", { class: "conf", title: `${Math.round(v * 100)}%` }, `${k4} ${v > 0 ? dots(v) : "\u2014"}`));
+    const kind = h(
+      "select",
+      { class: "fusa-kind", title: "What kind of character is it? Changing it builds a fresh skeleton for that body plan.", onchange: () => void this.resetTemplate(kind.value, false) },
+      ...TEMPLATE_LIST.map((t) => h("option", { value: t.id, title: t.description }, t.name))
+    );
+    kind.value = this.rig.template;
     e.append(
-      h("div", { class: "fusa-banner-text" }, h("b", null, p.report.method === "landmarks" ? "Automatic rig" : "Rig from proportions"), h("span", null, `Faces ${this.rig.facing}.`), ...groups, ...p.report.notes.map((n) => h("small", null, n))),
+      h("div", { class: "fusa-banner-text" }, h("b", null, p.report.method === "landmarks" ? "Automatic rig" : "Rig from proportions"), h("label", { class: "fusa-kind-label" }, "What is it? ", kind), h("span", null, `Faces ${this.rig.facing}.`), ...groups, ...p.report.notes.map((n) => h("small", null, n))),
       h(
         "div",
         { class: "fusa-banner-actions" },
@@ -6281,7 +7254,7 @@ var Studio = class {
   async autoRig(detect = true) {
     if (!this.rig || !this.image) return;
     const previous = this.proposal?.previous ?? this.snapshot();
-    const p = proposeRig(this.image, this.rig.template === "custom" ? "custom" : "humanoid", "auto", detect);
+    const p = proposeRig(this.image, this.rig.template, "auto", detect);
     Object.assign(this.rig, { bones: p.bones, parts: p.parts, ownership: p.ownership, metrics: p.metrics, facing: p.facing });
     this.labels = rigLabels(this.rig);
     this.selected = null;
@@ -6496,7 +7469,9 @@ var Studio = class {
     const e = this.elLibrary;
     clear(e);
     const groups = /* @__PURE__ */ new Map();
-    for (const c of listClips()) groups.set(c.category, [...groups.get(c.category) ?? [], c]);
+    const rank = (c) => !this.rig ? 0 : !this.canPlay(c) ? 2 : c.templates?.includes(this.rig.template) ?? true ? 0 : 1;
+    const all = listClips().sort((a, b) => rank(a) - rank(b));
+    for (const c of all) groups.set(c.category, [...groups.get(c.category) ?? [], c]);
     for (const [cat, clips] of groups) {
       e.append(
         h(
@@ -6507,9 +7482,12 @@ var Studio = class {
             "div",
             { class: "fusa-cards" },
             ...clips.map((c) => {
-              const isBase = IDLE_IDS.includes(c.id) && c.loop;
+              const isBase = isBaseLoop(c);
               const active = isBase ? this.baseId === c.id : this.clipId === c.id;
-              return h("button", { type: "button", class: `fusa-card ${active ? "active" : ""} ${isBase ? "base" : ""}`, title: c.description ?? c.name, disabled: !this.rig, dataset: { clip: c.id }, onclick: () => this.chooseClip(c) }, h("b", null, c.name), h("small", null, isBase ? "Idle loop" : `${c.duration.toFixed(2)}s${isBuiltIn(c.id) ? "" : " \xB7 yours"}`));
+              const fits = !this.rig || this.canPlay(c);
+              const tip = fits ? c.description ?? c.name : `${c.description ?? c.name}
+This rig lacks: ${(c.requires ?? []).filter((r) => !this.rig.bones.some((b) => b.role === r)).join(", ")}`;
+              return h("button", { type: "button", class: `fusa-card ${active ? "active" : ""} ${isBase ? "base" : ""} ${fits ? "" : "unfit"}`, title: tip, disabled: !this.rig, dataset: { clip: c.id }, onclick: () => this.chooseClip(c) }, h("b", null, c.name), h("small", null, isBase ? "Idle loop" : `${c.duration.toFixed(2)}s${isBuiltIn(c.id) ? "" : " \xB7 yours"}`));
             })
           )
         )
@@ -6612,6 +7590,7 @@ var Studio = class {
     this.pose.clear();
     const report2 = lastReport.get(rig);
     this.proposal = report2 && !saved ? { report: report2, previous: null } : null;
+    this.fitBaseLoop();
     this.history.reset(this.snapshot());
     this.savedSnapshot = saved ? this.snapshot() : "";
     this.rebuild();
@@ -6742,15 +7721,35 @@ var Studio = class {
     this.labels = assignPixels(this.rig, this.image);
     this.commit();
   }
-  async resetTemplate(t) {
+  /** Start over from another template (from the tool row, or "What is it?" on the proposal banner). */
+  async resetTemplate(t, ask = true) {
     this.elTree.parentElement?.querySelector(".fusa-template")?.blur();
     if (!t || !this.rig || !this.image) return this.renderAll();
-    if (!await this.host.confirm("Start over", `Replace the skeleton with the ${t} template and reassign every pixel? You can undo this.`)) return this.renderAll();
-    const fresh = createRig({ name: this.rig.name, src: this.rig.image.src, image: this.image, template: t, facing: this.rig.facing });
-    Object.assign(this.rig, { template: fresh.template, bones: fresh.bones, parts: fresh.parts, ownership: fresh.ownership, metrics: fresh.metrics });
+    const name = TEMPLATES[t]?.name ?? t;
+    if (ask && !await this.host.confirm("Start over", `Replace the skeleton with the ${name} template and reassign every pixel? You can undo this.`)) return this.renderAll();
+    const previous = this.proposal?.previous ?? this.snapshot();
+    const fresh = createRig({ name: this.rig.name, src: this.rig.image.src, image: this.image, template: t, facing: t === "humanoid" || t === "custom" ? this.rig.facing : void 0 });
+    Object.assign(this.rig, { template: fresh.template, bones: fresh.bones, parts: fresh.parts, ownership: fresh.ownership, metrics: fresh.metrics, facing: fresh.facing });
     this.labels = rigLabels(this.rig);
     this.selected = null;
+    const report2 = lastReport.get(fresh);
+    this.proposal = report2 ? { report: report2, previous } : null;
+    this.fitBaseLoop();
     this.commit();
+  }
+  /** The rig has every role the clip needs. */
+  canPlay(c) {
+    if (!this.rig) return false;
+    const roles = new Set(this.rig.bones.map((b) => b.role).filter(Boolean));
+    return (c.requires ?? []).every((r) => roles.has(r));
+  }
+  /** Keep the preview's idle and action suited to this rig (a wolf breathes and bites like a beast). */
+  fitBaseLoop() {
+    if (!this.rig) return;
+    const tpl = this.rig.template;
+    const suits = (c) => !!c && this.canPlay(c) && (c.templates?.includes(tpl) ?? true);
+    if (!suits(getClip(this.baseId))) this.baseId = defaultIdleFor(tpl);
+    if (!suits(getClip(this.clipId)) && getClip(defaultActionFor(tpl))) this.clipId = defaultActionFor(tpl);
   }
   /* ------------------------------------------------------------------ */
   /*  Pointer input                                                      */
@@ -7040,7 +8039,7 @@ var Studio = class {
   /*  Playback                                                           */
   /* ------------------------------------------------------------------ */
   chooseClip(c) {
-    if (IDLE_IDS.includes(c.id) && c.loop) this.baseId = c.id;
+    if (isBaseLoop(c)) this.baseId = c.id;
     else this.clipId = c.id;
     if (this.mode !== "animate") this.setMode("animate");
     else {
@@ -7338,7 +8337,7 @@ var Studio = class {
       }
       registerClip(c);
       this.persistClip(c, true);
-      this.clipId = c.loop && IDLE_IDS.includes(c.id) ? this.clipId : c.id;
+      this.clipId = isBaseLoop(c) ? this.clipId : c.id;
       this.startClips(0);
       this.renderAll();
       this.host.notify(`Imported the animation "${c.name}".`);
@@ -7587,6 +8586,12 @@ var esc2 = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">"
 async function confirmDialog2(title, text) {
   return !!await foundry.applications.api.DialogV2.confirm({ window: { title }, content: `<p>${esc2(text)}</p>`, rejectClose: false });
 }
+function idleOptions(rig) {
+  const roles = new Set(rig.bones.map((b) => b.role).filter(Boolean));
+  const first = defaultIdleFor(rig.template);
+  const loops = listClips().filter((c) => c.loop && c.category === "idle" && (c.requires ?? []).every((r) => roles.has(r))).sort((a, b) => Number(b.id === first) - Number(a.id === first) || Number(!!b.templates?.includes(rig.template)) - Number(!!a.templates?.includes(rig.template)));
+  return [...loops.map((c) => `<option value="${esc2(c.id)}">${esc2(c.name)}</option>`), '<option value="">None (still until an action)</option>'].join("");
+}
 async function assignRigToActor(rig, preselect) {
   const actors = [...game.actors ?? []].filter((a) => a.isOwner).sort((a, b) => a.name.localeCompare(b.name));
   if (!actors.length) return ui.notifications.warn("There are no actors to give this animation to.");
@@ -7594,7 +8599,7 @@ async function assignRigToActor(rig, preselect) {
   const content = `<div class="fusa-assign">
 		<p>Tokens of this actor will show <b>${esc2(rig.name)}</b> animated: idling on the map and playing attacks, spells and reactions.</p>
 		<div class="form-group"><label>Actor</label><select name="actor">${options}</select></div>
-		<div class="form-group"><label>Idle</label><select name="idle"><option value="idle-breathing">Breathing</option><option value="combat-stance">Combat stance</option><option value="">None (still until an action)</option></select></div>
+		<div class="form-group"><label>Idle</label><select name="idle">${idleOptions(rig)}</select></div>
 		<div class="form-group"><label><input type="checkbox" name="token" checked> Use this sprite as the actor's token image</label></div>
 		<p class="hint">The animation replaces the token image only while it plays; turning it off shows the token's own image again.</p>
 	</div>`;
@@ -7608,7 +8613,7 @@ async function assignRigToActor(rig, preselect) {
   const form = result;
   const actor = game.actors.get(String(form.get("actor")));
   if (!actor) return;
-  const profile = { rig: rig.id, enabled: true, idle: String(form.get("idle") ?? "idle-breathing") };
+  const profile = { rig: rig.id, enabled: true, idle: String(form.get("idle") ?? defaultIdleFor(rig.template)) };
   await actor.setFlag(MODULE_ID, "profile", profile);
   if (form.get("token")) {
     await actor.update({ "prototypeToken.texture.src": rig.image.src });

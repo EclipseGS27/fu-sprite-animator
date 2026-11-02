@@ -1,7 +1,7 @@
 import { TimeWarp } from '../core/clip';
 import { wrapDeg } from '../core/math';
 import type { BoneData, ClipCategory, ClipDocument, Ease, PartData, PhaseTiming, RigDocument, TemplateId } from '../core/types';
-import { CATEGORY_LABELS, getClip, isBuiltIn, listClips, registerClip, unregisterClip } from '../presets';
+import { CATEGORY_LABELS, defaultActionFor, defaultIdleFor, getClip, isBuiltIn, listClips, registerClip, unregisterClip } from '../presets';
 import { CHANNELS, addEvent, cloneClip, keyFromPose, moveKey as moveClipKey, removeEvent, removeKey, setDuration, setKeyEase, setLayerKey, setRotateKey, setVectorKey, uniqueClipId, type Channel } from '../presets/edit';
 import { EASE_NAMES } from '../core/easing';
 import { solveTwoBone } from '../core/ik';
@@ -10,7 +10,7 @@ import { assignPixels, cloneRig, createRig, lastReport, parseRig, proposeRig, ri
 import { addBone, childrenOf, deleteBone, descendants, ensurePart, moveJoint, movePart, moveSubtree, moveTip, removePart, reparent, updateBone, updatePart } from '../rig/edit';
 import { bonesToFrames, tipOf } from '../rig/frames';
 import { History } from '../rig/history';
-import { KNOWN_ROLES } from '../rig/templates';
+import { KNOWN_ROLES, TEMPLATES, TEMPLATE_LIST } from '../rig/templates';
 import { isUsable, validateRig, type RigIssue } from '../rig/validate';
 import { RigAsset, RigView, loadImageData } from '../render/pixi';
 import { floodAssign, paintCircle } from '../sprite/ownership';
@@ -69,7 +69,8 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
 	{ id: 'animate', label: 'Animate', hint: 'Pick an animation below. Space plays and pauses. Adjust speed, intensity and phase timing.' },
 ];
 
-const IDLE_IDS = ['idle-breathing', 'combat-stance', 'magical-idle', 'heavy-weapon-idle', 'walk', 'run'];
+/** Loops that play underneath actions (idles, walking, running). */
+const isBaseLoop = (c: ClipDocument): boolean => c.loop && (c.category === 'idle' || c.category === 'movement');
 
 /**
  * FABULA ULTIMA — SPRITE ANIMATION STUDIO.
@@ -234,8 +235,7 @@ export class Studio {
 				'select',
 				{ class: 'fusa-template', title: 'Start over from a template', onchange: (e: Event) => this.resetTemplate((e.target as HTMLSelectElement).value as TemplateId) },
 				h('option', { value: '' }, 'Template…'),
-				h('option', { value: 'humanoid' }, 'Humanoid'),
-				h('option', { value: 'custom' }, 'Custom (one bone)'),
+				...TEMPLATE_LIST.map((t) => h('option', { value: t.id, title: t.description }, t.id === 'custom' ? 'Custom (one bone)' : t.name)),
 			),
 		);
 	}
@@ -267,8 +267,14 @@ export class Studio {
 		if (!p || !this.rig) return;
 		const dots = (v: number) => '●'.repeat(Math.max(1, Math.round(v * 3))) + '○'.repeat(3 - Math.max(1, Math.round(v * 3)));
 		const groups = Object.entries(p.report.confidence).map(([k, v]) => h('span', { class: 'conf', title: `${Math.round(v * 100)}%` }, `${k} ${v > 0 ? dots(v) : '—'}`));
+		const kind = h(
+			'select',
+			{ class: 'fusa-kind', title: 'What kind of character is it? Changing it builds a fresh skeleton for that body plan.', onchange: () => void this.resetTemplate(kind.value as TemplateId, false) },
+			...TEMPLATE_LIST.map((t) => h('option', { value: t.id, title: t.description }, t.name)),
+		);
+		kind.value = this.rig.template;
 		e.append(
-			h('div', { class: 'fusa-banner-text' }, h('b', null, p.report.method === 'landmarks' ? 'Automatic rig' : 'Rig from proportions'), h('span', null, `Faces ${this.rig.facing}.`), ...groups, ...p.report.notes.map((n) => h('small', null, n))),
+			h('div', { class: 'fusa-banner-text' }, h('b', null, p.report.method === 'landmarks' ? 'Automatic rig' : 'Rig from proportions'), h('label', { class: 'fusa-kind-label' }, 'What is it? ', kind), h('span', null, `Faces ${this.rig.facing}.`), ...groups, ...p.report.notes.map((n) => h('small', null, n))),
 			h(
 				'div',
 				{ class: 'fusa-banner-actions' },
@@ -283,7 +289,7 @@ export class Studio {
 	async autoRig(detect = true): Promise<void> {
 		if (!this.rig || !this.image) return;
 		const previous = this.proposal?.previous ?? this.snapshot();
-		const p = proposeRig(this.image, this.rig.template === 'custom' ? 'custom' : 'humanoid', 'auto', detect);
+		const p = proposeRig(this.image, this.rig.template, 'auto', detect);
 		Object.assign(this.rig, { bones: p.bones, parts: p.parts, ownership: p.ownership, metrics: p.metrics, facing: p.facing });
 		this.labels = rigLabels(this.rig);
 		this.selected = null;
@@ -507,7 +513,10 @@ export class Studio {
 		const e = this.elLibrary;
 		clear(e);
 		const groups = new Map<string, ClipDocument[]>();
-		for (const c of listClips()) groups.set(c.category, [...(groups.get(c.category) ?? []), c]);
+		// clips this rig can play first; the others stay listed, dimmed
+		const rank = (c: ClipDocument) => (!this.rig ? 0 : !this.canPlay(c) ? 2 : (c.templates?.includes(this.rig.template) ?? true) ? 0 : 1);
+		const all = listClips().sort((a, b) => rank(a) - rank(b));
+		for (const c of all) groups.set(c.category, [...(groups.get(c.category) ?? []), c]);
 		for (const [cat, clips] of groups) {
 			e.append(
 				h(
@@ -518,9 +527,11 @@ export class Studio {
 						'div',
 						{ class: 'fusa-cards' },
 					...clips.map((c) => {
-						const isBase = IDLE_IDS.includes(c.id) && c.loop;
+						const isBase = isBaseLoop(c);
 						const active = isBase ? this.baseId === c.id : this.clipId === c.id;
-						return h('button', { type: 'button', class: `fusa-card ${active ? 'active' : ''} ${isBase ? 'base' : ''}`, title: c.description ?? c.name, disabled: !this.rig, dataset: { clip: c.id }, onclick: () => this.chooseClip(c) }, h('b', null, c.name), h('small', null, isBase ? 'Idle loop' : `${c.duration.toFixed(2)}s${isBuiltIn(c.id) ? '' : ' · yours'}`));
+						const fits = !this.rig || this.canPlay(c);
+						const tip = fits ? (c.description ?? c.name) : `${c.description ?? c.name}\nThis rig lacks: ${(c.requires ?? []).filter((r) => !this.rig!.bones.some((b) => b.role === r)).join(', ')}`;
+						return h('button', { type: 'button', class: `fusa-card ${active ? 'active' : ''} ${isBase ? 'base' : ''} ${fits ? '' : 'unfit'}`, title: tip, disabled: !this.rig, dataset: { clip: c.id }, onclick: () => this.chooseClip(c) }, h('b', null, c.name), h('small', null, isBase ? 'Idle loop' : `${c.duration.toFixed(2)}s${isBuiltIn(c.id) ? '' : ' · yours'}`));
 						}),
 					),
 				),
@@ -630,6 +641,7 @@ export class Studio {
 		this.pose.clear();
 		const report = lastReport.get(rig);
 		this.proposal = report && !saved ? { report, previous: null } : null;
+		this.fitBaseLoop();
 		this.history.reset(this.snapshot());
 		this.savedSnapshot = saved ? this.snapshot() : '';
 		this.rebuild();
@@ -774,15 +786,38 @@ export class Studio {
 		this.commit();
 	}
 
-	private async resetTemplate(t: TemplateId | ''): Promise<void> {
+	/** Start over from another template (from the tool row, or "What is it?" on the proposal banner). */
+	async resetTemplate(t: TemplateId | '', ask = true): Promise<void> {
 		(this.elTree.parentElement?.querySelector('.fusa-template') as HTMLSelectElement | null)?.blur();
 		if (!t || !this.rig || !this.image) return this.renderAll();
-		if (!(await this.host.confirm('Start over', `Replace the skeleton with the ${t} template and reassign every pixel? You can undo this.`))) return this.renderAll();
-		const fresh = createRig({ name: this.rig.name, src: this.rig.image.src, image: this.image, template: t, facing: this.rig.facing });
-		Object.assign(this.rig, { template: fresh.template, bones: fresh.bones, parts: fresh.parts, ownership: fresh.ownership, metrics: fresh.metrics });
+		const name = TEMPLATES[t]?.name ?? t;
+		if (ask && !(await this.host.confirm('Start over', `Replace the skeleton with the ${name} template and reassign every pixel? You can undo this.`))) return this.renderAll();
+		const previous = this.proposal?.previous ?? this.snapshot();
+		// a creature's facing is found again from its own shape
+		const fresh = createRig({ name: this.rig.name, src: this.rig.image.src, image: this.image, template: t, facing: t === 'humanoid' || t === 'custom' ? this.rig.facing : undefined });
+		Object.assign(this.rig, { template: fresh.template, bones: fresh.bones, parts: fresh.parts, ownership: fresh.ownership, metrics: fresh.metrics, facing: fresh.facing });
 		this.labels = rigLabels(this.rig);
 		this.selected = null;
+		const report = lastReport.get(fresh);
+		this.proposal = report ? { report, previous } : null;
+		this.fitBaseLoop();
 		this.commit();
+	}
+
+	/** The rig has every role the clip needs. */
+	private canPlay(c: ClipDocument): boolean {
+		if (!this.rig) return false;
+		const roles = new Set(this.rig.bones.map((b) => b.role).filter(Boolean));
+		return (c.requires ?? []).every((r) => roles.has(r));
+	}
+
+	/** Keep the preview's idle and action suited to this rig (a wolf breathes and bites like a beast). */
+	private fitBaseLoop(): void {
+		if (!this.rig) return;
+		const tpl = this.rig.template;
+		const suits = (c: ClipDocument | undefined) => !!c && this.canPlay(c) && (c.templates?.includes(tpl) ?? true);
+		if (!suits(getClip(this.baseId))) this.baseId = defaultIdleFor(tpl);
+		if (!suits(getClip(this.clipId)) && getClip(defaultActionFor(tpl))) this.clipId = defaultActionFor(tpl);
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -1087,7 +1122,7 @@ export class Studio {
 	/* ------------------------------------------------------------------ */
 
 	private chooseClip(c: ClipDocument): void {
-		if (IDLE_IDS.includes(c.id) && c.loop) this.baseId = c.id;
+		if (isBaseLoop(c)) this.baseId = c.id;
 		else this.clipId = c.id;
 		if (this.mode !== 'animate') this.setMode('animate');
 		else {
@@ -1418,7 +1453,7 @@ export class Studio {
 			}
 			registerClip(c);
 			this.persistClip(c, true);
-			this.clipId = c.loop && IDLE_IDS.includes(c.id) ? this.clipId : c.id;
+			this.clipId = isBaseLoop(c) ? this.clipId : c.id;
 			this.startClips(0);
 			this.renderAll();
 			this.host.notify(`Imported the animation "${c.name}".`);

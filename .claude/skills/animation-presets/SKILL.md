@@ -14,6 +14,13 @@ description: Use when creating or tuning animation clips for fu-sprite-animator 
 - Translations in body heights; keep in place (≤ ~0.08): fu-animations moves the token for dashes.
 - Every one-shot needs `phases` (anticipation/action/impact/recovery) and events: `windup`, `release`, `contact`, `recover`, `end`. Set `requires` to the roles it needs.
 
+## Creatures (src/presets/creatures.ts)
+- Write clips by role, not template: `bite` needs only `neck` + `head`, so it serves beasts, dragons and serpents. Set `requires` to the roles it truly needs and `templates` to where it was designed.
+- Beast offsets turn clockwise: torso + dips the front / − rears; legs + swing back; neck/head + lower; back-pointing bones (tail, near wing) + lift; far wing + goes forward-down.
+- Keep everything inside the padded frame (padding = 35 % of the sprite's larger side): never rotate the root of a tall sprite past ~20°; collapse with scale instead (see `generic-defeat`).
+- Root-only `generic-*` clips are the last resort for any rig; keep them gentle.
+- New creature defaults go in `creatureRules()` (src/mapping/index.ts) as `key@template`, idles in `DEFAULT_IDLE`, Studio previews in `DEFAULT_ACTION`.
+
 ## Motion rules
 - Anticipation → fast action (`[0.55, 0, 0.9, 0.35]`) → small overshoot (`outBack`) → recovery (`inOutQuad`). Offset secondary parts (head follows torso ~0.04–0.1 s later).
 - Prefer fidelity over exaggeration: modest angles, no limbs crossing the face during wind-ups (the slash cocks the elbow behind the shoulder for this reason).

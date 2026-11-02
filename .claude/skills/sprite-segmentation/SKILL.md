@@ -11,6 +11,12 @@ description: Use when working on automatic rigging or sprite analysis in fu-spri
 - Never assume humanoid: templates are data (`src/rig/templates.ts`); `custom` must always work.
 - Never silently produce a broken rig: run `validateRig` and surface issues.
 
+## Creatures (Phase 6)
+- Templates: `quadruped`, `winged`, `serpentine`, `floating`, `blob` (+ `humanoid`, `custom`); shared roles (torso, neck, head, tail, tail.tip, leg.front|hind.near|far, wing.near|far, crest). Creatures are fitted to `mainBounds` (largest piece + big pieces; sparks ignored).
+- `src/sprite/creatures.ts` `detectBeast` (quadruped/winged only): belly = first row from the bottom with a run ≥ 50 % of the width; legs = foot runs whose column stays ≥ 60 % solid up to the belly (a curled tail touching the ground fails this); near/far = more/fewer leg pixels; free skeleton ends → wings (highest, ≥ 25 % width apart), head (thickest end, also gives facing), tail (behind the hips, low ones first; with wings, only below the back). `beastFromLandmarks` places bones; missing pieces keep proportions.
+- Score creatures with `test/tools/creatures.test.ts`; ground-truth names map to template roles in `test/unit/groundtruth.ts` (SPRITE_MERGE, coarse rig roles). Visual check: `SPRITES=wolf:quadruped,dragon:winged OWN=1 npx vitest run -c vitest.tools.config.ts test/tools/landmarks.test.ts`.
+- Do not auto-pick the template: both detectors fire on the other's sprites. The GM chooses ("What is it?").
+
 ## Pipeline today (Phase 3)
 1. Optional `detectBackground` / `removeBackground` (import step, writes a transparent copy).
 2. `detectHumanoid` (src/sprite/landmarks.ts) on the **main body** (components ≥ 15 % of the largest):

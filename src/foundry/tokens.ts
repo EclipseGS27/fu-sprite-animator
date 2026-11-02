@@ -2,7 +2,7 @@ import type * as PIXINS from 'pixi.js';
 import { missingRoles } from '../core/clip';
 import type { PlayOptions } from '../core/player';
 import type { RigDocument } from '../core/types';
-import { getClip } from '../presets';
+import { defaultIdleFor, getClip } from '../presets';
 import { buildRig } from '../rig/build';
 import { isUsable, validateRig } from '../rig/validate';
 import { RigAsset, RigView, clippedTexture, loadImageData, trimmedTexture } from '../render/pixi';
@@ -75,8 +75,17 @@ export class TokenAnimator {
 		this.startIdle();
 	}
 
+	/** The base loop: the profile's choice if this rig can play it, else the template's own idle. '' = none. */
+	idleId(): string | null {
+		const want = this.profile.idle;
+		if (want === '') return null;
+		const tpl = this.view.build.rig.template;
+		for (const id of [want, defaultIdleFor(tpl), 'generic-idle']) if (id && this.canPlay(id)) return id;
+		return null;
+	}
+
 	startIdle(): void {
-		const id = this.profile.idle ?? 'idle-breathing';
+		const id = this.idleId();
 		const clip = id ? getClip(id) : undefined;
 		if (clip) this.view.player.play(clip, { track: 0, mixIn: 0, intensity: this.profile.intensity ?? 1 });
 		this.view.player.update(Math.random() * 2); // stagger idles so a party does not breathe in unison
@@ -114,7 +123,7 @@ export class TokenAnimator {
 		if (!clipIds) {
 			if (!this.defeatedBy) return;
 			this.defeatedBy = null;
-			const id = this.profile.idle ?? 'idle-breathing';
+			const id = this.idleId();
 			const clip = id ? getClip(id) : undefined;
 			if (clip) p.play(clip, { track: 0, mixIn: 0.5, intensity: this.profile.intensity ?? 1 });
 			else p.stop(0, 0.5);

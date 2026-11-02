@@ -7,6 +7,7 @@
 | GPU render (headless Chromium + WebGL + PixiJS 7.4.3) | `npm run test:render` | Rest pose pixel-exact **on the GPU** for all pixel-art sprites (illustration: opaque pixels exact, edge drift ≤ 8/255 from linear filtering); GPU frames match the CPU reference (< 3 % pixels) for slash, heavy slash, cast; trimmed texture keeps sprite size and bounds; 1/10/25 animated views render and release every texture. Writes strips to `test/render/out/`. |
 | Studio end-to-end | `npm run test:ui` | Real mouse/keyboard: import, select, drag joint, drag tip, undo/redo (one step per drag), rename, add/delete/reparent bone, paint + undo, pose + reset (exact rest image), play animation (events), save/open, export/import bundle. |
 | Integration (Foundry mock) | `npm run test:integration` | The built bundle with a stand-in `game`/`Hooks`/`ApplicationV2`/FilePicker: API exposed, scene control, Studio saves to world storage, assigned token animated with size kept, `api.play` + socket broadcast, clip events as hooks, restore on removal, Studio cleanup, self-test passes. Phase 5: Project FU chat cards (sword hit/miss/critical, offensive spell, Guard, hit while guarding) play the right attacker clip and target reaction; item, actor and world choices; a card from another client; 0 HP → held defeat, no reactions while down, back to idle when healed; `api.react`, `api.playAction`; with a stand-in fu-animations the strike and reactions land at its estimated hit time; mapping editor, per-actor editor, item header control. **A mock, not Foundry.** |
+| Creatures (Node) | `npm test` (phase6.test.ts) | Template structure; each template's idle and one clip per family playable; beast landmarks on the wolf and dragon (and mirrored); accuracy floors for wolf, dragon, ghost, slime; landmarks beat proportions; left-facing beasts mirror; template-specific mapping; a custom rig still plays a root-only clip. |
 | Mapping (Node) | `npm test` (mapping.test.ts) | Project FU items of every type read into the right rule keys and clips; resolution order; "none"; template-specific keys; fallbacks; reactions; every built-in choice is a real clip; timing to land contact at a given time. |
 | Clip review | `CLIPS=walk,run N=8 npx vitest run -c vitest.tools.config.ts test/tools/sheet.test.ts` | Contact sheet (one row per clip) on any test sprite for human review. |
 | Filmstrips (visual review) | `SPRITE=warrior CLIP=sword-slash GT=1 npm run film` | Frame strips of any clip on any test sprite for human review. |
@@ -48,5 +49,9 @@ Run on Foundry v13 with Project FU and, ideally, fu-animations enabled.
 13. Reduce a target to 0 HP: it falls and stays down (also after a scene reload); heal it: it
     gets up. Note how well reactions line up with fu-animations' hits (cut-ins delay its hits;
     our reactions are estimated — report how far off they feel).
+
+14. Creatures: import a beast or dragon sprite, choose *What is it?* → Four-legged beast /
+    Winged creature, check the bones, save, assign to an NPC. It should idle like a beast; its
+    attacks bite (spells roar or breathe); it flinches as a beast and falls at 0 HP.
 
 Record results in DEVELOPMENT_STATUS.md (date, Foundry build, browser, what passed).

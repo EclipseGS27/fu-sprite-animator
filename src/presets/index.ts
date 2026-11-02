@@ -1,12 +1,24 @@
 import type { ClipCategory, ClipDocument } from '../core/types';
 import { HUMANOID_CLIPS } from './humanoid';
 import { LIBRARY_CLIPS } from './library';
+import { CREATURE_CLIPS, DEFAULT_ACTION, DEFAULT_IDLE } from './creatures';
+import type { TemplateId } from '../core/types';
 
 /**
  * The clip library: built-in clips plus any registered at runtime (world clips, other modules).
  * Registered clips with the same id replace built-ins, so a world can override "sword-slash".
  */
-const builtIn = new Map<string, ClipDocument>([...HUMANOID_CLIPS, ...LIBRARY_CLIPS].map((c) => [c.id, c]));
+const builtIn = new Map<string, ClipDocument>([...HUMANOID_CLIPS, ...LIBRARY_CLIPS, ...CREATURE_CLIPS].map((c) => [c.id, c]));
+
+/** The action the Studio previews first for this template. */
+export function defaultActionFor(template: TemplateId | string | undefined): string {
+	return DEFAULT_ACTION[(template ?? 'humanoid') as TemplateId] ?? 'generic-attack';
+}
+
+/** The idle loop a character of this template starts with. */
+export function defaultIdleFor(template: TemplateId | string | undefined): string {
+	return DEFAULT_IDLE[(template ?? 'humanoid') as TemplateId] ?? 'generic-idle';
+}
 const registered = new Map<string, ClipDocument>();
 
 export const CATEGORY_LABELS: Record<ClipCategory, string> = {

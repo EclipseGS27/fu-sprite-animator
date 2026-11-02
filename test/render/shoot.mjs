@@ -32,6 +32,16 @@ await page.waitForTimeout(500);
 await page.evaluate(() => window.studio.setMode('rig'));
 await page.waitForTimeout(200);
 await page.screenshot({ path: OUT + 'studio_autorig.png' });
+// a creature: import the dragon, say it is a winged creature, see the proposal and the library
+await page.evaluate(() => window.setNextImage('../sprites/dragon.png'));
+await page.evaluate(() => window.studio.importImage());
+await page.waitForTimeout(400);
+await page.selectOption('.fusa-kind', 'winged');
+await page.waitForTimeout(500);
+await page.screenshot({ path: OUT + 'studio_creature.png' });
+await page.evaluate(() => window.studio.setMode('animate'));
+await page.waitForTimeout(600);
+await page.screenshot({ path: OUT + 'studio_creature_animate.png' });
 console.log(errors.length ? 'ERRORS:\n' + errors.join('\n') : 'no page errors');
 await browser.close();
 server.close();

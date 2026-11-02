@@ -22,7 +22,8 @@ function renderer() {
 
 async function setup(name: string, facing: 'left' | 'right' = 'right') {
 	const { data } = await loadImageData(`../sprites/${name}.png`);
-	const template: TemplateId = HUMANOIDS.has(name) ? 'humanoid' : 'custom';
+	const CREATURES: Record<string, TemplateId> = { wolf: 'quadruped', dragon: 'winged', ghost: 'floating', slime: 'blob' };
+	const template: TemplateId = HUMANOIDS.has(name) ? 'humanoid' : (CREATURES[name] ?? 'custom');
 	const rig = createRig({ name, src: `${name}.png`, image: data, template, facing });
 	const build = buildRig(rig, data);
 	const asset = new RigAsset(build);

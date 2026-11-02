@@ -172,3 +172,30 @@ export function skeletonize(mask: Uint8Array, w: number, h: number): Uint8Array 
 	}
 	return m;
 }
+
+/**
+ * Bounds of the character itself: the largest connected piece plus any piece that touches it
+ * within `gap` pixels, so floating sparks, glyphs and smoke do not stretch a creature template.
+ */
+export function mainBounds(img: { width: number; height: number; data: Uint8ClampedArray | Uint8Array }, alphaMin = 1): { x: number; y: number; width: number; height: number } | null {
+	const { width: w, height: h, data } = img;
+	const mask = new Uint8Array(w * h);
+	for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3]! >= alphaMin ? 1 : 0;
+	const comps = components(mask, w, h);
+	if (!comps.length) return null;
+	const total = comps.reduce((s, c) => s + c.length, 0);
+	const biggest = comps.reduce((a, b) => (b.length > a.length ? b : a));
+	let x0 = w, y0 = h, x1 = -1, y1 = -1;
+	for (const c of comps) {
+		// keep the big pieces (a halo or a detached wing still counts; sparks do not)
+		if (c !== biggest && c.length < total * 0.04) continue;
+		for (const i of c) {
+			const x = i % w, y = (i - x) / w;
+			if (x < x0) x0 = x;
+			if (x > x1) x1 = x;
+			if (y < y0) y0 = y;
+			if (y > y1) y1 = y;
+		}
+	}
+	return x1 < 0 ? null : { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 };
+}

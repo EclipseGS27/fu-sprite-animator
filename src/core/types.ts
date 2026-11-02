@@ -6,7 +6,7 @@
 /** A body role such as "arm.upper.front". Clips address roles, never bone names or ids. */
 export type RoleId = string;
 
-export type TemplateId = 'humanoid' | 'quadruped' | 'winged' | 'serpentine' | 'custom';
+export type TemplateId = 'humanoid' | 'quadruped' | 'winged' | 'serpentine' | 'floating' | 'blob' | 'custom';
 
 export type Facing = 'right' | 'left';
 

@@ -64,12 +64,32 @@ The full table is `DEFAULT_RULES` in `src/mapping/index.ts`.
 5. **Built-in**.
 
 *No animation* at any level stops there. Keys can be made template-specific with `@template`
-(`basic:melee@quadruped`), which wins for rigs of that template (Phase 6 creature clips use this).
+(`basic:melee@quadruped`), which wins for rigs of that template (see *Creatures*).
+
+## Creatures
+Rule keys can be made template-specific with `@template`; within each level (world, built-in)
+those win over plain keys for rigs of that template. Built-in creature choices:
+
+| | Four-legged beast | Winged | Serpent | Blob | Floating spirit |
+| --- | --- | --- | --- | --- | --- |
+| Attacks (`attack@…`) | Bite | Bite | Bite | Blob attack | humanoid choices (arms) |
+| Ranged NPC attacks | Roar | Breath attack | Breath attack | Blob attack | humanoid choices |
+| Spells (`magic@…`) | Roar | Breath attack (area: Wing beat) | Breath attack | Gather power | humanoid choices |
+| Heroic / Zero Power | Pounce | Wing beat | Tail swipe | Blob attack | humanoid choices |
+| Guard | Crouch | Crouch | Crouch | — | Guard |
+| Hit / heavy / guarding | Beast hit | Beast hit | Beast hit | Blob hit | Light / Heavy hit, Block |
+| Missed | Beast dodge | Beast dodge | Beast dodge | Hop back | Dodge |
+| 0 HP | Beast defeat | Beast defeat | Beast defeat | Blob defeat (melts) | Spirit defeat (sinks) |
+
+A world entry for a plain key (e.g. *NPC melee attack → Claw*) still wins over a built-in
+creature choice, because the world table is consulted first.
 
 ## When a rig cannot play the choice
 Each clip lists the roles it needs (`requires`). If the character's rig lacks them, the next
 candidate plays: similar clips first (Bow attack → Projectile cast → Magic cast), then the
-choices of the more general keys. A wolf told to "Bow attack" still does something sensible.
+choices of the more general keys, and last a clip that moves only the root (*Lunge*, *Gather
+power*, *Recoil*, *Hop back*, *Collapse* — "any rig"). Any rig, even a custom one with a single
+bone, always does something sensible.
 
 ## Timing
 - The attacker's clip starts when the card is posted, on every client (same seed, same motion).

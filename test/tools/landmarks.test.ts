@@ -1,6 +1,6 @@
 import { it } from 'vitest';
 import { mkdirSync } from 'node:fs';
-import { createRig } from '../../src/rig/document';
+import { createRig, rigLabels } from '../../src/rig/document';
 import { bonesToFrames, tipOf } from '../../src/rig/frames';
 import { readPng, spritePath, writePng } from '../unit/png';
 import { detectBackground, removeBackground } from '../../src/sprite/background';
@@ -12,11 +12,15 @@ it('landmarks sheet', () => {
 	const names = (process.env.SPRITES ?? 'warrior,mage,greatsword,knight,tiny,illustrated').split(',');
 	const S = 5;
 	const tiles: { w: number; h: number; data: Uint8ClampedArray }[] = [];
-	for (const n of names) {
+	for (const entry of names) {
+		// "wolf:quadruped" picks a template; default humanoid
+		const [n, tpl] = entry.split(':') as [string, string | undefined];
 		let image = readPng(spritePath(n));
 		const bg = detectBackground(image);
 		if (bg) image = removeBackground(image, bg).image;
-		const rig = createRig({ name: n, src: n, image, template: 'humanoid', detect: process.env.DETECT !== '0' });
+		const rig = createRig({ name: n, src: n, image, template: (tpl ?? 'humanoid') as never, detect: process.env.DETECT !== '0' });
+		const own = process.env.OWN === '1' ? rigLabels(rig) : null;
+		const colorOf = new Map(rig.parts.map((p) => { const c = rig.bones.find((b) => b.id === p.bone)?.color ?? '#ffffff'; return [p.label, [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]]; }));
 		const scale = Math.max(1, Math.round((S * 64) / Math.max(image.width, image.height)));
 		const W = image.width * scale, H = image.height * scale;
 		const px = new Uint8ClampedArray(W * H * 4);
@@ -25,7 +29,8 @@ it('landmarks sheet', () => {
 		for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
 			const s = (Math.floor(y / scale) * image.width + Math.floor(x / scale)) * 4, d = (y * W + x) * 4;
 			const a = image.data[s + 3]! / 255;
-			for (let c = 0; c < 3; c++) px[d + c] = image.data[s + c]! * a * 0.6 + 30 * (1 - a * 0.6);
+			const oc = own && a > 0 ? colorOf.get(own[s / 4]!) : null;
+			for (let c = 0; c < 3; c++) px[d + c] = oc ? oc[c]! * 0.75 + image.data[s + c]! * 0.25 : image.data[s + c]! * a * 0.6 + 30 * (1 - a * 0.6);
 			px[d + 3] = 255;
 		}
 		const dot = (x: number, y: number, col: number[], r = 2) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const X = Math.round(x * scale) + dx, Y = Math.round(y * scale) + dy; if (X >= 0 && Y >= 0 && X < W && Y < H) px.set([...col, 255], (Y * W + X) * 4); } };

@@ -1,4 +1,5 @@
 import type { RigDocument } from '../core/types';
+import { defaultIdleFor, listClips } from '../presets';
 import { Studio, type StudioHost } from '../ui/studio';
 import { MODULE_ID, STUDIO_TITLE, type AnimationProfile } from './constants';
 import * as storage from './storage';
@@ -9,6 +10,16 @@ async function confirmDialog(title: string, text: string): Promise<boolean> {
 	return !!(await foundry.applications.api.DialogV2.confirm({ window: { title }, content: `<p>${esc(text)}</p>`, rejectClose: false }));
 }
 
+/** Idle loops this rig can play, its template's own first. */
+function idleOptions(rig: RigDocument): string {
+	const roles = new Set(rig.bones.map((b) => b.role).filter(Boolean));
+	const first = defaultIdleFor(rig.template);
+	const loops = listClips()
+		.filter((c) => c.loop && c.category === 'idle' && (c.requires ?? []).every((r) => roles.has(r)))
+		.sort((a, b) => Number(b.id === first) - Number(a.id === first) || Number(!!b.templates?.includes(rig.template)) - Number(!!a.templates?.includes(rig.template)));
+	return [...loops.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`), '<option value="">None (still until an action)</option>'].join('');
+}
+
 /** Link a rig to an actor (and optionally use the sprite as its token image). */
 export async function assignRigToActor(rig: RigDocument, preselect?: string): Promise<void> {
 	const actors = [...(game.actors ?? [])].filter((a: { isOwner?: boolean }) => a.isOwner).sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
@@ -17,7 +28,7 @@ export async function assignRigToActor(rig: RigDocument, preselect?: string): Pr
 	const content = `<div class="fusa-assign">
 		<p>Tokens of this actor will show <b>${esc(rig.name)}</b> animated: idling on the map and playing attacks, spells and reactions.</p>
 		<div class="form-group"><label>Actor</label><select name="actor">${options}</select></div>
-		<div class="form-group"><label>Idle</label><select name="idle"><option value="idle-breathing">Breathing</option><option value="combat-stance">Combat stance</option><option value="">None (still until an action)</option></select></div>
+		<div class="form-group"><label>Idle</label><select name="idle">${idleOptions(rig)}</select></div>
 		<div class="form-group"><label><input type="checkbox" name="token" checked> Use this sprite as the actor's token image</label></div>
 		<p class="hint">The animation replaces the token image only while it plays; turning it off shows the token's own image again.</p>
 	</div>`;
@@ -31,7 +42,7 @@ export async function assignRigToActor(rig: RigDocument, preselect?: string): Pr
 	const form = result as FormData;
 	const actor = game.actors.get(String(form.get('actor')));
 	if (!actor) return;
-	const profile: AnimationProfile = { rig: rig.id, enabled: true, idle: String(form.get('idle') ?? 'idle-breathing') };
+	const profile: AnimationProfile = { rig: rig.id, enabled: true, idle: String(form.get('idle') ?? defaultIdleFor(rig.template)) };
 	await actor.setFlag(MODULE_ID, 'profile', profile);
 	if (form.get('token')) {
 		await actor.update({ 'prototypeToken.texture.src': rig.image.src });

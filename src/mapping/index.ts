@@ -190,6 +190,61 @@ export const DEFAULT_RULES: Record<string, string> = {
 	attack: 'sword-slash',
 	magic: 'magic-cast',
 	support: 'channel',
+	...creatureRules(),
+};
+
+/**
+ * Creature defaults: "key@template" entries, which win over plain keys for rigs of that template
+ * (a wolf's claws bite, a dragon's spell is its breath, a slime's attack is a splat).
+ */
+function creatureRules(): Record<string, string> {
+	const out: Record<string, string> = {};
+	const beast = (tpl: string, o: { magic: string; ranged: string; big: string; guard: string }) => {
+		Object.assign(out, {
+			[`attack@${tpl}`]: 'bite',
+			[`basic:ranged@${tpl}`]: o.ranged,
+			[`magic@${tpl}`]: o.magic,
+			[`support@${tpl}`]: 'roar',
+			[`style:self@${tpl}`]: 'roar',
+			[`heroic@${tpl}`]: o.big,
+			[`zeroPower@${tpl}`]: o.big,
+			[`act:guard@${tpl}`]: o.guard,
+			[`act:hinder@${tpl}`]: 'roar',
+			[`react:hit@${tpl}`]: 'beast-hit',
+			[`react:heavy@${tpl}`]: 'beast-hit',
+			[`react:guarding@${tpl}`]: 'beast-hit',
+			[`react:miss@${tpl}`]: 'beast-dodge',
+			[`react:defeat@${tpl}`]: 'beast-defeat',
+		});
+	};
+	beast('quadruped', { magic: 'roar', ranged: 'roar', big: 'pounce', guard: 'crouch' });
+	beast('winged', { magic: 'breath', ranged: 'breath', big: 'wing-beat', guard: 'crouch' });
+	beast('serpentine', { magic: 'breath', ranged: 'breath', big: 'tail-swipe', guard: 'crouch' });
+	out['spell:area@winged'] = 'wing-beat';
+	Object.assign(out, {
+		'attack@blob': 'blob-attack',
+		'magic@blob': 'generic-cast',
+		'support@blob': 'generic-cast',
+		'react:hit@blob': 'blob-hit',
+		'react:heavy@blob': 'blob-hit',
+		'react:guarding@blob': 'blob-hit',
+		'react:miss@blob': 'generic-dodge',
+		'react:defeat@blob': 'blob-defeat',
+		'react:defeat@floating': 'float-defeat',
+	});
+	return out;
+}
+
+/** Root-only clips that play on any rig: the last candidates for each family. */
+const GENERIC: Record<string, string> = {
+	attack: 'generic-attack',
+	magic: 'generic-cast',
+	support: 'generic-cast',
+	'react:hit': 'generic-hit',
+	'react:heavy': 'generic-hit',
+	'react:guarding': 'generic-hit',
+	'react:miss': 'generic-dodge',
+	'react:defeat': 'generic-defeat',
 };
 
 /**
@@ -220,6 +275,21 @@ export const CLIP_FALLBACKS: Record<string, string[]> = {
 	knockback: ['heavy-hit', 'light-hit'],
 	knockdown: ['heavy-hit', 'light-hit'],
 	defeat: ['knockdown', 'heavy-hit'],
+	bite: ['generic-attack'],
+	claw: ['bite', 'generic-attack'],
+	pounce: ['bite', 'generic-attack'],
+	'tail-swipe': ['bite', 'generic-attack'],
+	'wing-beat': ['roar', 'generic-cast'],
+	breath: ['roar', 'generic-cast'],
+	roar: ['generic-cast'],
+	crouch: ['generic-hit'],
+	'beast-hit': ['light-hit', 'generic-hit'],
+	'beast-dodge': ['dodge', 'generic-dodge'],
+	'beast-defeat': ['defeat', 'generic-defeat'],
+	'blob-attack': ['generic-attack'],
+	'blob-hit': ['generic-hit'],
+	'blob-defeat': ['generic-defeat'],
+	'float-defeat': ['defeat', 'generic-defeat'],
 };
 
 export function emptyTable(): MappingTable {
@@ -390,11 +460,12 @@ export function resolveReaction(r: ReactionInfo, layers: ResolveLayers = {}): Re
 
 function resolveKeys(abilityKey: string | null, rules: string[], layers: ResolveLayers): Resolution {
 	const tpl = layers.template ?? null;
-	const variants = (k: string) => (tpl ? [`${k}@${tpl}`, k] : [k]);
 	const chosen: { clip: string; source: MappingSource; key: string }[] = [];
+	// within one table, every template-specific entry comes before the plain ones
 	const look = (table: Record<string, string> | null | undefined, keys: string[], source: MappingSource) => {
 		if (!table) return;
-		for (const k of keys) for (const kv of variants(k)) if (table[kv]) chosen.push({ clip: table[kv]!, source, key: kv });
+		const order = tpl ? [...keys.map((k) => `${k}@${tpl}`), ...keys] : keys;
+		for (const kv of order) if (table[kv]) chosen.push({ clip: table[kv]!, source, key: kv });
 	};
 	const allKeys = [...(abilityKey ? [abilityKey] : []), ...rules];
 	if (layers.item) look(layers.item, ['*', ...allKeys], 'item');
@@ -413,7 +484,10 @@ function resolveKeys(abilityKey: string | null, rules: string[], layers: Resolve
 	for (const c of chosen.slice(1)) {
 		if (c.clip === NONE) break;
 		add(c.clip);
+		for (const f of CLIP_FALLBACKS[c.clip] ?? []) add(f);
 	}
+	// last: a clip that only moves the root, so a rig of any shape does something
+	for (const k of rules) if (GENERIC[k]) add(GENERIC[k]!);
 	return { clip: first.clip, source: first.source, key: first.key, candidates };
 }
 

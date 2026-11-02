@@ -197,3 +197,6 @@
 .fusa-map-row.changed > span::after { content: ' •'; color: var(--gold); }
 .fusa-map-row > span { color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fusa-map-select { height: 26px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg1); color: var(--ink); min-width: 0; }
+.fusa-card.unfit { opacity: 0.4; }
+.fusa-kind-label { color: var(--ink); }
+.fusa-kind { height: 24px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line2); background: var(--bg1); color: var(--ink); }

@@ -4,25 +4,47 @@ import { rigLabels } from '../../src/rig/document';
 import type { ImageDataLike } from '../../src/sprite/image';
 import { readPng } from './png';
 
+/** The generator's part names → template roles, per sprite (creatures name parts their own way). */
+const SPRITE_MERGE: Record<string, Record<string, string>> = {
+	wolf: { body: 'torso' },
+	slime: { body: 'torso', 'tendril.back': 'torso', 'tendril.front': 'torso', stalk: 'crest', eye: 'crest', pupil: 'crest' },
+	ghost: { 'tail.1': 'tail' },
+};
+const MERGE: Record<string, string> = { hair: 'head', eye: 'head', hat: 'head', offhand: 'hand.back', cape: 'torso' };
+
 /** Ground-truth role per pixel from the generator's part map ('' = background). */
 export function groundTruthRoles(name: string): { roles: string[]; width: number } {
 	const map = readPng(new URL(`../sprites/${name}.parts.png`, import.meta.url).pathname);
 	const names: string[] = JSON.parse(readFileSync(new URL(`../sprites/${name}.parts.json`, import.meta.url), 'utf8'));
-	const merge: Record<string, string> = { hair: 'head', eye: 'head', hat: 'head', offhand: 'hand.back', cape: 'torso' };
+	const own = SPRITE_MERGE[name] ?? {};
 	const roles = new Array<string>(map.width * map.height);
 	for (let i = 0; i < roles.length; i++) {
 		const v = map.data[i * 4]!;
 		const n = v ? names[v - 1]! : '';
-		roles[i] = merge[n] ?? n;
+		roles[i] = own[n] ?? MERGE[n] ?? n;
 	}
 	return { roles, width: map.width };
+}
+
+/**
+ * Rig roles scored against a ground truth that draws a limb as one piece: a rig's "tail.tip" or
+ * "arm.lower.front" counts as "tail" / "arm.upper.front" when the ground truth has no such part.
+ */
+function rigRoleMap(rig: RigDocument, gt: Set<string>): Map<number, string> {
+	const coarse: Record<string, string> = { 'tail.tip': 'tail', 'arm.lower.front': 'arm.upper.front', 'arm.lower.back': 'arm.upper.back' };
+	return new Map(
+		rig.parts.map((p) => {
+			const r = rig.bones.find((b) => b.id === p.bone)?.role ?? '';
+			return [p.label, gt.has(r) ? r : (coarse[r] ?? r)];
+		}),
+	);
 }
 
 /** Fraction of visible pixels whose automatic part has the ground-truth role. */
 export function assignmentAccuracy(name: string, rig: RigDocument, image: ImageDataLike): number {
 	const { roles } = groundTruthRoles(name);
 	const labels = rigLabels(rig);
-	const roleOfLabel = new Map(rig.parts.map((p) => [p.label, rig.bones.find((b) => b.id === p.bone)?.role ?? '']));
+	const roleOfLabel = rigRoleMap(rig, new Set(roles));
 	const known = new Set(roleOfLabel.values());
 	let ok = 0;
 	let total = 0;
@@ -77,7 +99,7 @@ export function oracleSegments(name: string, rig: RigDocument): { label: number;
 /** Accuracy of a label map against the ground truth roles. */
 export function labelsAccuracy(name: string, rig: RigDocument, labels: Uint8Array, image: ImageDataLike): number {
 	const { roles } = groundTruthRoles(name);
-	const roleOfLabel = new Map(rig.parts.map((p) => [p.label, rig.bones.find((b) => b.id === p.bone)?.role ?? '']));
+	const roleOfLabel = rigRoleMap(rig, new Set(roles));
 	const known = new Set(roleOfLabel.values());
 	let ok = 0;
 	let total = 0;

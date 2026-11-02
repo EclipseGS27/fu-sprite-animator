@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Skeleton } from '../../src/core/skeleton';
+import type { TemplateId } from '../../src/core/types';
 import { buildRig } from '../../src/rig/build';
 import { cloneRig, createRig, parseRig, rigLabels } from '../../src/rig/document';
 import { addBone, deleteBone, moveJoint, moveSubtree, moveTip, reparent } from '../../src/rig/edit';
@@ -14,12 +15,12 @@ import { SPRITES, readPng, spritePath } from './png';
 import { detectBackground, removeBackground } from '../../src/sprite/background';
 import { assignmentAccuracy, groundTruthRoles } from './groundtruth';
 
-const HUMANOIDS = new Set(['warrior', 'mage', 'greatsword', 'knight', 'tiny', 'illustrated', 'swordsman_white', 'mage_front', 'golem']);
+const CREATURES: Record<string, TemplateId> = { wolf: 'quadruped', dragon: 'winged', ghost: 'floating', slime: 'blob' };
 const rigFor = (name: string) => {
 	let image = readPng(spritePath(name));
 	const bg = detectBackground(image);
 	if (bg) image = removeBackground(image, bg).image;
-	const rig = createRig({ name, src: `${name}.png`, image, template: HUMANOIDS.has(name) ? 'humanoid' : 'custom' });
+	const rig = createRig({ name, src: `${name}.png`, image, template: CREATURES[name] ?? 'humanoid' });
 	return { image, rig };
 };
 

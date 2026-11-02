@@ -2,8 +2,10 @@ import type { BoneData, Facing, PartData, RenderSettings, RigDocument, TemplateI
 import { bodyBounds, looksLikePixelArt, opaqueBounds, type ImageDataLike } from '../sprite/image';
 import { type BoneSegment } from '../sprite/ownership';
 import { geodesicAssign } from '../sprite/geodesic';
+import { mainBounds } from '../sprite/morph';
 import { detectHumanoid, type HumanoidLandmarks } from '../sprite/landmarks';
-import { humanoidFromLandmarks } from './autorig';
+import { beastFromLandmarks, humanoidFromLandmarks } from './autorig';
+import { detectBeast, type BeastLandmarks } from '../sprite/creatures';
 import { decodeRle, encodeRle } from '../sprite/rle';
 import { bonesToFrames, tipOf } from './frames';
 import { TEMPLATES, fitTemplate } from './templates';
@@ -59,7 +61,15 @@ export function createRig(o: CreateRigOptions): RigDocument {
 		landmarks = detectHumanoid(o.image, o.facing ?? 'auto');
 		if (landmarks) facing = landmarks.facing;
 	}
-	const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : fitTemplate(template, body, facing);
+	// creatures: the whole animal (tail, wings, trailing body) minus floating effects
+	const creature = template.id !== 'humanoid' && template.id !== 'custom';
+	const fitBox = creature ? (mainBounds(o.image) ?? bounds) : body;
+	let beast: BeastLandmarks | null = null;
+	if ((template.id === 'quadruped' || template.id === 'winged') && o.detect !== false) {
+		beast = detectBeast(o.image, o.facing ?? 'auto', { wings: template.id === 'winged' });
+		if (beast) facing = beast.facing;
+	}
+	const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : beast ? beastFromLandmarks(beast, template) : fitTemplate(template, fitBox, facing);
 	const now = Date.now();
 	const rig: RigDocument = {
 		format: RIG_FORMAT,
@@ -69,7 +79,7 @@ export function createRig(o: CreateRigOptions): RigDocument {
 		template: template.id,
 		facing,
 		image: { src: o.src, width: o.image.width, height: o.image.height },
-		metrics: { bodyHeight: body.height, bounds },
+		metrics: { bodyHeight: fitBox.height, bounds },
 		bones,
 		parts,
 		ownership: null,
@@ -80,7 +90,8 @@ export function createRig(o: CreateRigOptions): RigDocument {
 	};
 	if (landmarks) rig.metrics.bodyHeight = landmarks.body.height;
 	if (o.assign !== false) rig.ownership = encodeRle(assignPixels(rig, o.image));
-	lastReport.set(rig, landmarks ? { method: 'landmarks', confidence: landmarks.confidence, notes: landmarks.notes } : { method: 'proportions', confidence: {}, notes: [] });
+	const found = landmarks ?? beast;
+	lastReport.set(rig, found ? { method: 'landmarks', confidence: found.confidence, notes: found.notes } : { method: 'proportions', confidence: {}, notes: [] });
 	return rig;
 }
 
@@ -189,7 +200,7 @@ export function parseRig(input: unknown): RigDocument {
 		version: RIG_VERSION,
 		id: str(o.id, newId('rig')),
 		name: str(o.name, 'Unnamed rig'),
-		template: (['humanoid', 'quadruped', 'winged', 'serpentine', 'custom'] as const).includes(o.template as TemplateId) ? (o.template as TemplateId) : 'custom',
+		template: (['humanoid', 'quadruped', 'winged', 'serpentine', 'floating', 'blob', 'custom'] as const).includes(o.template as TemplateId) ? (o.template as TemplateId) : 'custom',
 		facing: o.facing === 'left' ? 'left' : 'right',
 		image: { src: str(image.src, ''), width, height },
 		metrics: {

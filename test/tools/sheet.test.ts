@@ -18,7 +18,7 @@ it('contact sheet', () => {
 	const N = Number(process.env.N ?? 8);
 	const ids = process.env.CLIPS ? process.env.CLIPS.split(',') : listClips().map((c) => c.id);
 	const image = readPng(spritePath(name));
-	const rig = createRig({ name, src: name, image, template: 'humanoid' });
+	const rig = createRig({ name, src: name, image, template: (process.env.TEMPLATE ?? 'humanoid') as never });
 	const { roles } = groundTruthRoles(name);
 	const lr = new Map(rig.parts.map((p) => [rig.bones.find((b) => b.id === p.bone)!.role!, p.label]));
 	rig.ownership = encodeRle(Uint8Array.from(roles, (r) => lr.get(r) ?? 0));
@@ -42,6 +42,6 @@ it('contact sheet', () => {
 			}
 		}
 	});
-	writePng(OUT + `sheet_${name}.png`, { width: W * N, height: H * ids.length, data: sheet }, Number(process.env.S ?? 1));
+	writePng(OUT + `sheet_${name}${process.env.TEMPLATE ? '_' + process.env.TEMPLATE : ''}.png`, { width: W * N, height: H * ids.length, data: sheet }, Number(process.env.S ?? 1));
 	console.log('ROWS', ids.join(','));
 });

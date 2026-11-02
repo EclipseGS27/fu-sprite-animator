@@ -7,8 +7,8 @@ never resized, recoloured or repainted.
 
 ![The Studio animating a sword slash](docs/studio.png)
 
-**Status: Phases 2–5 built** (prototype, automatic rigging, animation editor, Fabula Ultima
-combat integration). Tested in Node and headless Chromium (WebGL, PixiJS 7.4.3) and against a
+**Status: Phases 2–6 built** (prototype, automatic rigging, animation editor, Fabula Ultima
+combat integration, creatures). Tested in Node and headless Chromium (WebGL, PixiJS 7.4.3) and against a
 Foundry mock; **not yet run in a real Foundry world** — see
 [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md) and the checklist in [docs/TESTING.md](docs/TESTING.md).
 
@@ -39,11 +39,16 @@ Full walkthrough: [docs/RIGGING_GUIDE.md](docs/RIGGING_GUIDE.md) · which animat
   rig check; undo/redo; save, open, export and import.
 - **Animation editor**: pose a bone to key it, key rows on the timeline, easing, two-bone IK,
   onion skin, draw-order keys, events and phases; your own clips are saved in the world.
-- **37 built-in animations**: idles (breathing, combat stance, magical, heavy weapon), movement
+- **63 built-in animations**: idles (breathing, combat stance, magical, heavy weapon), movement
   (walk, run, jump, dash, teleport), attacks (sword, heavy, thrust, spear, dual-wield, bow, staff,
   unarmed, firearm, throw), magic (cast, channel, charge, projectile, area, healing, summoning),
   defence (block, dodge, parry, counterattack, guard), reactions (light and heavy hit, stagger,
-  knockback, knockdown, defeat).
+  knockback, knockdown, defeat); creatures (bite, claw, pounce, tail swipe, roar, breath, wing
+  beat, hover, crouch, beast hit and defeat, blob attack/hit/melt, spirit float and defeat); and
+  root-only moves that work on any rig.
+- **Creatures**: four-legged beasts, winged creatures, serpents, floating spirits and blobs, with
+  their own skeletons, automatic landmarks for beasts and dragons, and their own animations in
+  combat.
 - **Fabula Ultima**: chat cards trigger the attacker's animation and the targets' reactions,
   chosen from Project FU data (weapon category, offensive/healing/area spells, skills, Zero
   Powers, Guard…) through an editable table — world, per character, per item.
@@ -52,8 +57,7 @@ Full walkthrough: [docs/RIGGING_GUIDE.md](docs/RIGGING_GUIDE.md) · which animat
 - **Tokens**: animated in place through their texture only, so dashes, flashes and condition
   tints from other modules (fu-animations) keep working. Public API and socket sync.
 
-Not yet: creature templates and creature animations (Phase 6; custom rigs work today), release
-polish (Phase 7). See [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
+Not yet: release polish (Phase 7). See [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
 
 ## Documentation
 [Project knowledge and research](docs/PROJECT_KNOWLEDGE.md) ·

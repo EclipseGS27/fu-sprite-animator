@@ -25,13 +25,13 @@ const check = (ok, label, detail) => {
 };
 check(String(await page.evaluate(() => window.pixiVersion())).startsWith('7.'), 'PixiJS 7 loaded', await page.evaluate(() => window.pixiVersion()));
 
-for (const name of ['warrior', 'mage', 'greatsword', 'knight', 'tiny', 'wolf', 'slime', 'illustrated']) {
+for (const name of ['warrior', 'mage', 'greatsword', 'knight', 'tiny', 'wolf', 'slime', 'dragon', 'ghost', 'illustrated']) {
 	const r = await page.evaluate((n) => window.fidelity(n), name);
 	// pixel mode: every pixel exact. smooth mode (illustrations): linear filtering may nudge semi-transparent edge pixels a little
 	const ok = r.opaqueDiff === 0 && (name === 'illustrated' ? r.partialMax <= 8 : r.exact === r.total);
 	check(ok, `rest pose matches the source on the GPU: ${name}`, `${r.exact}/${r.total} exact, opaque diffs ${r.opaqueDiff}, partial-alpha max Δ ${r.partialMax} (beyond premultiply rounding: ${r.partialBeyond}), build ${r.buildMs} ms`);
 }
-for (const [name, clip] of [['warrior', 'sword-slash'], ['knight', 'heavy-slash'], ['mage', 'magic-cast'], ['greatsword', 'sword-slash']]) {
+for (const [name, clip] of [['warrior', 'sword-slash'], ['knight', 'heavy-slash'], ['mage', 'magic-cast'], ['greatsword', 'sword-slash'], ['wolf', 'bite'], ['dragon', 'wing-beat'], ['slime', 'blob-attack'], ['ghost', 'float-defeat']]) {
 	const r = await page.evaluate(([n, c]) => window.gpuVsCpu(n, c), [name, clip]);
 	writeFileSync(`${OUT}gpu_${name}_${clip}.png`, Buffer.from(r.png.split(',')[1], 'base64'));
 	check(r.worstFrameDiff < 0.03, `GPU matches the CPU reference: ${name} ${clip}`, `worst frame ${(r.worstFrameDiff * 100).toFixed(2)}% pixels differ → out/gpu_${name}_${clip}.png`);
