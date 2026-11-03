@@ -48,6 +48,9 @@ independent of any rig or actor) and a **profile** (which rig an actor uses). Ty
 - **Ownership map**: one byte per sprite pixel, row-major, value = part `label` (0 = nobody).
   Encoded as (value, run length as LEB128 varint) pairs, then base64 (`src/sprite/rle.ts`).
   Decoding must yield exactly `width × height` values or the rig is rejected.
+- `parts[].autoAssign` is optional (default true). False excludes an unobserved part
+  from wand assignment without hiding it or disabling manual painting.
+
 - **Parts** are exact pixel cuts of the original image. Hidden-region fill pixels are *derived*
   at load time (not stored), so the original image is the single source of colour.
 - **render.padding**: transparent room around the sprite in the output, as a fraction of

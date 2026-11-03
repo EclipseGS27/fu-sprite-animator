@@ -2220,6 +2220,16 @@ var Affine = class _Affine {
     return Math.abs(this.a - 1) < eps && Math.abs(this.b) < eps && Math.abs(this.c) < eps && Math.abs(this.d - 1) < eps;
   }
 };
+function distanceToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+  t = clamp(t, 0, 1);
+  const qx = ax + dx * t - px;
+  const qy = ay + dy * t - py;
+  return Math.sqrt(qx * qx + qy * qy);
+}
 function rng(seed) {
   let s = seed >>> 0;
   return () => {
@@ -3244,11 +3254,6 @@ function adoptStrays(labels, img, alphaMin = 1) {
 }
 
 // src/sprite/morph.ts
-function alphaMask(img, alphaMin = 128) {
-  const m = new Uint8Array(img.width * img.height);
-  for (let i = 0; i < m.length; i++) m[i] = img.data[i * 4 + 3] >= alphaMin ? 1 : 0;
-  return m;
-}
 function distanceTransform(mask, w, h2) {
   const INF = 1e9;
   const d = new Float32Array(w * h2);
@@ -3415,6 +3420,7 @@ function detectShadow(img) {
   const H = bottom - top + 1;
   const band = Math.max(3, Math.round(H * 0.15));
   const dark = new Uint8Array(w * h2);
+  const slate = new Uint8Array(w * h2);
   for (let y = bottom - band + 1; y <= bottom; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
@@ -3426,6 +3432,10 @@ function detectShadow(img) {
       const max = Math.max(r, g, b);
       const min = Math.min(r, g, b);
       if (max <= 40 && max - min <= 20 || a < 200 && max <= 90 && max - min <= 30) dark[i] = 1;
+      else if (y >= bottom - Math.max(2, Math.round(H * 0.045)) && max <= 160 && b >= r && max - min <= 65) {
+        dark[i] = 1;
+        slate[i] = 1;
+      }
     }
   }
   const rows = Math.max(2, Math.round(H * 0.03));
@@ -3455,7 +3465,10 @@ function detectShadow(img) {
       if (y < y0) y0 = y;
       if (y > y1) y1 = y;
     }
-    const wide = x1 - x0 + 1 >= 3 * (y1 - y0 + 1);
+    const width2 = x1 - x0 + 1, height = y1 - y0 + 1;
+    const wide = width2 >= 3 * height;
+    const slatePixels = comp.reduce((sum, i) => sum + slate[i], 0);
+    if (slatePixels > 0 && (width2 < H * 0.6 || width2 < height * 6)) continue;
     if (!wide || y1 < bottom - rows || comp.length < opaque * 0.015) continue;
     const inComp = new Set(comp);
     let solid = 0;
@@ -3469,6 +3482,263 @@ function detectShadow(img) {
     found += comp.length;
   }
   return found ? out : null;
+}
+
+// src/sprite/analysis.ts
+function detectionView(source, maxSide = 512) {
+  let x0 = source.width, y0 = source.height, x1 = -1, y1 = -1;
+  for (let i = 0; i < source.width * source.height; i++) if (source.data[i * 4 + 3]) {
+    const x = i % source.width, y = Math.floor(i / source.width);
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  }
+  if (x1 < 0) return { image: { width: 1, height: 1, data: new Uint8ClampedArray(4) }, scale: 1, origin: [0, 0] };
+  const scale = Math.max(1, (x1 - x0 + 1) / maxSide, (y1 - y0 + 1) / maxSide);
+  const width2 = Math.ceil((x1 - x0 + 1) / scale) + 2;
+  const height = Math.ceil((y1 - y0 + 1) / scale) + 2;
+  const data = new Uint8ClampedArray(width2 * height * 4);
+  for (let y = 1; y < height - 1; y++) for (let x = 1; x < width2 - 1; x++) {
+    const sx = Math.min(x1, Math.floor(x0 + (x - 0.5) * scale));
+    const sy = Math.min(y1, Math.floor(y0 + (y - 0.5) * scale));
+    let i = (sy * source.width + sx) * 4;
+    if (scale > 1) {
+      for (let yy = Math.floor(y0 + (y - 1) * scale); yy <= Math.min(y1, Math.ceil(y0 + y * scale) - 1); yy++) {
+        for (let xx = Math.floor(x0 + (x - 1) * scale); xx <= Math.min(x1, Math.ceil(x0 + x * scale) - 1); xx++) {
+          const candidate = (yy * source.width + xx) * 4;
+          if (source.data[candidate + 3] > source.data[i + 3]) i = candidate;
+        }
+      }
+    }
+    data.set(source.data.subarray(i, i + 4), (y * width2 + x) * 4);
+  }
+  return { image: { width: width2, height, data }, scale, origin: [x0 - scale, y0 - scale] };
+}
+function foregroundMask(image) {
+  const hist = new Uint32Array(256);
+  let visible = 0;
+  for (let i = 3; i < image.data.length; i += 4) if (image.data[i]) {
+    hist[image.data[i]]++;
+    visible++;
+  }
+  let q = 1, accumulated = 0;
+  for (; q < 255; q++) {
+    accumulated += hist[q];
+    if (accumulated >= visible * 0.9) break;
+  }
+  const threshold = Math.max(1, Math.min(128, Math.floor(q * 0.65)));
+  const mask = new Uint8Array(image.width * image.height);
+  for (let i = 0; i < mask.length; i++) mask[i] = image.data[i * 4 + 3] >= threshold ? 1 : 0;
+  return mask;
+}
+function restoreLandmarks(value, view) {
+  const walk = (v) => {
+    if (Array.isArray(v)) {
+      if (v.length === 2 && v.every((x) => typeof x === "number")) return [view.origin[0] + v[0] * view.scale, view.origin[1] + v[1] * view.scale];
+      return v.map(walk);
+    }
+    if (v && typeof v === "object") {
+      const r = v;
+      if (["x", "y", "width", "height"].every((k4) => typeof v[k4] === "number")) return {
+        x: view.origin[0] + r.x * view.scale,
+        y: view.origin[1] + r.y * view.scale,
+        width: r.width * view.scale,
+        height: r.height * view.scale
+      };
+      return Object.fromEntries(Object.entries(v).map(([k4, x]) => [k4, walk(x)]));
+    }
+    return v;
+  };
+  return walk(value);
+}
+
+// src/sprite/limbs.ts
+function headNeck(mask, radius, w, h2, top, height, cx) {
+  const rowRadius = [], rowX = [];
+  const half = height * 0.2;
+  for (let y = top; y < Math.min(h2, top + height * 0.72); y++) {
+    let best = 0, xBest = cx;
+    for (let x = Math.max(0, Math.floor(cx - half)); x <= Math.min(w - 1, cx + half); x++) {
+      const r = radius[y * w + x];
+      if (r > best) {
+        best = r;
+        xBest = x + 0.5;
+      }
+    }
+    rowRadius[y - top] = best;
+    rowX[y - top] = xBest;
+  }
+  const smooth = (y) => {
+    const k4 = Math.max(1, Math.round(height * 0.015));
+    let sum = 0, n = 0;
+    for (let dy = -k4; dy <= k4; dy++) if (rowRadius[y + dy - top] !== void 0) {
+      sum += rowRadius[y + dy - top];
+      n++;
+    }
+    return sum / (n || 1);
+  };
+  const reach = Math.max(2, Math.round(height * 0.06));
+  let headY = -1;
+  for (let y = Math.round(top + height * 0.08); y < top + height * 0.4; y++) {
+    const r = smooth(y);
+    if (r >= height * 0.035 && r >= smooth(y - 1) && r >= smooth(y + 1) && r > smooth(y - reach) * 1.12 && r > smooth(y + reach) * 1.12) {
+      headY = y;
+      break;
+    }
+  }
+  if (headY < 0) return null;
+  let torsoY = -1, torsoRadius = 0;
+  for (let y = Math.round(headY + height * 0.13); y < top + height * 0.68; y++) {
+    if (smooth(y) > torsoRadius) {
+      torsoRadius = smooth(y);
+      torsoY = y;
+    }
+  }
+  if (torsoY < 0) return null;
+  const head = [rowX[headY - top], headY + 0.5];
+  const torso = [rowX[torsoY - top], torsoY + 0.5];
+  const path = interiorPath(mask, radius, w, h2, head, torso);
+  if (!path) return null;
+  let neck = null, narrowest = Infinity;
+  for (const p of path) {
+    if (p[1] < headY + smooth(headY) * 0.5 || p[1] > torsoY - height * 0.06) continue;
+    const r = radius[Math.floor(p[1]) * w + Math.floor(p[0])];
+    if (r < narrowest) {
+      narrowest = r;
+      neck = p;
+    }
+  }
+  const reference = Math.min(smooth(headY), torsoRadius);
+  if (!neck || narrowest > reference * 0.82) return null;
+  return { neck, headX: head[0], confidence: Math.min(0.85, 1 - narrowest / reference + 0.35) };
+}
+function interiorPath(mask, radius, w, h2, from, to) {
+  const span = Math.hypot(to[0] - from[0], to[1] - from[1]);
+  if (span < 2) return null;
+  const margin = Math.max(4, span * 0.85);
+  const x0 = Math.max(0, Math.floor(Math.min(from[0], to[0]) - margin));
+  const y0 = Math.max(0, Math.floor(Math.min(from[1], to[1]) - margin));
+  const x1 = Math.min(w - 1, Math.ceil(Math.max(from[0], to[0]) + margin));
+  const y1 = Math.min(h2 - 1, Math.ceil(Math.max(from[1], to[1]) + margin));
+  const snap = (point) => {
+    let best = -1, cost = Infinity;
+    const reach = Math.max(2, span * 0.12);
+    for (let y = Math.max(y0, Math.floor(point[1] - reach)); y <= Math.min(y1, point[1] + reach); y++) {
+      for (let x = Math.max(x0, Math.floor(point[0] - reach)); x <= Math.min(x1, point[0] + reach); x++) {
+        const i = y * w + x;
+        if (!mask[i]) continue;
+        const d = Math.hypot(x + 0.5 - point[0], y + 0.5 - point[1]);
+        if (d < cost) {
+          cost = d;
+          best = i;
+        }
+      }
+    }
+    return best;
+  };
+  const start = snap(from), goal = snap(to);
+  if (start < 0 || goal < 0 || start === goal) return null;
+  const dist = new Float64Array(mask.length).fill(Infinity);
+  const prev = new Int32Array(mask.length).fill(-1);
+  const heap = [];
+  const push = (entry) => {
+    let k4 = heap.length;
+    heap.push(entry);
+    while (k4 > 0) {
+      const p = k4 - 1 >> 1;
+      if (heap[p].score <= entry.score) break;
+      heap[k4] = heap[p];
+      k4 = p;
+    }
+    heap[k4] = entry;
+  };
+  const pop = () => {
+    const first = heap[0], last = heap.pop();
+    if (heap.length) {
+      let k4 = 0;
+      while (k4 * 2 + 1 < heap.length) {
+        let m = k4 * 2 + 1;
+        if (m + 1 < heap.length && heap[m + 1].score < heap[m].score) m++;
+        if (heap[m].score >= last.score) break;
+        heap[k4] = heap[m];
+        k4 = m;
+      }
+      heap[k4] = last;
+    }
+    return first;
+  };
+  const gx = goal % w, gy = Math.floor(goal / w);
+  dist[start] = 0;
+  push({ i: start, score: 0, cost: 0 });
+  while (heap.length) {
+    const current = pop();
+    if (current.cost !== dist[current.i]) continue;
+    if (current.i === goal) {
+      const points = [];
+      for (let i = goal; i >= 0; i = prev[i]) {
+        points.push([i % w + 0.5, Math.floor(i / w) + 0.5]);
+        if (i === start) break;
+      }
+      return points.reverse();
+    }
+    const x = current.i % w, y = Math.floor(current.i / w);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const xx = x + dx, yy = y + dy;
+      if (xx < x0 || xx > x1 || yy < y0 || yy > y1) continue;
+      const j = yy * w + xx;
+      if (!mask[j]) continue;
+      if (dx && dy && !mask[y * w + xx] && !mask[yy * w + x]) continue;
+      const cost = current.cost + (dx && dy ? Math.SQRT2 : 1) * (1 + 2 / (radius[j] + 0.5));
+      if (cost >= dist[j]) continue;
+      dist[j] = cost;
+      prev[j] = current.i;
+      push({ i: j, cost, score: cost + Math.hypot(xx - gx, yy - gy) });
+    }
+  }
+  return null;
+}
+function jointOnPath(path, from, to, bodyHeight) {
+  if (path.length < 5) return null;
+  const deviation = Math.max(...path.map((p) => distanceToSegment(p[0], p[1], from[0], from[1], to[0], to[1])));
+  if (deviation < Math.max(1.5, bodyHeight * 0.018)) return null;
+  let best = -1, bestError = Infinity;
+  const samples = path.filter((_, i) => i % Math.max(1, Math.floor(path.length / 48)) === 0);
+  for (let k4 = Math.ceil(path.length * 0.22); k4 < path.length * 0.78; k4++) {
+    const p = path[k4];
+    let error = 0;
+    for (const q of samples) error += Math.min(distanceToSegment(q[0], q[1], from[0], from[1], p[0], p[1]), distanceToSegment(q[0], q[1], p[0], p[1], to[0], to[1])) ** 2;
+    if (error < bestError) {
+      bestError = error;
+      best = k4;
+    }
+  }
+  if (best < 0) return null;
+  let point = path[best];
+  const axis = (points) => {
+    const cx = points.reduce((s, p) => s + p[0], 0) / points.length;
+    const cy = points.reduce((s, p) => s + p[1], 0) / points.length;
+    let xx = 0, yy = 0, xy = 0;
+    for (const p of points) {
+      xx += (p[0] - cx) ** 2;
+      yy += (p[1] - cy) ** 2;
+      xy += (p[0] - cx) * (p[1] - cy);
+    }
+    const angle = Math.atan2(2 * xy, xx - yy) / 2;
+    return { cx, cy, ux: Math.cos(angle), uy: Math.sin(angle) };
+  };
+  const n = Math.max(3, Math.floor(path.length * 0.3));
+  const a = axis(path.slice(0, n)), b = axis(path.slice(-n));
+  const cross = a.ux * b.uy - a.uy * b.ux;
+  if (Math.abs(cross) > 0.25) {
+    const t = ((b.cx - a.cx) * b.uy - (b.cy - a.cy) * b.ux) / cross;
+    const intersection = [a.cx + a.ux * t, a.cy + a.uy * t];
+    if (Math.hypot(intersection[0] - point[0], intersection[1] - point[1]) < bodyHeight * 0.09) point = intersection;
+  }
+  const residual = Math.sqrt(bestError / samples.length);
+  if (residual > bodyHeight * 0.035) return null;
+  return { point, confidence: Math.max(0.2, Math.min(0.85, 1 - residual / (bodyHeight * 0.04))) };
 }
 
 // src/sprite/landmarks.ts
@@ -3491,6 +3761,26 @@ function rowRuns(mask, w, y, minLen = 1) {
     }
   }
   return out;
+}
+function traceLegs(mask, w, top, bottom, cx) {
+  const H = bottom - top + 1;
+  const minWidth = Math.max(1, Math.round(H * 0.025));
+  const start = Math.round(bottom - H * 0.07);
+  const runs = rowRuns(mask, w, start, minWidth).filter((r) => Math.abs((r.x0 + r.x1 + 1) / 2 - cx) < H * 0.5).sort((a, b) => b.x1 - b.x0 - (a.x1 - a.x0)).slice(0, 2).sort((a, b) => a.x0 - b.x0);
+  if (runs.length !== 2) return null;
+  const centre = (r) => (r.x0 + r.x1 + 1) / 2;
+  const tracks = [[[centre(runs[0]), start + 0.5]], [[centre(runs[1]), start + 0.5]]];
+  for (let y = start - 1; y >= top + H * 0.4; y--) {
+    const row = rowRuns(mask, w, y, minWidth);
+    const chosen = tracks.map((t) => {
+      const x = t[t.length - 1][0];
+      return row.filter((r) => x >= r.x0 - H * 0.035 && x <= r.x1 + H * 0.035).sort((a, b) => Math.abs(centre(a) - x) - Math.abs(centre(b) - x))[0];
+    });
+    if (!chosen[0] || !chosen[1] || chosen[0] === chosen[1] || chosen[0].x0 >= chosen[1].x0) break;
+    for (let k4 = 0; k4 < 2; k4++) tracks[k4].push([centre(chosen[k4]), y + 0.5]);
+  }
+  if (tracks[0].length < H * 0.12) return null;
+  return { left: tracks[0].reverse(), right: tracks[1].reverse() };
 }
 function skeletonBranches(skel, w, h2) {
   const at = (x, y) => x < 0 || y < 0 || x >= w || y >= h2 ? 0 : skel[y * w + x];
@@ -3778,7 +4068,7 @@ function detectWeapon(mask, w, h2, height, debug, rgba) {
         debug?.(`${at}: lies along the floor`);
         continue;
       }
-      if (tipY >= bottom - height * 0.04 && tipY > baseY) {
+      if (tipY >= bottom - Math.max(height * 0.04, dt[tip] * 2.5) && tipY > baseY) {
         debug?.(`${at}: ends on the ground`);
         continue;
       }
@@ -3792,6 +4082,7 @@ function detectWeapon(mask, w, h2, height, debug, rgba) {
         }
       }
       const thick2 = median(b.path.map((i) => dt[i]));
+      if (lenient && thick2 > b.length * 0.22) continue;
       const tx = tip % w + 0.5;
       const far = Math.hypot(tx - bodyCx, tipY + 0.5 - bodyCy) >= height * 0.4;
       if (!far) {
@@ -3802,12 +4093,19 @@ function detectWeapon(mask, w, h2, height, debug, rgba) {
         debug?.(`${at}: thick ${thick2.toFixed(1)} vs median ${medianThick.toFixed(1)}`);
         continue;
       }
-      if (lenient && thick2 > coreThick * 0.6) {
+      if (lenient && thick2 > coreThick * 0.6 && !(b.length >= height * 0.5 && thick2 < b.length * 0.18)) {
         debug?.(`${at}: as thick as the body (${thick2.toFixed(1)} vs core ${coreThick.toFixed(1)})`);
         continue;
       }
+      if (b.from > 0) {
+        const a = b.path[b.from];
+        const z = b.path[b.path.length - 1];
+        const L = Math.hypot(px(z) - px(a), py(z) - py(a)) || 1;
+        const dev = Math.abs((px(z) - px(a)) * (py(a) - py(tip)) - (px(a) - px(tip)) * (py(z) - py(a))) / L;
+        if (dev > Math.max(height * 0.025, thick2 * 1.2)) continue;
+      }
       const score = b.length * b.straightness;
-      debug?.(`${at}: candidate${lenient ? " (second pass)" : ""}, score ${score.toFixed(0)}`);
+      debug?.(`${at}: candidate${lenient ? " (second pass)" : ""}, score ${score.toFixed(0)}, thickness ${thick2.toFixed(1)}, core ${coreThick.toFixed(1)}, from ${b.from}`);
       if (score > bestScore) {
         bestScore = score;
         best = b;
@@ -3837,11 +4135,59 @@ function detectWeapon(mask, w, h2, height, debug, rgba) {
   }
   const tipI = best.path[0];
   const hiltI = best.path[best.path.length - 1];
+  if (thick > height * 0.055 && best.length >= height * 0.5) {
+    const axis = pca([...pixels], w);
+    const towardBase = (px(hiltI) - axis.cx) * axis.ux + (py(hiltI) - axis.cy) * axis.uy >= 0 ? 1 : -1;
+    const ux = axis.ux * towardBase, uy = axis.uy * towardBase;
+    const sections = [];
+    const window2 = Math.max(3, Math.round(height * 0.03));
+    let reference = 0;
+    let junction = false;
+    for (let t = 0; t < height * 0.8; t++) {
+      const x = axis.cx + ux * t, y = axis.cy + uy * t;
+      const slice = [];
+      for (const sign of [-1, 1]) for (let q = sign < 0 ? 1 : 0; q < height * 0.2; q++) {
+        const xx = Math.floor(x - uy * q * sign), yy = Math.floor(y + ux * q * sign);
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h2 || !mask[yy * w + xx]) break;
+        slice.push(yy * w + xx);
+      }
+      sections.push({ point: [x, y], pixels: slice, width: 0 });
+      const section = sections[sections.length - 1];
+      section.width = median(sections.slice(-window2).map((s) => s.pixels.length));
+      if (t === window2) reference = section.width;
+      if (t > height * 0.25 && (!slice.length || section.width > reference * 1.6)) {
+        junction = true;
+        break;
+      }
+    }
+    if (junction && reference > 0) {
+      const start = Math.max(window2, sections.length - Math.round(height * 0.16));
+      let gripIndex = start;
+      for (let i = sections.length - 2; i >= start; i--) {
+        if (sections[i].width < reference * 0.85) {
+          gripIndex = i;
+          break;
+        }
+      }
+      const gripSection = sections[gripIndex];
+      if (gripSection.pixels.length && gripSection.width < reference * 0.85 && gripIndex > height * 0.2) {
+        const grip = sections[Math.max(0, gripIndex - Math.floor(window2 / 2))].point;
+        for (const section of sections.slice(0, gripIndex)) for (const i of section.pixels) pixels.add(i);
+        debug?.(`Broad blade grip at ${grip.map((v) => v.toFixed(1)).join(",")}`);
+        return { pixels: [...pixels], tip: [px(tipI), py(tipI)], hilt: grip, broad: true, length: Math.hypot(px(tipI) - grip[0], py(tipI) - grip[1]) };
+      }
+    }
+  }
   return { pixels: [...pixels], tip: [tipI % w + 0.5, Math.floor(tipI / w) + 0.5], hilt: [hiltI % w + 0.5, Math.floor(hiltI / w) + 0.5], length: best.length };
 }
 function detectHumanoid(img, facingIn = "auto", fallback = "right") {
+  const view = detectionView(img);
+  const found = detectHumanoidNative(view.image, facingIn, fallback);
+  return found ? restoreLandmarks(found, view) : null;
+}
+function detectHumanoidNative(img, facingIn, fallback) {
   const { width: w, height: h2 } = img;
-  const full = alphaMask(img, 128);
+  const full = foregroundMask(img);
   {
     const comps = components2(full, w, h2).sort((a, b) => b.length - a.length);
     const keep = new Uint8Array(full.length);
@@ -3851,6 +4197,10 @@ function detectHumanoid(img, facingIn = "auto", fallback = "right") {
     const shadow = detectShadow(img);
     if (shadow) {
       for (let i = 0; i < full.length; i++) if (shadow[i]) full[i] = 0;
+      const pieces = components2(full, w, h2).sort((a, b) => b.length - a.length);
+      const keep2 = new Uint8Array(full.length);
+      for (const c of pieces) if (c.length >= (pieces[0]?.length ?? 0) * 0.15) for (const i of c) keep2[i] = 1;
+      full.set(keep2);
     }
   }
   let anyPx = false;
@@ -3971,8 +4321,14 @@ function detectHumanoid(img, facingIn = "auto", fallback = "right") {
       headConf = clamp01((jump - 1) * 1.5);
     } else notes.push("No clear neck: head size guessed from proportions.");
   }
-  const neck = [centreAt(neckY), neckY + 0.5];
-  const topPt = [neck[0], top];
+  const bodyRadius = distanceTransform(mask, w, h2);
+  const observedHead = headNeck(mask, bodyRadius, w, h2, top, H, cx);
+  if (observedHead) {
+    neckY = observedHead.neck[1] - 0.5;
+    headConf = observedHead.confidence;
+  }
+  const neck = observedHead?.neck ?? [centreAt(neckY), neckY + 0.5];
+  const topPt = [observedHead?.headX ?? neck[0], top];
   const minRun = Math.max(1, Math.round(H * 0.03));
   let torsoHalf = 0;
   {
@@ -4048,6 +4404,25 @@ function detectHumanoid(img, facingIn = "auto", fallback = "right") {
     ankleB = [kneeB[0], ankleY];
     legConf = 0.2;
   }
+  const tracked = traceLegs(mask, w, top, bottom, cx);
+  if (tracked) {
+    const backTrack = s > 0 ? tracked.left : tracked.right;
+    const frontTrack = s > 0 ? tracked.right : tracked.left;
+    const at = (track2, t) => track2[Math.round((track2.length - 1) * t)];
+    const first = frontTrack[0];
+    if (first[1] >= top + H * 0.5 && first[1] < top + H * 0.8) {
+      hipY = first[1] - H * 0.025;
+      hipF = [first[0], hipY];
+      hipB = [backTrack[0][0], hipY];
+      kneeF = at(frontTrack, 0.48);
+      kneeB = at(backTrack, 0.48);
+      ankleF = at(frontTrack, 1);
+      ankleB = at(backTrack, 1);
+      legConf = clamp01(frontTrack.length / (H * 0.3));
+      const fallbackNote = notes.indexOf("Legs not separated (robe or long coat): legs placed from proportions.");
+      if (fallbackNote >= 0) notes.splice(fallbackNote, 1);
+    }
+  }
   const toe = (ankle) => {
     let best = [ankle[0] + s * H * 0.06, bottom];
     let bestX = -Infinity;
@@ -4088,8 +4463,8 @@ function detectHumanoid(img, facingIn = "auto", fallback = "right") {
   let armConf = clamp01(Math.min(protrudeB, protrudeF) / (H * 0.06));
   const shoulderY = neckY + H * 0.09;
   const sC = centreAt(shoulderY);
-  const shoulderF = [sC + s * wc * 0.55, shoulderY];
-  const shoulderB = [sC - s * wc * 0.55, shoulderY];
+  const shoulderF = [sC + s * wc * 0.9, shoulderY];
+  const shoulderB = [sC - s * wc * 0.9, shoulderY];
   let handF = front ?? [shoulderF[0] + s * wc, shoulderY + H * 0.2];
   let handB = back ?? [shoulderB[0] - s * wc, shoulderY + H * 0.2];
   if (weaponFound) {
@@ -4101,21 +4476,82 @@ function detectHumanoid(img, facingIn = "auto", fallback = "right") {
     return d <= H * 0.48 && hand[1] >= shoulder[1] - H * 0.04;
   };
   if (protrudeB < 1 || !plausible(handB, shoulderB)) {
+    armConf = Math.min(armConf, 0.25);
     if (protrudeB >= 1) notes.push("Back hand unclear: placed from proportions.");
     handB = [shoulderB[0] - s * wc * 0.4, hipY];
   }
   if (!weaponFound && (protrudeF < 1 || !plausible(handF, shoulderF))) {
+    armConf = Math.min(armConf, 0.25);
     if (protrudeF >= 1) notes.push("Front hand unclear: placed from proportions.");
     handF = [shoulderF[0] + s * wc * 0.4, hipY];
   }
+  if (weaponFound?.broad && weaponFound.length > H * 0.6 && handF[1] >= pelvis[1] - H * 0.12 && Math.abs(handF[0] - pelvis[0]) < H * 0.28 && Math.hypot(handF[0] - shoulderB[0], handF[1] - shoulderB[1]) < H * 0.45) {
+    handB = [handF[0] - s * H * 0.04, handF[1]];
+    armConf = Math.min(armConf, 0.45);
+    notes.push("Possible two-handed grip: check both hands before animating.");
+  }
+  const limbRadius = bodyRadius;
+  const branches = skeletonBranches(pruneSkeleton(skeletonize(mask, w, h2), w, h2, Math.max(2, H * 0.025)), w, h2);
+  const armEnd = (shoulder, side) => {
+    let best = null;
+    for (const branch of branches) {
+      if (branch.length < H * 0.12 || branch.length > H * 0.58) continue;
+      const i = branch.path[0], j = branch.path[branch.path.length - 1];
+      const end = [i % w + 0.5, Math.floor(i / w) + 0.5];
+      const base2 = [j % w + 0.5, Math.floor(j / w) + 0.5];
+      if (end[1] < top + H * 0.02 || end[1] > hipY + H * 0.08 || (end[0] - shoulder[0]) * side < -H * 0.04) continue;
+      const attachment = Math.hypot(base2[0] - shoulder[0], base2[1] - shoulder[1]);
+      let curvedEvidence = 0;
+      if (attachment > H * 0.14) {
+        const route = interiorPath(mask, limbRadius, w, h2, shoulder, end);
+        const joint = route ? jointOnPath(route, shoulder, end, H) : null;
+        if (!route || route.length > H * 0.65 || !joint) continue;
+        if (route.some((p) => p[1] < neckY - H * 0.025 && Math.abs(p[0] - neck[0]) < H * 0.09)) continue;
+        curvedEvidence = joint.confidence * 0.8;
+      }
+      const endpointGirth = median(branch.path.slice(0, Math.max(2, Math.round(H * 0.04))).map((i2) => limbRadius[i2]));
+      if (endpointGirth < Math.max(1, H * 0.012)) continue;
+      const girth = median(branch.path.slice(0, Math.max(3, Math.floor(branch.path.length * 0.5))).map((i2) => limbRadius[i2]));
+      if (girth < Math.max(1, H * 0.012) || girth > H * 0.09) continue;
+      const score = 1 - Math.min(attachment, H * 0.1) / (H * 0.2) - Math.abs(branch.length / H - 0.27);
+      const confidence = Math.max(clamp01(score) * 0.8, curvedEvidence);
+      if (!best || confidence > best.confidence) best = { point: end, confidence, score };
+    }
+    return best && best.confidence >= 0.35 ? best : null;
+  };
+  let traceBack = false, traceFront = false;
+  if (!weaponFound?.broad) {
+    const observedBack = armEnd(shoulderB, -s);
+    const observedFront = weaponFound ? null : armEnd(shoulderF, s);
+    if (observedBack) {
+      handB = observedBack.point;
+      traceBack = true;
+    }
+    if (observedFront) {
+      handF = observedFront.point;
+      traceFront = true;
+    }
+    armConf = Math.min(armConf, observedBack?.confidence ?? 0.35, weaponFound ? 0.65 : observedFront?.confidence ?? 0.35);
+  }
   const handLen = H * 0.07;
-  const wrist = (shoulder, hand) => {
+  const wrist = (shoulder, hand, observed) => {
+    const route = observed ? interiorPath(mask, limbRadius, w, h2, shoulder, hand) : null;
+    if (route) {
+      let length = 0;
+      for (let i = route.length - 2; i >= 0; i--) {
+        length += Math.hypot(route[i][0] - route[i + 1][0], route[i][1] - route[i + 1][1]);
+        if (length >= handLen) return route[i];
+      }
+    }
     const d = Math.hypot(hand[0] - shoulder[0], hand[1] - shoulder[1]) || 1;
     return lerp(hand, shoulder, Math.min(0.4, handLen / d));
   };
-  const wristF = wrist(shoulderF, handF);
-  const wristB = wrist(shoulderB, handB);
-  const elbow = (shoulder, wr) => {
+  const wristF = wrist(shoulderF, handF, traceFront);
+  const wristB = wrist(shoulderB, handB, traceBack);
+  const elbow = (shoulder, wr, observed) => {
+    const route = observed ? interiorPath(mask, limbRadius, w, h2, shoulder, wr) : null;
+    const joint = route ? jointOnPath(route, shoulder, wr, H) : null;
+    if (joint) return joint.point;
     const m = lerp(shoulder, wr, 0.5);
     return [m[0], m[1] + H * 0.015];
   };
@@ -4128,8 +4564,8 @@ function detectHumanoid(img, facingIn = "auto", fallback = "right") {
     ground: [pelvis[0], bottom + 1],
     shoulderFront: shoulderF,
     shoulderBack: shoulderB,
-    elbowFront: elbow(shoulderF, wristF),
-    elbowBack: elbow(shoulderB, wristB),
+    elbowFront: elbow(shoulderF, wristF, traceFront),
+    elbowBack: elbow(shoulderB, wristB, traceBack),
     wristFront: wristF,
     wristBack: wristB,
     handFront: handF,
@@ -4432,6 +4868,14 @@ function beastFromLandmarks(L, t) {
     return p ? { from: p[0], to: p[1] } : { from: prop(tb.from), to: prop(tb.to) };
   });
 }
+function shapeFromLandmarks(L, t) {
+  const s = L.facing === "right" ? 1 : -1;
+  const prop = ([u, v]) => [L.box.x + (s > 0 ? u : 1 - u) * L.box.width, L.box.y + v * L.box.height];
+  return buildFromTemplate(t, (tb) => {
+    const placed = L.placements[tb.id];
+    return placed ? { from: placed[0], to: placed[1] } : { from: prop(tb.from), to: prop(tb.to) };
+  });
+}
 
 // src/sprite/creatures.ts
 function runsOf(mask, w, y) {
@@ -4450,8 +4894,17 @@ function runsOf(mask, w, y) {
 var mid = (r) => (r.x0 + r.x1) / 2;
 var width = (r) => r.x1 - r.x0 + 1;
 function detectBeast(img, facingIn = "auto", o = {}) {
+  const view = detectionView(img);
+  const found = detectBeastNative(view.image, facingIn, o);
+  if (!found) return null;
+  const restored = restoreLandmarks(found, view);
+  restored.belly = view.origin[1] + found.belly * view.scale;
+  restored.thickness = found.thickness * view.scale;
+  return restored;
+}
+function detectBeastNative(img, facingIn, o) {
   const { width: w, height: h2 } = img;
-  const mask = alphaMask(img, 128);
+  const mask = foregroundMask(img);
   {
     const comps = components2(mask, w, h2).sort((a, b) => b.length - a.length);
     const keep = new Uint8Array(mask.length);
@@ -4660,6 +5113,109 @@ function detectBeast(img, facingIn = "auto", o = {}) {
   };
 }
 
+// src/sprite/shapes.ts
+function detectShape(source, kind, facing = "auto", fallback = "right") {
+  const view = detectionView(source);
+  const img = view.image, w = img.width, h2 = img.height;
+  const pieces = components2(foregroundMask(img), w, h2).sort((a, b) => b.length - a.length);
+  const main = pieces[0];
+  if (!main?.length) return null;
+  const mask = new Uint8Array(w * h2);
+  let left = w, right = 0, top = h2, bottom = 0;
+  for (const i of main) {
+    mask[i] = 1;
+    const x = i % w, y = Math.floor(i / w);
+    left = Math.min(left, x);
+    right = Math.max(right, x);
+    top = Math.min(top, y);
+    bottom = Math.max(bottom, y);
+  }
+  const W = right - left + 1, H = bottom - top + 1;
+  const radius = distanceTransform(mask, w, h2);
+  const centre = (y) => {
+    const row = Math.max(top, Math.min(bottom, Math.round(y)));
+    let weighted = 0, mass = 0;
+    for (let x = left; x <= right; x++) {
+      const weight = radius[row * w + x] ** 2;
+      weighted += (x + 0.5) * weight;
+      mass += weight;
+    }
+    return [mass ? weighted / mass : (left + right + 1) / 2, row + 0.5];
+  };
+  const at = (t) => centre(top + (H - 1) * t);
+  const placements = {};
+  const confidence = { body: 0.6 };
+  const notes = ["Body centre fitted to the silhouette thickness."];
+  let resultFacing = facing === "auto" ? fallback : facing;
+  const root = at(1);
+  placements.root = [[root[0], bottom + 1], [root[0] + (resultFacing === "right" ? 1 : -1) * H * 0.12, bottom + 1]];
+  if (kind === "blob" || kind === "custom") {
+    placements.body = [at(kind === "blob" ? 0.98 : 0.95), at(kind === "blob" ? 0.42 : 0.2)];
+    if (kind === "blob") placements.crest = [at(0.42), at(0)];
+  } else if (kind === "floating") {
+    placements.torso = [at(0.74), at(0.3)];
+    placements.head = [at(0.3), at(0)];
+    placements.tail = [at(0.74), at(0.88)];
+    placements.tail_tip = [at(0.88), at(1)];
+    confidence.head = 0.35;
+    confidence.arms = 0;
+    notes.push("Head boundary is estimated; check it. Arms keep proportions unless a supported branch is found.");
+    const branches = skeletonBranches(skeletonize(mask, w, h2), w, h2);
+    for (const [side, role] of [[-1, "back"], [1, "front"]]) {
+      const shoulder = at(0.34);
+      const worldSide = side * (resultFacing === "right" ? 1 : -1);
+      shoulder[0] += worldSide * W * 0.16;
+      const candidates = branches.filter((b) => {
+        const i2 = b.path[0], j = b.path[b.path.length - 1];
+        return Math.floor(i2 / w) > top + H * 0.2 && Math.floor(i2 / w) < top + H * 0.7 && (i2 % w - shoulder[0]) * worldSide > 0 && b.length > H * 0.1 && Math.hypot(j % w - shoulder[0], Math.floor(j / w) - shoulder[1]) < H * 0.17;
+      }).sort((a, b) => b.length - a.length);
+      const branch = candidates[0];
+      if (!branch) continue;
+      const i = branch.path[0];
+      const hand = [i % w + 0.5, Math.floor(i / w) + 0.5];
+      const route = interiorPath(mask, radius, w, h2, shoulder, hand);
+      const joint = route ? jointOnPath(route, shoulder, hand, H) : null;
+      const elbow = joint?.point ?? [(shoulder[0] + hand[0]) / 2, (shoulder[1] + hand[1]) / 2];
+      placements[`arm_upper_${role}`] = [shoulder, elbow];
+      placements[`arm_lower_${role}`] = [elbow, hand];
+      confidence.arms += 0.25;
+    }
+  } else {
+    const branches = skeletonBranches(skeletonize(mask, w, h2), w, h2).filter((b2) => b2.length > Math.max(2, H * 0.04));
+    const ends = branches.map((b2) => b2.path[0]);
+    let pair = null, separation = 0;
+    for (const a2 of ends) for (const b2 of ends) {
+      const d = Math.hypot(a2 % w - b2 % w, Math.floor(a2 / w) - Math.floor(b2 / w));
+      if (d > separation) {
+        separation = d;
+        pair = [a2, b2];
+      }
+    }
+    if (!pair) return null;
+    let path = interiorPath(mask, radius, w, h2, [pair[0] % w + 0.5, Math.floor(pair[0] / w) + 0.5], [pair[1] % w + 0.5, Math.floor(pair[1] / w) + 0.5]);
+    if (!path || path.length < Math.max(W, H) * 0.6) return null;
+    const girth = (points) => points.reduce((sum, p2) => sum + radius[Math.floor(p2[1]) * w + Math.floor(p2[0])], 0) / points.length;
+    const n = Math.max(2, Math.ceil(path.length * 0.18));
+    const a = girth(path.slice(0, n)), b = girth(path.slice(-n));
+    const ambiguous = Math.abs(a - b) < Math.max(a, b) * 0.2;
+    const headAtStart = ambiguous ? (path[0][0] - path[path.length - 1][0]) * (resultFacing === "right" ? 1 : -1) > 0 : a > b;
+    if (headAtStart) path = path.reverse();
+    const p = (t) => path[Math.round((path.length - 1) * t)];
+    if (facing === "auto" && !ambiguous) resultFacing = p(1)[0] >= p(0)[0] ? "right" : "left";
+    placements.body = [p(0.42), p(0.68)];
+    placements.neck = [p(0.68), p(0.88)];
+    placements.head = [p(0.88), p(1)];
+    placements.tail = [p(0.42), p(0.18)];
+    placements.tail_tip = [p(0.18), p(0)];
+    confidence.body = 0.75;
+    confidence.head = ambiguous ? 0.2 : 0.55;
+    notes.push(ambiguous ? "Serpent ends are ambiguous; head direction uses your facing choice." : "Serpent body follows the silhouette; thicker end proposed as the head.");
+  }
+  if (facing === "auto" && kind !== "serpentine") notes.push(`Facing ${resultFacing} is a guess; the silhouette does not establish a viewing direction.`);
+  placements.root[1][0] = placements.root[0][0] + (resultFacing === "right" ? 1 : -1) * H * 0.12;
+  return restoreLandmarks({ box: { x: left, y: top, width: W, height: H }, facing: resultFacing, placements, confidence, notes }, view);
+}
+
 // src/sprite/rle.ts
 function toBase64(bytes) {
   let bin = "";
@@ -4748,7 +5304,12 @@ function createRig(o) {
     beast = detectBeast(o.image, o.facing ?? "auto", { wings: template.id === "winged", fallback: o.facingFallback });
     if (beast) facing = beast.facing;
   }
-  const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : beast ? beastFromLandmarks(beast, template) : fitTemplate(template, fitBox, facing);
+  let shape = null;
+  if (o.detect !== false && ["floating", "serpentine", "blob", "custom"].includes(template.id)) {
+    shape = detectShape(o.image, template.id, o.facing ?? "auto", o.facingFallback);
+    if (shape) facing = shape.facing;
+  }
+  const { bones, parts } = landmarks ? humanoidFromLandmarks(landmarks) : beast ? beastFromLandmarks(beast, template) : shape ? shapeFromLandmarks(shape, template) : fitTemplate(template, fitBox, facing);
   const now = Date.now();
   const rig = {
     format: RIG_FORMAT,
@@ -4768,24 +5329,47 @@ function createRig(o) {
     revision: 1
   };
   if (landmarks) rig.metrics.bodyHeight = landmarks.body.height;
+  if (beast) rig.metrics.bodyHeight = beast.box.height;
+  if (shape) rig.metrics.bodyHeight = shape.box.height;
   if (detectShadow(o.image) && rig.bones.some((b) => b.id === "root")) {
     const shadow = defaultPartFor("part_shadow", "Shadow", "root", nextLabel(rig.parts));
     rig.parts.unshift(shadow);
   }
+  if (landmarks && !landmarks.weapon) {
+    const weaponPart = rig.parts.find((p) => rig.bones.find((b) => b.id === p.bone)?.role === "weapon");
+    if (weaponPart) weaponPart.autoAssign = false;
+  }
   if (o.assign !== false) {
     const labels = assignPixels(rig, o.image);
-    if (landmarks && !landmarks.weapon) {
-      const label = (role) => rig.parts.find((p) => rig.bones.find((b) => b.id === p.bone)?.role === role)?.label;
-      const wl = label("weapon");
-      const hl = label("hand.front") ?? label("arm.lower.front");
-      if (wl && hl) {
-        for (let i = 0; i < labels.length; i++) if (labels[i] === wl) labels[i] = hl;
-      }
-    }
     rig.ownership = encodeRle(labels);
   }
-  const found = landmarks ?? beast;
+  const found = landmarks ?? beast ?? shape;
   lastReport.set(rig, found ? { method: "landmarks", confidence: found.confidence, notes: found.notes } : { method: "proportions", confidence: {}, notes: [] });
+  const report2 = lastReport.get(rig);
+  report2.confidence.body ??= report2.method === "landmarks" ? 0.55 : 0.2;
+  if (landmarks && !landmarks.weapon) report2.notes.push("No weapon detected; its optional bone is available for manual rigging.");
+  const frames = bonesToFrames(rig.bones);
+  const support = /* @__PURE__ */ new Map();
+  for (const bone2 of rig.bones) {
+    const role = bone2.role ?? "";
+    const group = /^(arm|hand)/.test(role) ? "arms" : /^(leg|foot)/.test(role) ? "legs" : role.startsWith("wing") ? "wings" : role.startsWith("tail") ? "tail" : role === "head" ? "head" : role === "weapon" ? "weapon" : ["torso", "pelvis", "neck"].includes(role) ? "body" : "";
+    if (!group || report2.confidence[group] === void 0 || role === "weapon" && landmarks && !landmarks.weapon) continue;
+    const f = frames.get(bone2.id), tip = tipOf(f);
+    let visible = 0;
+    for (let k4 = 1; k4 < 16; k4++) {
+      const x = Math.floor(f.x + (tip[0] - f.x) * k4 / 16), y = Math.floor(f.y + (tip[1] - f.y) * k4 / 16);
+      if (x >= 0 && y >= 0 && x < o.image.width && y < o.image.height && o.image.data[(y * o.image.width + x) * 4 + 3]) visible++;
+    }
+    const values = support.get(group) ?? [];
+    values.push(visible / 15);
+    support.set(group, values);
+  }
+  const unsupported = [];
+  for (const [group, values] of support) if (values.reduce((a, b) => a + b, 0) / values.length < 0.45) {
+    report2.confidence[group] = Math.min(report2.confidence[group], 0.2);
+    unsupported.push(group);
+  }
+  if (unsupported.length) report2.notes.push(`Check ${unsupported.join(", ")}: limited silhouette support for the proposed bones.`);
   return rig;
 }
 function rigLabels(rig) {
@@ -4805,7 +5389,7 @@ function segmentsFor(rig) {
   const out = [];
   for (const p of rig.parts) {
     const f = frames.get(p.bone);
-    if (!f || p.hidden) continue;
+    if (!f || p.hidden || p.autoAssign === false) continue;
     const [bx, by] = tipOf(f);
     out.push({ label: p.label, ax: f.x, ay: f.y, bx, by, bias: (p.reach ?? 0) * H });
   }
@@ -4866,6 +5450,7 @@ function parseRig(input) {
     stiffness: Math.min(1, Math.max(0, num(p.stiffness, 0))),
     cell: Math.max(0, Math.round(num(p.cell, 0))),
     fill: p.fill !== false,
+    autoAssign: p.autoAssign === false ? false : void 0,
     reach: typeof p.reach === "number" ? p.reach : void 0,
     hidden: p.hidden === true ? true : void 0
   }));
@@ -7641,7 +8226,7 @@ var Studio = class {
     e.classList.toggle("show", !!p && !!this.rig);
     if (!p || !this.rig) return;
     const dots = (v) => "\u25CF".repeat(Math.max(1, Math.round(v * 3))) + "\u25CB".repeat(3 - Math.max(1, Math.round(v * 3)));
-    const groups = Object.entries(p.report.confidence).map(([k4, v]) => h("span", { class: "conf", title: `${Math.round(v * 100)}%` }, `${k4} ${v > 0 ? dots(v) : "\u2014"}`));
+    const groups = Object.entries(p.report.confidence).map(([k4, v]) => h("span", { class: "conf", title: `Geometric support: ${v >= 0.65 ? "strong" : v >= 0.35 ? "partial" : "weak"}. This is not an accuracy probability.` }, `${k4} ${v > 0 ? dots(v) : "\u2014"}`));
     const kind = h(
       "select",
       { class: "fusa-kind", title: "What kind of character is it? Changing it builds a fresh skeleton for that body plan.", onchange: () => void this.resetTemplate(kind.value, false) },
@@ -7856,6 +8441,9 @@ var Studio = class {
       );
       e.querySelectorAll(".fusa-slider input").forEach((i) => i.addEventListener("change", () => this.commit()));
     }
+    const automatic = h("input", { type: "checkbox", checked: part.autoAssign !== false });
+    automatic.addEventListener("change", () => (updatePart(rig, part.id, { autoAssign: automatic.checked }), this.commit()));
+    e.append(h("label", { class: "fusa-check", title: "Include this part when the wand assigns pixels. Undetected weapons start disabled; manual painting still works." }, automatic, "Include in automatic assignment"));
     const fill = h("input", { type: "checkbox", checked: part.fill });
     fill.addEventListener("change", () => (updatePart(rig, part.id, { fill: fill.checked }), this.commit()));
     e.append(

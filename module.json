@@ -1,8 +1,8 @@
 {
   "id": "fu-sprite-animator",
   "title": "Fabula Ultima Sprite Animator",
-  "description": "2D skeletal animation for character sprites. Rig any PNG or WebP sprite in the Sprite Animation Studio (bones, joints, bending parts, hidden-region fill), use 37 reusable animations (idles, movement, attacks, spells, defence, reactions) or make your own, and let actors' tokens play them on the map: attacks, spells and skills from Project FU chat cards trigger the matching animation, targets react, defeated characters fall. Pixel art stays pixel-exact. Works alongside Fabula Ultima Battle Animations.",
-  "version": "0.3.0",
+  "description": "2D skeletal animation for character sprites. Rig any PNG or WebP sprite in the Sprite Animation Studio (bones, joints, bending parts, hidden-region fill), use reusable animations (idles, movement, attacks, spells, defence, reactions) or make your own, and let actors' tokens play them on the map: attacks, spells and skills from Project FU chat cards trigger the matching animation, targets react, defeated characters fall. Pixel art stays pixel-exact. Works alongside Fabula Ultima Battle Animations.",
+  "version": "0.4.0",
   "authors": [
     {
       "name": "George Sowidan"

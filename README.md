@@ -19,6 +19,10 @@ Add-on Modules → Install Module → Manifest URL:
 Requires Foundry v13 and Project FU 4.14+. Works alongside
 [Fabula Ultima Battle Animations](https://github.com/EclipseGS27/fu-animations).
 
+**Updating to 0.4.0:** update the module and reload the world. In the Studio, run automatic
+rigging again to use the new detector. Existing saved rigs keep their manual edits; a new
+proposal can be kept or discarded. Choose the appropriate body plan for each sprite.
+
 ## Quick start
 1. Token controls → running-figure button (GM) opens the Studio.
 2. **Choose sprite**. The Studio finds the head, legs, hands and weapon and proposes a skeleton
@@ -35,7 +39,7 @@ Full walkthrough: [docs/RIGGING_GUIDE.md](docs/RIGGING_GUIDE.md) · which animat
 [docs/ABILITY_MAPPING.md](docs/ABILITY_MAPPING.md).
 
 ## What's in it
-- **Studio**: automatic rig proposal; Rig, Paint, Pose and Animate modes; bone tree; inspector;
+- **Studio**: [body-plan-aware automatic rig proposals](docs/DETECTOR_REVIEW.md); Rig, Paint, Pose and Animate modes; bone tree; inspector;
   rig check; undo/redo; save, open, export and import.
 - **Animation editor**: pose a bone to key it, key rows on the timeline, easing, two-bone IK,
   onion skin, draw-order keys, events and phases; your own clips are saved in the world.

@@ -26,7 +26,7 @@ WebP with a transparent background. The file is used exactly as it is.
 The Studio looks at the silhouette and proposes a skeleton: it finds the head and neck, where
 the legs separate, the feet, the hands (or the hilt of a weapon) and a blade, staff or spear.
 Floating pieces (sparks, glyphs, smoke) are ignored for the skeleton and later follow the
-nearest part. A banner shows what it found and how sure it is (●●● sure, ●○○ guessed):
+nearest part. A banner shows its geometric support (●●● strong, ●○○ weak). These are not accuracy probabilities:
 - **Keep** — accept it and fix details by hand.
 - **Use proportions instead** — a plain template stretched over the character, if the
   detection went wrong (for unusual poses it can be the better start).
@@ -42,7 +42,12 @@ Then fix it by dragging:
   **F** fits the view.
 
 Place joints at the pivot points of the art: shoulder, elbow, wrist, hip, knee, ankle, neck.
-Put the **weapon** bone along the blade, starting at the hand.
+Put the **weapon** bone along the blade, starting at the hand. If no weapon was found,
+its part starts excluded from the wand. You can still paint it manually or enable
+**Include in automatic assignment** in its Inspector.
+
+Detection uses a bounded working copy and supports translucent sprites. It does not
+resize or repaint the source artwork. See [detector design and checks](DETECTOR_REVIEW.md).
 
 Add bones with **Add bone** (drag from the joint to the tip; the new bone joins the selected
 bone), delete with **Del**, rename with a double click, change parent or role in the Inspector.
@@ -132,10 +137,10 @@ that appears after import (or *Template…* in the Skeleton panel at any time):
 | --- | --- | --- |
 | Four-legged beast | wolves, cats, boars, horses — side view | the feet and where the legs leave the body, the belly line, the snout, the tail; which way it faces (the head is the thickest end) |
 | Winged creature | dragons, griffins, wyverns | the same, plus the two wing tips high above the back |
-| Serpent | snakes, eels, worms | placed by proportion: tail, body, raised neck, head |
-| Floating spirit | ghosts, wraiths, elementals | placed by proportion: head, body, two arms, trailing lower body |
-| Blob | slimes, puddings, flans | placed by proportion: a soft body and whatever sits on top |
-| Custom | anything else | a root and one body bone; add bones yourself |
+| Serpent | snakes, eels, worms | a connected body path, tail and a thicker head candidate; proportions when ambiguous |
+| Floating spirit | ghosts, wraiths, elementals | thickness-weighted body/trail centres; supported arm branches; estimated head boundary |
+| Blob | slimes, puddings, flans | thickness-weighted soft-body centre and upper crest |
+| Custom | anything else | a root and one body bone fitted to the silhouette centre; add bones yourself |
 
 Then fit it like a humanoid: drag joints, press the wand, paint. Things to check:
 - **Near and far legs** often overlap in side views; both bones may start in the same place.

@@ -266,7 +266,7 @@ export class Studio {
 		e.classList.toggle('show', !!p && !!this.rig);
 		if (!p || !this.rig) return;
 		const dots = (v: number) => '●'.repeat(Math.max(1, Math.round(v * 3))) + '○'.repeat(3 - Math.max(1, Math.round(v * 3)));
-		const groups = Object.entries(p.report.confidence).map(([k, v]) => h('span', { class: 'conf', title: `${Math.round(v * 100)}%` }, `${k} ${v > 0 ? dots(v) : '—'}`));
+		const groups = Object.entries(p.report.confidence).map(([k, v]) => h('span', { class: 'conf', title: `Geometric support: ${v >= 0.65 ? 'strong' : v >= 0.35 ? 'partial' : 'weak'}. This is not an accuracy probability.` }, `${k} ${v > 0 ? dots(v) : '—'}`));
 		const kind = h(
 			'select',
 			{ class: 'fusa-kind', title: 'What kind of character is it? Changing it builds a fresh skeleton for that body plan.', onchange: () => void this.resetTemplate(kind.value as TemplateId, false) },
@@ -491,6 +491,9 @@ export class Studio {
 			);
 			e.querySelectorAll<HTMLInputElement>('.fusa-slider input').forEach((i) => i.addEventListener('change', () => this.commit()));
 		}
+		const automatic = h('input', { type: 'checkbox', checked: part.autoAssign !== false });
+		automatic.addEventListener('change', () => (updatePart(rig, part.id, { autoAssign: automatic.checked }), this.commit()));
+		e.append(h('label', { class: 'fusa-check', title: 'Include this part when the wand assigns pixels. Undetected weapons start disabled; manual painting still works.' }, automatic, 'Include in automatic assignment'));
 		const fill = h('input', { type: 'checkbox', checked: part.fill });
 		fill.addEventListener('change', () => (updatePart(rig, part.id, { fill: fill.checked }), this.commit()));
 		e.append(

@@ -52,6 +52,8 @@ export interface PartData {
 	fill: boolean;
 	/** Extra reach when pixels are assigned automatically, as a fraction of body height (wide parts > 0). */
 	reach?: number;
+	/** False excludes an unobserved part from automatic assignment; manual painting still works. */
+	autoAssign?: boolean;
 	hidden?: boolean;
 }
 
