@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0 — Automatic rigging rework (2026-11-03)
+- Shared bounded analysis for transparent margins, large images and translucent artwork.
+- Improved head/neck proposals, branch-based hand candidates, curved wrist/elbow fitting,
+  wide stances, broad blades and coloured floor shadows.
+- Silhouette fitting for floating spirits, serpents, blobs and custom body plans.
+- Undetected weapons stay excluded from automatic pixel assignment across save/load;
+  manual painting and an Inspector override remain available.
+- Geometric-support reporting flags uncertain proposals without presenting accuracy probabilities.
+- 187 local unit tests, plus passing browser rendering/editor/mock-integration checks in CI.
+  Generalization tests include 32 generated humanoid poses and eight curved serpents; existing
+  labelled assignment accuracy floors remain unchanged. No real Foundry-world test is claimed.
+- Existing saved rigs keep their manual edits. Re-run automatic rigging in the Studio to
+  create a new proposal with the updated detector.
+
 ## 0.3.0 — Phases 6–7 (2026-11-02)
 - **Creatures**: four-legged beast, winged, serpent, floating spirit and blob templates; automatic
   landmarks for beasts and dragons (legs, belly, snout, tail, wing tips, facing); "What is it?"

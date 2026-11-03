@@ -19,6 +19,10 @@ Add-on Modules → Install Module → Manifest URL:
 Requires Foundry v13 and Project FU 4.14+. Works alongside
 [Fabula Ultima Battle Animations](https://github.com/EclipseGS27/fu-animations).
 
+**Updating to 0.4.0:** update the module and reload the world. In the Studio, run automatic
+rigging again to use the new detector. Existing saved rigs keep their manual edits; a new
+proposal can be kept or discarded. Choose the appropriate body plan for each sprite.
+
 ## Quick start
 1. Token controls → running-figure button (GM) opens the Studio.
 2. **Choose sprite**. The Studio finds the head, legs, hands and weapon and proposes a skeleton
